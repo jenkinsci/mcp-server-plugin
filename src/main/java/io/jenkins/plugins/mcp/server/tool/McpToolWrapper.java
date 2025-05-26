@@ -43,20 +43,16 @@ import hudson.model.User;
 import hudson.security.ACL;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
+import io.jenkins.plugins.mcp.server.jackson.JenkinsExportedBeanModule;
 import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.server.McpSyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema;
 import io.swagger.v3.oas.annotations.media.Schema;
-import org.kohsuke.stapler.export.ExportedBean;
-import org.kohsuke.stapler.export.Flavor;
-import org.kohsuke.stapler.export.Model;
-import org.kohsuke.stapler.export.ModelBuilder;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
 
 import java.io.IOException;
-import java.io.StringWriter;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.lang.reflect.Type;
@@ -69,8 +65,11 @@ public class McpToolWrapper {
 	private static final SchemaGenerator TYPE_SCHEMA_GENERATOR;
 	private static final SchemaGenerator SUBTYPE_SCHEMA_GENERATOR;
 	private static final boolean PROPERTY_REQUIRED_BY_DEFAULT = true;
-	private static final ModelBuilder MODEL_BUILDER = new ModelBuilder();
 	private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+	static {
+		OBJECT_MAPPER.registerModule(new JenkinsExportedBeanModule());
+
+	}
 
 	static {
 		com.github.victools.jsonschema.generator.Module jacksonModule = new JacksonModule(JacksonOption.RESPECT_JSONPROPERTY_REQUIRED);
@@ -159,16 +158,18 @@ public class McpToolWrapper {
 	}
 
 	private static String toJson(Object item) throws IOException {
-		var isExported = item.getClass().getAnnotation(ExportedBean.class) != null;
-		if (isExported) {
-			StringWriter sw = new StringWriter();
-			var dw = Flavor.JSON.createDataWriter(item, sw);
-			Model p = MODEL_BUILDER.get(item.getClass());
-			p.writeTo(item, dw);
-			return sw.toString();
-		} else {
-			return OBJECT_MAPPER.writeValueAsString(item);
-		}
+		return OBJECT_MAPPER.writeValueAsString(item);
+//
+//		var isExported = item.getClass().getAnnotation(ExportedBean.class) != null;
+//		if (isExported) {
+//			StringWriter sw = new StringWriter();
+//			var dw = Flavor.JSON.createDataWriter(item, sw);
+//			Model p = MODEL_BUILDER.get(item.getClass());
+//			p.writeTo(item, dw);
+//			return sw.toString();
+//		} else {
+//			return OBJECT_MAPPER.writeValueAsString(item);
+//		}
 	}
 
 	String generateForMethodInput() {
