@@ -41,13 +41,13 @@ import com.github.victools.jsonschema.module.jackson.JacksonOption;
 import com.github.victools.jsonschema.module.swagger2.Swagger2Module;
 import hudson.model.User;
 import hudson.security.ACL;
-import io.jenkins.plugins.mcp.server.annotation.SimpleJson;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
 import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.server.McpSyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema;
 import io.swagger.v3.oas.annotations.media.Schema;
+import org.kohsuke.stapler.export.ExportedBean;
 import org.kohsuke.stapler.export.Flavor;
 import org.kohsuke.stapler.export.Model;
 import org.kohsuke.stapler.export.ModelBuilder;
@@ -159,11 +159,16 @@ public class McpToolWrapper {
 	}
 
 	private static String toJson(Object item) throws IOException {
-		StringWriter sw = new StringWriter();
-		var dw = Flavor.JSON.createDataWriter(item, sw);
-		Model p = MODEL_BUILDER.get(item.getClass());
-		p.writeTo(item, dw);
-		return sw.toString();
+		var isExported = item.getClass().getAnnotation(ExportedBean.class) != null;
+		if (isExported) {
+			StringWriter sw = new StringWriter();
+			var dw = Flavor.JSON.createDataWriter(item, sw);
+			Model p = MODEL_BUILDER.get(item.getClass());
+			p.writeTo(item, dw);
+			return sw.toString();
+		} else {
+			return OBJECT_MAPPER.writeValueAsString(item);
+		}
 	}
 
 	String generateForMethodInput() {
@@ -226,12 +231,7 @@ public class McpToolWrapper {
 
 			var resultBuilder = McpSchema.CallToolResult.builder()
 					.isError(false);
-
-			var isSimpleJson = method.getAnnotation(SimpleJson.class)!=null;
-			if (result instanceof Number || result instanceof String || result instanceof Boolean || isSimpleJson) {
-				resultBuilder.addTextContent(OBJECT_MAPPER.writeValueAsString(result));
-			}
-			else if (result instanceof List listResult) {
+			if (result instanceof List listResult) {
 				for (var item : listResult) {
 					resultBuilder.addTextContent(toJson(item));
 				}

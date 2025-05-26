@@ -65,12 +65,17 @@ public class MyCustomMcpExtension implements McpServerExtension {
 ```
 ### Result Handling
 
-The MCP Server Plugin intelligently handles various result types:
+The MCP Server Plugin handles various result types with the following approach:
 
-- **Simple Types** (Numbers, Strings, Booleans): Directly converted to JSON by Jackson.
-- **@SimpleJson Annotation**: Objects with this annotation are treated as simple types for JSON conversion by Jackson.
-- **Complex Objects**: Serialized using Jenkins' built-in object serialization.
+- **List Results**: Each element in the list is converted to a separate text content item in the response.
+- **Single Objects**: The entire object is converted into a single text content item.
 
+For serialization to text content:
+
+- **@ExportedBean Annotation**: If the result object is annotated with `@ExportedBean` (from `org.kohsuke.stapler.export`), Jenkins' `org.kohsuke.stapler.export.Flavor.JSON` exporting mechanism is used.
+- **Other Objects**: For objects without the `@ExportedBean` annotation, Jackson is used for JSON serialization.
+
+This approach ensures flexible and efficient handling of different result types, accommodating both Jenkins-specific exported objects and standard Java objects.
 This flexible approach ensures that tool results are consistently and accurately represented in the MCP response, regardless of their complexity.
 ### Integration with GitHub Copilot
 The MCP Server Plugin seamlessly integrates with GitHub Copilot, enhancing your development experience by providing direct access to Jenkins information within your IDE. This integration allows you to interact with Jenkins jobs and builds using natural language queries.

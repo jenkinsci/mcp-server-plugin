@@ -27,7 +27,6 @@
 package io.jenkins.plugins.mcp.server;
 
 import hudson.Extension;
-import io.jenkins.plugins.mcp.server.annotation.SimpleJson;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
 
@@ -35,7 +34,6 @@ import java.util.Map;
 @Extension
 public class SampleMcpServer implements McpServerExtension {
 	@Tool
-	@SimpleJson
 	public Map sayHello(
             @ToolParam(description = "The name to greet") String name
     ) {
