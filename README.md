@@ -1,0 +1,92 @@
+# MCP Server Plugin for Jenkins
+
+The MCP (Model Context Protocol) Server Plugin for Jenkins implements the server-side component of the Model Context Protocol. This plugin enables Jenkins to act as an MCP server, providing context, tools, and capabilities to MCP clients, such as LLM-powered applications or IDEs.
+
+## Features
+
+- **MCP Server Implementation**: Implements the server-side of the Model Context Protocol.
+- **Jenkins Integration**: Exposes Jenkins functionalities as MCP tools and resources.
+- **Real-time Communication**: Uses Server-Sent Events (SSE) for efficient, real-time communication with clients.
+- **Extensible Architecture**: Allows easy extension of MCP capabilities through the `McpServerExtension` interface.
+
+## Key Components
+
+1. **Endpoint**: The main entry point for MCP communication, handling SSE connections and message routing.
+2. **DefaultMcpServer**: Implements `McpServerExtension`, providing default tools for interacting with Jenkins jobs and builds.
+3. **McpToolWrapper**: Wraps Java methods as MCP tools, handling parameter parsing and result formatting.
+4. **McpServerExtension**: Interface for extending MCP server capabilities.
+
+## Getting Started
+
+### Prerequisites
+
+- Jenkins (version 2.479 or higher)
+
+### Configuration
+
+The MCP Server plugin automatically sets up necessary endpoints and tools upon installation, requiring no additional configuration.
+
+## Usage
+
+### Connecting to the MCP Server
+
+MCP clients can connect to the server using:
+
+- SSE Endpoint: `<jenkins-url>/mcp-server/sse`
+- Message Endpoint: `<jenkins-url>/mcp-server/message`
+
+### Available Tools
+
+The plugin provides built-in tools through the `DefaultMcpServer` class:
+
+- `getBuild`: Retrieve a specific build or the last build of a Jenkins job.
+- `getJob`: Get a Jenkins job by its full path.
+- `getAllJobs`: Get a list of all Jenkins jobs.
+- `triggerBuild`: Trigger a build of a job.
+
+### Extending MCP Capabilities
+
+To add new MCP tools or functionalities:
+
+1. Create a class implementing `McpServerExtension`.
+2. Use `@Tool` to expose methods as MCP tools.
+3. Use `@ToolParam` to define and describe tool parameters.
+
+Example:
+
+```java
+@Extension
+public class MyCustomMcpExtension implements McpServerExtension {
+	@Tool(description = "My custom tool")
+	public String myCustomTool(@ToolParam(description = "Input parameter") String input) {
+		// Tool implementation
+	}
+}
+```
+### Result Handling
+
+The MCP Server Plugin intelligently handles various result types:
+
+- **Simple Types** (Numbers, Strings, Booleans): Directly converted to JSON by Jackson.
+- **@SimpleJson Annotation**: Objects with this annotation are treated as simple types for JSON conversion by Jackson.
+- **Complex Objects**: Serialized using Jenkins' built-in object serialization.
+
+This flexible approach ensures that tool results are consistently and accurately represented in the MCP response, regardless of their complexity.
+### Integration with GitHub Copilot
+The MCP Server Plugin seamlessly integrates with GitHub Copilot, enhancing your development experience by providing direct access to Jenkins information within your IDE. This integration allows you to interact with Jenkins jobs and builds using natural language queries.
+![GitHub Copilot Integration](doc/copilot.png)
+
+As shown in the screenshot:
+1. You can ask Copilot about Jenkins jobs using natural language, e.g., "get all jobs of jenkins".
+2. Copilot uses the MCP Server to fetch and display information about Jenkins jobs, including job names, URLs, build statuses, and health metrics.
+3. You can also request specific information, such as "get last build status of test", and Copilot will provide the relevant details.
+This integration streamlines your workflow by allowing you to access Jenkins information without leaving your development environment.
+### Further Information
+For more details on the Model Context Protocol and its Java SDK:
+- [MCP Introduction](https://modelcontextprotocol.io/introduction)
+- [MCP Java SDK Server Component](https://modelcontextprotocol.io/sdk/java/mcp-server)
+
+### Contributing
+Contributions to the MCP Server plugin are welcome. Please refer to the [Jenkins contribution guidelines](https://github.com/jenkinsci/.github/blob/master/CONTRIBUTING.md) for more information.
+### License
+This project is licensed under the MIT License - see the [LICENSE](LICENSE.md) file for details.

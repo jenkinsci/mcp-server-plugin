@@ -1,0 +1,4 @@
+# See https://github.com/jenkinsci/.github/blob/master/.github/release-drafter.adoc
+---
+_extends: .github
+tag-template: mcp-server-$NEXT_MINOR_VERSION
