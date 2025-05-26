@@ -2,3 +2,7 @@
 ---
 _extends: .github
 tag-template: mcp-server-$NEXT_MINOR_VERSION
+
+template: |
+  <!-- Optional: add a release summary here -->
+  $CHANGES
