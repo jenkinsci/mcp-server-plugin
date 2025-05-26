@@ -43,7 +43,9 @@ import java.util.Base64;
 import java.util.Map;
 
 import static io.jenkins.plugins.mcp.server.Endpoint.MCP_SERVER_SSE;
+import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 @WithJenkins
 class EndpointTest {
@@ -95,6 +97,88 @@ class EndpointTest {
 
 	}
 
+	@Test
+	void testMcpToolCallTriggerBuild(JenkinsRule jenkins) throws Exception {
+		WorkflowJob project = jenkins.createProject(WorkflowJob.class, "demo-job");
+		project.setDefinition(new CpsFlowDefinition("", true));
+		var nextNumber = project.getNextBuildNumber();
+
+		var url = jenkins.getURL();
+		var baseUrl = url.toString();
+
+
+		var transport = HttpClientSseClientTransport.builder(baseUrl)
+				.sseEndpoint(MCP_SERVER_SSE)
+				.build();
+
+
+		try (var client = McpClient.sync(transport)
+				.requestTimeout(Duration.ofSeconds(500))
+				.capabilities(McpSchema.ClientCapabilities.builder()
+						.build())
+				.build()) {
+			client.initialize();
+			McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("triggerBuild",
+					Map.of("jobFullName", project.getFullName()));
+
+			var response = client.callTool(request);
+			assertThat(response.isError()).isFalse();
+			assertThat(response.content()).hasSize(1);
+			assertThat(response.content().get(0).type()).isEqualTo("text");
+			assertThat(response.content()).first()
+					.isInstanceOfSatisfying(McpSchema.TextContent.class,
+							textContent -> {
+								assertThat(textContent.type()).isEqualTo("text");
+								assertThat(textContent.text()).contains("true");
+
+							});
+
+		}
+		await().atMost(5, SECONDS).untilAsserted(() -> assertThat(jenkins.jenkins.getQueue().isEmpty()).isTrue());
+		assertThat(project.getLastBuild().getNumber()).isEqualTo(nextNumber);
+
+
+	}
+
+
+	@Test
+	void testMcpToolCallGetJobNotExist(JenkinsRule jenkins) throws Exception {
+		WorkflowJob project = jenkins.createProject(WorkflowJob.class, "demo-job");
+		project.setDefinition(new CpsFlowDefinition("", true));
+		var build = project.scheduleBuild2(0).get();
+
+		var url = jenkins.getURL();
+		var baseUrl = url.toString();
+
+
+		var transport = HttpClientSseClientTransport.builder(baseUrl)
+				.sseEndpoint(MCP_SERVER_SSE)
+				.build();
+
+
+		try (var client = McpClient.sync(transport)
+				.requestTimeout(Duration.ofSeconds(500))
+				.capabilities(McpSchema.ClientCapabilities.builder()
+						.build())
+				.build()) {
+			client.initialize();
+			McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("getJob",
+					Map.of("jobFullName", "non-exist-job-name"));
+
+			var response = client.callTool(request);
+			assertThat(response.isError()).isFalse();
+			assertThat(response.content()).hasSize(1);
+			assertThat(response.content()).first()
+					.isInstanceOfSatisfying(McpSchema.TextContent.class,
+							textContent -> {
+								assertThat(textContent.type()).isEqualTo("text");
+								assertThat(textContent.text()).contains("Result is null");
+
+							});
+
+		}
+
+	}
 
 	@Test
 	void testMcpToolCallGetAllProjects(JenkinsRule jenkins) throws Exception {
@@ -152,6 +236,7 @@ class EndpointTest {
 		}
 
 	}
+
 
 	@Test
 	void testMcpToolCallSimpleJson(JenkinsRule jenkins) throws Exception {

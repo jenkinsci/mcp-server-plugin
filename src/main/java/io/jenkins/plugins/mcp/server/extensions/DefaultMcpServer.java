@@ -27,7 +27,6 @@
 package io.jenkins.plugins.mcp.server.extensions;
 
 import hudson.Extension;
-import hudson.model.AbstractProject;
 import hudson.model.Job;
 import hudson.model.Run;
 import io.jenkins.plugins.mcp.server.McpServerExtension;
@@ -66,11 +65,7 @@ public class DefaultMcpServer implements McpServerExtension {
 	public Job getJob(
 			@ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName
 	) {
-		var item = Jenkins.get().getItemByFullName(jobFullName);
-		if (item instanceof hudson.model.Job job) {
-			return job;
-		}
-		return null;
+		return Jenkins.get().getItemByFullName(jobFullName, Job.class);
 	}
 
 
@@ -80,9 +75,6 @@ public class DefaultMcpServer implements McpServerExtension {
 	) {
 		var item = Jenkins.get().getItemByFullName(jobFullName);
 		if (item instanceof ParameterizedJobMixIn.ParameterizedJob job) {
-			job.scheduleBuild2(0);
-			return true;
-		} else if (item instanceof AbstractProject job) {
 			job.scheduleBuild2(0);
 			return true;
 		}

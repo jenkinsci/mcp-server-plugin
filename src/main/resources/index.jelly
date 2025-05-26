@@ -2,4 +2,6 @@
 
 <?jelly escape-by-default='true'?>
 <div>
+    The <a href="https://modelcontextprotocol.io/">MCP (Model Context Protocol)</a> Server Plugin for Jenkins implements the server-side component of the Model Context Protocol.
+    This plugin enables Jenkins to act as an MCP server, providing context, tools, and capabilities to MCP clients, such as LLM-powered applications or IDEs.
 </div>
