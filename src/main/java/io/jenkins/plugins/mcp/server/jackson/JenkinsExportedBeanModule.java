@@ -28,7 +28,7 @@ package io.jenkins.plugins.mcp.server.jackson;
 
 import com.fasterxml.jackson.databind.module.SimpleModule;
 
-public class JenkinsHandlingModule extends SimpleModule {
+public class JenkinsExportedBeanModule extends SimpleModule {
 
 	@Override
 	public void setupModule(SetupContext context) {

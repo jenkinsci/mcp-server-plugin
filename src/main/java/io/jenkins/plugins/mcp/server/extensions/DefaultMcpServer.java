@@ -49,8 +49,8 @@ public class DefaultMcpServer implements McpServerExtension {
 					description = "Build number (optional, if not provided, returns the last build)",
 					required = false) String buildNumber
 	) {
-		var item = Jenkins.get().getItemByFullName(jobFullName);
-		if (item instanceof hudson.model.Job job) {
+		var job = Jenkins.get().getItemByFullName(jobFullName, Job.class);
+		if (job !=null) {
 			if (buildNumber == null || buildNumber.isEmpty()) {
 				return job.getLastBuild();
 			} else {
@@ -73,8 +73,8 @@ public class DefaultMcpServer implements McpServerExtension {
 	public boolean triggerBuild(
 			@ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName
 	) {
-		var item = Jenkins.get().getItemByFullName(jobFullName);
-		if (item instanceof ParameterizedJobMixIn.ParameterizedJob job) {
+		var job = Jenkins.get().getItemByFullName(jobFullName, ParameterizedJobMixIn.ParameterizedJob.class);
+		if (job !=null) {
 			job.scheduleBuild2(0);
 			return true;
 		}
