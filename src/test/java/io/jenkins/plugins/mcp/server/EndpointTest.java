@@ -181,12 +181,17 @@ class EndpointTest {
 	}
 
 	@Test
-	void testMcpToolCallGetAllProjects(JenkinsRule jenkins) throws Exception {
+	void testMcpToolCallGetJobs(JenkinsRule jenkins) throws Exception {
 		enableSecurity(jenkins);
-		WorkflowJob project = jenkins.createProject(WorkflowJob.class, "demo-job");
+		for (int i = 0; i < 2; i++) {
+			jenkins.createProject(WorkflowJob.class, "demo-job" + i);
+		}
 
-		project.setDefinition(new CpsFlowDefinition("", true));
-		var build = project.scheduleBuild2(0).get();
+		var folder = jenkins.createFolder("test");
+
+		for (int i = 0; i < 20; i++) {
+			folder.createProject(WorkflowJob.class, "sub-demo-job" + i);
+		}
 
 		var url = jenkins.getURL();
 		var baseUrl = url.toString();
@@ -211,28 +216,55 @@ class EndpointTest {
 						.build())
 				.build()) {
 			client.initialize();
-			McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("getAllJobs",
-					Map.of());
+			{
+				McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("getJobs",
+						Map.of(
+								"parentFllName", "test",
+								"limit", 10
+						));
 
-			var response = client.callTool(request);
-			assertThat(response.isError()).isFalse();
-			assertThat(response.content()).hasSize(1);
-			assertThat(response.content().get(0).type()).isEqualTo("text");
-			assertThat(response.content()).first()
-					.isInstanceOfSatisfying(McpSchema.TextContent.class,
-							textContent -> {
-								assertThat(textContent.type()).isEqualTo("text");
+				var response = client.callTool(request);
+				assertThat(response.isError()).isFalse();
+				assertThat(response.content()).hasSize(10);
+				assertThat(response.content().get(0).type()).isEqualTo("text");
+				assertThat(response.content()).first()
+						.isInstanceOfSatisfying(McpSchema.TextContent.class,
+								textContent -> {
+									assertThat(textContent.type()).isEqualTo("text");
 
-								ObjectMapper objectMapper = new ObjectMapper();
-								try {
-									var contetMap = objectMapper.readValue(textContent.text(), Map.class);
-									assertThat(contetMap).extractingByKey("nextBuildNumber").isEqualTo(project.getNextBuildNumber());
+									ObjectMapper objectMapper = new ObjectMapper();
+									try {
+										var contetMap = objectMapper.readValue(textContent.text(), Map.class);
+										assertThat(contetMap).containsEntry("name", "sub-demo-job0");
+									} catch (JsonProcessingException e) {
+										throw new RuntimeException(e);
+									}
+								});
+			}
+			{
+				McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("getJobs",
+						Map.of(
 
-								} catch (JsonProcessingException e) {
-									throw new RuntimeException(e);
-								}
-							});
+						));
 
+				var response = client.callTool(request);
+				assertThat(response.isError()).isFalse();
+				assertThat(response.content()).hasSize(3);
+				assertThat(response.content().get(0).type()).isEqualTo("text");
+				assertThat(response.content()).first()
+						.isInstanceOfSatisfying(McpSchema.TextContent.class,
+								textContent -> {
+									assertThat(textContent.type()).isEqualTo("text");
+
+									ObjectMapper objectMapper = new ObjectMapper();
+									try {
+										var contetMap = objectMapper.readValue(textContent.text(), Map.class);
+										assertThat(contetMap).containsEntry("name", "demo-job0");
+									} catch (JsonProcessingException e) {
+										throw new RuntimeException(e);
+									}
+								});
+			}
 		}
 
 	}

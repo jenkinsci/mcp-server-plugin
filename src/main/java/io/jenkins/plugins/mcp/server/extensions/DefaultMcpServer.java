@@ -27,8 +27,7 @@
 package io.jenkins.plugins.mcp.server.extensions;
 
 import hudson.Extension;
-import hudson.model.Job;
-import hudson.model.Run;
+import hudson.model.*;
 import io.jenkins.plugins.mcp.server.McpServerExtension;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
@@ -36,6 +35,7 @@ import jakarta.annotation.Nullable;
 import jenkins.model.Jenkins;
 import jenkins.model.ParameterizedJobMixIn;
 
+import java.util.Comparator;
 import java.util.List;
 
 @Extension
@@ -81,9 +81,38 @@ public class DefaultMcpServer implements McpServerExtension {
 		return false;
 	}
 
-	@Tool(description = "Get a list of all Jenkins jobs")
-	public List<Job> getAllJobs() {
-		return Jenkins.get().getAllItems(Job.class);
+	@Tool(description = "Get a paginated list of Jenkins jobs, sorted by name. Returns up to 'limit' jobs starting from the 'skip' index. If no jobs are available in the requested range, returns an empty list.")
+	public List<Job> getJobs(
+			@ToolParam(description = "The full path of the Jenkins folder (e.g., 'folder'), if not specified, it returns the items under root", required = false) String parentFllName,
+			@ToolParam(description = "The 0 based started index, if not specified, then start from the first (0)", required = false) Integer skip,
+			@ToolParam(description = "The maximum number of items to return. If not specified, returns 10 items. Cannot exceed 10 items.", required = false) Integer limit
+
+	) {
+
+		if (skip == null || skip < 0) {
+			skip = 0;
+		}
+		if (limit == null || limit < 0 || limit > 10) {
+			limit = 10;
+		}
+		ItemGroup parent = null;
+		if (parentFllName == null || parentFllName.isEmpty()) {
+			parent = Jenkins.get();
+		} else {
+			var fullNameItem = Jenkins.get().getItemByFullName(parentFllName, AbstractItem.class);
+			if (fullNameItem instanceof ItemGroup) {
+				parent = (ItemGroup) fullNameItem;
+			}
+		}
+		if (parent != null) {
+			return parent.getItemsStream()
+					.sorted(Comparator.comparing(Item::getName))
+					.skip(skip)
+					.limit(limit)
+					.toList();
+		} else {
+			return List.of();
+		}
 	}
 
 

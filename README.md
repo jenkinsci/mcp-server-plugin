@@ -16,6 +16,10 @@ The MCP (Model Context Protocol) Server Plugin for Jenkins implements the server
 3. **McpToolWrapper**: Wraps Java methods as MCP tools, handling parameter parsing and result formatting.
 4. **McpServerExtension**: Interface for extending MCP server capabilities.
 
+## MCP SDK Version
+
+This MCP Server is based on the MCP Java SDK version 0.10.0, which implements the MCP specification version 2024-11-05. We plan to upgrade to the next SDK version when it becomes available, which will likely implement the MCP specification version 2025-03-26.
+
 ## Getting Started
 
 ### Prerequisites
@@ -34,6 +38,29 @@ MCP clients can connect to the server using:
 
 - SSE Endpoint: `<jenkins-url>/mcp-server/sse`
 - Message Endpoint: `<jenkins-url>/mcp-server/message`
+
+### Authentication and Credentials
+
+The MCP Server Plugin requires the same credentials as the Jenkins instance it's running on. To authenticate your MCP queries:
+
+1. **Jenkins API Token**: Generate an API token from your Jenkins user account.
+2. **Basic Authentication**: Use the API token in the HTTP Basic Authentication header. Below is an example of VS code settings.xml
+```json
+{
+  "mcp": {
+    "servers": {
+      "jenkins": {
+        "type": "sse",
+        "url": "https://jenkins-host/mcp-server/sse",
+        "headers": {
+          "Authorization": "Basic <user:token base64>"
+        }
+      }
+    }
+  }
+}
+```
+Example of using the token:
 
 ### Available Tools
 
