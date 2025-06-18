@@ -32,20 +32,18 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-
-@Target({ ElementType.PARAMETER, ElementType.FIELD, ElementType.ANNOTATION_TYPE })
+@Target({ElementType.PARAMETER, ElementType.FIELD, ElementType.ANNOTATION_TYPE})
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
 public @interface ToolParam {
 
-	/**
-	 * Whether the tool argument is required.
-	 */
-	boolean required() default true;
+    /**
+     * Whether the tool argument is required.
+     */
+    boolean required() default true;
 
-	/**
-	 * The description of the tool argument.
-	 */
-	String description() default "";
-
+    /**
+     * The description of the tool argument.
+     */
+    String description() default "";
 }

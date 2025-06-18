@@ -29,19 +29,17 @@ package io.jenkins.plugins.mcp.server;
 import hudson.Extension;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
-
 import java.util.Map;
+
 @Extension
 public class SampleMcpServer implements McpServerExtension {
-	@Tool
-	public Map sayHello(
-            @ToolParam(description = "The name to greet") String name
-    ) {
+    @Tool
+    public Map sayHello(@ToolParam(description = "The name to greet") String name) {
         return Map.of("message", "Hello, " + name + "!");
     }
 
-	@Tool
-	public int testInt(){
-		return 10;
-	}
+    @Tool
+    public int testInt() {
+        return 10;
+    }
 }

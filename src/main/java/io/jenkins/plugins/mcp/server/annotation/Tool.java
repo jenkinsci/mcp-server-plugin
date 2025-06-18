@@ -32,25 +32,18 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-
-
-@Target({ ElementType.METHOD, ElementType.ANNOTATION_TYPE })
+@Target({ElementType.METHOD, ElementType.ANNOTATION_TYPE})
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
 public @interface Tool {
 
-	/**
-	 * The name of the tool. If not provided, the method name will be used.
-	 */
-	String name() default "";
+    /**
+     * The name of the tool. If not provided, the method name will be used.
+     */
+    String name() default "";
 
-	/**
-	 * The description of the tool. If not provided, the method name will be used.
-	 */
-	String description() default "";
-
-
-
-
-
+    /**
+     * The description of the tool. If not provided, the method name will be used.
+     */
+    String description() default "";
 }

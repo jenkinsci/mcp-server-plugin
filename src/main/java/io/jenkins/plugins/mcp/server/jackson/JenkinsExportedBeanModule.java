@@ -30,8 +30,8 @@ import com.fasterxml.jackson.databind.module.SimpleModule;
 
 public class JenkinsExportedBeanModule extends SimpleModule {
 
-	@Override
-	public void setupModule(SetupContext context) {
-		context.addBeanSerializerModifier(new JenkinsExportedBeanSerializerModifier());
-	}
+    @Override
+    public void setupModule(SetupContext context) {
+        context.addBeanSerializerModifier(new JenkinsExportedBeanSerializerModifier());
+    }
 }
