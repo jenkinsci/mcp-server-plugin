@@ -26,73 +26,65 @@
 
 package io.jenkins.plugins.mcp.server;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import hudson.model.Descriptor;
 import io.jenkins.plugins.mcp.server.jackson.JenkinsExportedBeanModule;
+import java.io.IOException;
+import java.util.Map;
+import java.util.concurrent.ExecutionException;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.junit.jupiter.api.Test;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
-import java.io.IOException;
-import java.util.Map;
-import java.util.concurrent.ExecutionException;
-
-import static org.assertj.core.api.Assertions.assertThat;
-
 @WithJenkins
 public class JenkinsObjectSerializationTest {
-	private ObjectMapper objectMapper = new ObjectMapper();
+    private ObjectMapper objectMapper = new ObjectMapper();
 
-	{
-		objectMapper.registerModule(new JenkinsExportedBeanModule());
+    {
+        objectMapper.registerModule(new JenkinsExportedBeanModule());
+    }
 
-	}
+    @Test
+    void testSerializeExportedBean(JenkinsRule jenkins)
+            throws IOException, Descriptor.FormException, ExecutionException, InterruptedException {
 
+        WorkflowJob project = jenkins.createProject(WorkflowJob.class, "demo-job");
+        project.setDefinition(new CpsFlowDefinition("", true));
+        var build = project.scheduleBuild2(0).get();
 
-	@Test
-	void testSerializeExportedBean(JenkinsRule jenkins) throws IOException, Descriptor.FormException, ExecutionException, InterruptedException {
+        var json = objectMapper.writeValueAsString(build);
+        var map = new ObjectMapper().readValue(json, Map.class);
+        assertThat(map).extracting("_class").isEqualTo("org.jenkinsci.plugins.workflow.job.WorkflowRun");
+    }
 
-		WorkflowJob project = jenkins.createProject(WorkflowJob.class, "demo-job");
-		project.setDefinition(new CpsFlowDefinition("", true));
-		var build = project.scheduleBuild2(0).get();
+    @Test
+    void testSerializeMixedMapWithExportedBean(JenkinsRule jenkins)
+            throws IOException, Descriptor.FormException, ExecutionException, InterruptedException {
 
-		var json = objectMapper.writeValueAsString(build);
-		var map = new ObjectMapper().readValue(json, Map.class);
-		assertThat(map).extracting("_class").isEqualTo("org.jenkinsci.plugins.workflow.job.WorkflowRun");
+        WorkflowJob project = jenkins.createProject(WorkflowJob.class, "demo-job");
+        project.setDefinition(new CpsFlowDefinition("", true));
+        var build = project.scheduleBuild2(0).get();
 
-	}
+        var result = Map.of("build", build, "number", build.getNumber());
+        var json = objectMapper.writeValueAsString(result);
 
-	@Test
-	void testSerializeMixedMapWithExportedBean(JenkinsRule jenkins) throws IOException, Descriptor.FormException, ExecutionException, InterruptedException {
+        var map = new ObjectMapper().readValue(json, Map.class);
+        assertThat(map).extractingByKey("number").isEqualTo(build.getNumber());
+        assertThat(map).extractingByKey("build").isInstanceOfSatisfying(Map.class, buildMap -> {
+            assertThat(buildMap).extracting("_class").isEqualTo("org.jenkinsci.plugins.workflow.job.WorkflowRun");
+        });
+    }
 
-		WorkflowJob project = jenkins.createProject(WorkflowJob.class, "demo-job");
-		project.setDefinition(new CpsFlowDefinition("", true));
-		var build = project.scheduleBuild2(0).get();
+    @Test
+    void testSerializeSimpleMap()
+            throws IOException, Descriptor.FormException, ExecutionException, InterruptedException {
 
-		var result = Map.of("build", build, "number", build.getNumber());
-		var json = objectMapper.writeValueAsString(result);
-
-		var map = new ObjectMapper().readValue(json, Map.class);
-		assertThat(map).extractingByKey("number").isEqualTo(build.getNumber());
-		assertThat(map).extractingByKey("build")
-				.isInstanceOfSatisfying(Map.class, buildMap -> {
-					assertThat(buildMap).extracting("_class").isEqualTo("org.jenkinsci.plugins.workflow.job.WorkflowRun");
-				})
-
-		;
-
-
-	}
-
-	@Test
-	void testSerializeSimpleMap() throws IOException, Descriptor.FormException, ExecutionException, InterruptedException {
-
-
-		var json = objectMapper.writeValueAsString(Map.of("key", "value", "key1", "value1"));
-		var map = new ObjectMapper().readValue(json, Map.class);
-		assertThat(map).extractingByKey("key").isEqualTo("value");
-	}
-
+        var json = objectMapper.writeValueAsString(Map.of("key", "value", "key1", "value1"));
+        var map = new ObjectMapper().readValue(json, Map.class);
+        assertThat(map).extractingByKey("key").isEqualTo("value");
+    }
 }

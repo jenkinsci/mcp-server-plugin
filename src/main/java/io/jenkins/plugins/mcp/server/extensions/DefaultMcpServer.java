@@ -27,64 +27,97 @@
 package io.jenkins.plugins.mcp.server.extensions;
 
 import hudson.Extension;
-import hudson.model.Job;
-import hudson.model.Run;
+import hudson.model.*;
 import io.jenkins.plugins.mcp.server.McpServerExtension;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
 import jakarta.annotation.Nullable;
+import java.util.Comparator;
+import java.util.List;
 import jenkins.model.Jenkins;
 import jenkins.model.ParameterizedJobMixIn;
-
-import java.util.List;
 
 @Extension
 public class DefaultMcpServer implements McpServerExtension {
 
+    @Tool(description = "Get a specific build or the last build of a Jenkins job")
+    public Run getBuild(
+            @ToolParam(description = "Job full nam of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
+            @Nullable
+                    @ToolParam(
+                            description = "Build number (optional, if not provided, returns the last build)",
+                            required = false)
+                    String buildNumber) {
+        var job = Jenkins.get().getItemByFullName(jobFullName, Job.class);
+        if (job != null) {
+            if (buildNumber == null || buildNumber.isEmpty()) {
+                return job.getLastBuild();
+            } else {
+                return job.getBuildByNumber(Integer.parseInt(buildNumber));
+            }
+        }
+        return null;
+    }
 
-	@Tool(description = "Get a specific build or the last build of a Jenkins job")
-	public Run getBuild(
-			@ToolParam(description = "Job full nam of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
-			@Nullable @ToolParam(
-					description = "Build number (optional, if not provided, returns the last build)",
-					required = false) String buildNumber
-	) {
-		var job = Jenkins.get().getItemByFullName(jobFullName, Job.class);
-		if (job !=null) {
-			if (buildNumber == null || buildNumber.isEmpty()) {
-				return job.getLastBuild();
-			} else {
-				return job.getBuildByNumber(Integer.parseInt(buildNumber));
-			}
-		}
-		return null;
-	}
+    @Tool(description = "Get a Jenkins job by its full path")
+    public Job getJob(
+            @ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName) {
+        return Jenkins.get().getItemByFullName(jobFullName, Job.class);
+    }
 
+    @Tool(description = "Trigger a build for a Jenkins job")
+    public boolean triggerBuild(
+            @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName) {
+        var job = Jenkins.get().getItemByFullName(jobFullName, ParameterizedJobMixIn.ParameterizedJob.class);
+        if (job != null) {
+            job.scheduleBuild2(0);
+            return true;
+        }
+        return false;
+    }
 
-	@Tool(description = "Get a Jenkins job by its full path")
-	public Job getJob(
-			@ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName
-	) {
-		return Jenkins.get().getItemByFullName(jobFullName, Job.class);
-	}
+    @Tool(
+            description =
+                    "Get a paginated list of Jenkins jobs, sorted by name. Returns up to 'limit' jobs starting from the 'skip' index. If no jobs are available in the requested range, returns an empty list.")
+    public List<Job> getJobs(
+            @ToolParam(
+                            description =
+                                    "The full path of the Jenkins folder (e.g., 'folder'), if not specified, it returns the items under root",
+                            required = false)
+                    String parentFllName,
+            @ToolParam(
+                            description = "The 0 based started index, if not specified, then start from the first (0)",
+                            required = false)
+                    Integer skip,
+            @ToolParam(
+                            description =
+                                    "The maximum number of items to return. If not specified, returns 10 items. Cannot exceed 10 items.",
+                            required = false)
+                    Integer limit) {
 
-
-	@Tool(description = "Trigger a build for a Jenkins job")
-	public boolean triggerBuild(
-			@ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName
-	) {
-		var job = Jenkins.get().getItemByFullName(jobFullName, ParameterizedJobMixIn.ParameterizedJob.class);
-		if (job !=null) {
-			job.scheduleBuild2(0);
-			return true;
-		}
-		return false;
-	}
-
-	@Tool(description = "Get a list of all Jenkins jobs")
-	public List<Job> getAllJobs() {
-		return Jenkins.get().getAllItems(Job.class);
-	}
-
-
+        if (skip == null || skip < 0) {
+            skip = 0;
+        }
+        if (limit == null || limit < 0 || limit > 10) {
+            limit = 10;
+        }
+        ItemGroup parent = null;
+        if (parentFllName == null || parentFllName.isEmpty()) {
+            parent = Jenkins.get();
+        } else {
+            var fullNameItem = Jenkins.get().getItemByFullName(parentFllName, AbstractItem.class);
+            if (fullNameItem instanceof ItemGroup) {
+                parent = (ItemGroup) fullNameItem;
+            }
+        }
+        if (parent != null) {
+            return parent.getItemsStream()
+                    .sorted(Comparator.comparing(Item::getName))
+                    .skip(skip)
+                    .limit(limit)
+                    .toList();
+        } else {
+            return List.of();
+        }
+    }
 }

@@ -29,24 +29,21 @@ package io.jenkins.plugins.mcp.server.jackson;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.JsonSerializer;
 import com.fasterxml.jackson.databind.SerializerProvider;
+import java.io.IOException;
+import java.io.StringWriter;
 import org.kohsuke.stapler.export.Flavor;
 import org.kohsuke.stapler.export.Model;
 import org.kohsuke.stapler.export.ModelBuilder;
 
-import java.io.IOException;
-import java.io.StringWriter;
-
 public class JenkinsExportedBeanSerializer extends JsonSerializer<Object> {
-	private static final ModelBuilder MODEL_BUILDER = new ModelBuilder();
+    private static final ModelBuilder MODEL_BUILDER = new ModelBuilder();
 
-	@Override
-	public void serialize(Object value, JsonGenerator gen, SerializerProvider serializers)
-			throws IOException {
-			StringWriter sw = new StringWriter();
-			var dw = Flavor.JSON.createDataWriter(value, sw);
-			Model p = MODEL_BUILDER.get(value.getClass());
-			p.writeTo(value, dw);
-			gen.writeRawValue(sw.toString());
-
-	}
+    @Override
+    public void serialize(Object value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
+        StringWriter sw = new StringWriter();
+        var dw = Flavor.JSON.createDataWriter(value, sw);
+        Model p = MODEL_BUILDER.get(value.getClass());
+        p.writeTo(value, dw);
+        gen.writeRawValue(sw.toString());
+    }
 }

@@ -29,19 +29,25 @@ package io.jenkins.plugins.mcp.server;
 import hudson.ExtensionList;
 import hudson.ExtensionPoint;
 import io.modelcontextprotocol.server.McpServerFeatures;
-import jenkins.model.Jenkins;
-
 import java.util.Collections;
 import java.util.List;
+import jenkins.model.Jenkins;
 
 public interface McpServerExtension extends ExtensionPoint {
 
-	default List<McpServerFeatures.SyncToolSpecification> getSyncTools() {return Collections.emptyList();}
-	default List<McpServerFeatures.SyncPromptSpecification > getSyncPrompts(){return Collections.emptyList();}
-	default List<McpServerFeatures.SyncResourceSpecification> getSyncResources(){return Collections.emptyList();}
-	static ExtensionList<McpServerExtension> all() {
-		return Jenkins.get().getExtensionList(McpServerExtension.class);
-	}
+    default List<McpServerFeatures.SyncToolSpecification> getSyncTools() {
+        return Collections.emptyList();
+    }
 
+    default List<McpServerFeatures.SyncPromptSpecification> getSyncPrompts() {
+        return Collections.emptyList();
+    }
 
+    default List<McpServerFeatures.SyncResourceSpecification> getSyncResources() {
+        return Collections.emptyList();
+    }
+
+    static ExtensionList<McpServerExtension> all() {
+        return Jenkins.get().getExtensionList(McpServerExtension.class);
+    }
 }

@@ -34,15 +34,14 @@ import org.kohsuke.stapler.export.ExportedBean;
 
 public class JenkinsExportedBeanSerializerModifier extends BeanSerializerModifier {
 
-	@Override
-	public JsonSerializer<?> modifySerializer(SerializationConfig config,
-	                                          BeanDescription beanDesc,
-	                                          JsonSerializer<?> serializer) {
+    @Override
+    public JsonSerializer<?> modifySerializer(
+            SerializationConfig config, BeanDescription beanDesc, JsonSerializer<?> serializer) {
 
-		if (beanDesc.getClassAnnotations().has(ExportedBean.class)) {
-			return new JenkinsExportedBeanSerializer();
-		}
+        if (beanDesc.getClassAnnotations().has(ExportedBean.class)) {
+            return new JenkinsExportedBeanSerializer();
+        }
 
-		return serializer;
-	}
+        return serializer;
+    }
 }
