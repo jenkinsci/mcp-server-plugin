@@ -109,9 +109,10 @@ The MCP Server Plugin seamlessly integrates with GitHub Copilot, enhancing your 
 ![GitHub Copilot Integration](doc/copilot.png)
 
 As shown in the screenshot:
-1. You can ask Copilot about Jenkins jobs using natural language, e.g., "get all jobs of jenkins".
-2. Copilot uses the MCP Server to fetch and display information about Jenkins jobs, including job names, URLs, build statuses, and health metrics.
-3. You can also request specific information, such as "get last build status of test", and Copilot will provide the relevant details.
+1. You can ask Copilot about Jenkins jobs using natural language, e.g., "list jenkins job under root".
+2. Copilot uses the MCP Server to fetch and display information about Jenkins jobs, listing the jobs under the root directory.
+3. You can also request specific information, such as "get the last build status of job a", and Copilot will provide the relevant details including build number, status, and URL.
+
 This integration streamlines your workflow by allowing you to access Jenkins information without leaving your development environment.
 ### Further Information
 For more details on the Model Context Protocol and its Java SDK:
