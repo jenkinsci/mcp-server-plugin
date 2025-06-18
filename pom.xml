@@ -10,7 +10,7 @@
   </parent>
   <groupId>io.jenkins.plugins</groupId>
   <artifactId>mcp-server</artifactId>
-  <version>${revision}${changelist}</version>
+  <version>${revision}.${changelist}</version>
   <packaging>hpi</packaging>
 
   <name>MCP Server Plugin</name>
@@ -28,9 +28,8 @@
     <url>https://github.com/${gitHubRepo}</url>
   </scm>
   <properties>
-    <revision>0.0.1</revision>
-    <changelist>-SNAPSHOT</changelist>
-
+    <changelist>999999-SNAPSHOT</changelist>
+    <revision>0</revision>
     <!-- https://www.jenkins.io/doc/developer/plugin-development/choosing-jenkins-baseline/ -->
     <jenkins.baseline>2.479</jenkins.baseline>
     <jenkins.version>${jenkins.baseline}.3</jenkins.version>
