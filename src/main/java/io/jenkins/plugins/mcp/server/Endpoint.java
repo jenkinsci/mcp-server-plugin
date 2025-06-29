@@ -126,6 +126,11 @@ public class Endpoint extends CrumbExclusion implements RootAction, McpServerTra
             handleMessage(request, response);
             return true; // Do not allow this request on to Stapler
         }
+        if (requestedResource.startsWith("/" + MCP_SERVER_SSE)
+                && request.getMethod().equalsIgnoreCase("POST")) {
+            response.sendError(HttpServletResponse.SC_NOT_ACCEPTABLE);
+            return true;
+        }
         return false;
     }
 
