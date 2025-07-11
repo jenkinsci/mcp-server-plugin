@@ -27,6 +27,7 @@
 package io.jenkins.plugins.mcp.server.extensions;
 
 import hudson.Extension;
+import hudson.console.AnnotatedLargeText;
 import hudson.model.*;
 import io.jenkins.plugins.mcp.server.McpServerExtension;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
@@ -42,7 +43,7 @@ public class DefaultMcpServer implements McpServerExtension {
 
     @Tool(description = "Get a specific build or the last build of a Jenkins job")
     public Run getBuild(
-            @ToolParam(description = "Job full nam of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
+            @ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
             @Nullable
                     @ToolParam(
                             description = "Build number (optional, if not provided, returns the last build)",
@@ -119,5 +120,20 @@ public class DefaultMcpServer implements McpServerExtension {
         } else {
             return List.of();
         }
+    }
+
+    @Tool(description = "Retrieves the full log for a specific build of the last build of a Jenkins job")
+    public AnnotatedLargeText getBuildLog(
+            @ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
+            @ToolParam(description = "The build number (optional, if not provided, returns the last build)") String buildNumber) {
+        var job = Jenkins.get().getItemByFullName(jobFullName, Job.class);
+        if (job != null) {
+            if (buildNumber == null || buildNumber.isEmpty()) {
+                return job.getLastBuild().getLogText();
+            } else {
+                return job.getBuildByNumber(Integer.parseInt(buildNumber)).getLogText();
+            }
+        }
+        return null;
     }
 }
