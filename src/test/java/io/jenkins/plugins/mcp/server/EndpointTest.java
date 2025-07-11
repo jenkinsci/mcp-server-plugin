@@ -253,8 +253,8 @@ class EndpointTest {
                 .capabilities(McpSchema.ClientCapabilities.builder().build())
                 .build()) {
             client.initialize();
-            McpSchema.CallToolRequest request =
-                    new McpSchema.CallToolRequest("getBuildLogLength", Map.of("jobFullName", project.getFullName(), "length", 100, "offset", 0));
+            McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(
+                    "getBuildLogLength", Map.of("jobFullName", project.getFullName(), "length", 100, "offset", 0));
 
             var response = client.callTool(request);
             assertThat(response.isError()).isFalse();
@@ -286,8 +286,8 @@ class EndpointTest {
                 .capabilities(McpSchema.ClientCapabilities.builder().build())
                 .build()) {
             client.initialize();
-            McpSchema.CallToolRequest request =
-                    new McpSchema.CallToolRequest("getBuildLog", Map.of("jobFullName", project.getFullName(), "length", 100, "offset", 0));
+            McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(
+                    "getBuildLog", Map.of("jobFullName", project.getFullName(), "length", 100, "offset", 0));
 
             var response = client.callTool(request);
             assertThat(response.isError()).isFalse();
@@ -319,8 +319,8 @@ class EndpointTest {
                 .capabilities(McpSchema.ClientCapabilities.builder().build())
                 .build()) {
             client.initialize();
-            McpSchema.CallToolRequest request =
-                    new McpSchema.CallToolRequest("getBuildLog", Map.of("jobFullName", project.getFullName(), "length", 100, "offset", 1));
+            McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(
+                    "getBuildLog", Map.of("jobFullName", project.getFullName(), "length", 100, "offset", 1));
 
             var response = client.callTool(request);
             assertThat(response.isError()).isFalse();
@@ -352,8 +352,8 @@ class EndpointTest {
                 .capabilities(McpSchema.ClientCapabilities.builder().build())
                 .build()) {
             client.initialize();
-            McpSchema.CallToolRequest request =
-                    new McpSchema.CallToolRequest("getBuildLog", Map.of("jobFullName", project.getFullName(), "length", 3, "offset", 1));
+            McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(
+                    "getBuildLog", Map.of("jobFullName", project.getFullName(), "length", 3, "offset", 1));
 
             var response = client.callTool(request);
             assertThat(response.isError()).isFalse();
