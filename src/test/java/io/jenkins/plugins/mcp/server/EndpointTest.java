@@ -40,9 +40,13 @@ import io.modelcontextprotocol.spec.McpSchema;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.Map;
+import java.util.stream.Stream;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
@@ -268,8 +272,10 @@ class EndpointTest {
         }
     }
 
-    @Test
-    void testMcpToolCallGetBuildLog(JenkinsRule jenkins) throws Exception {
+    @ParameterizedTest
+    @MethodSource("buildLogTestParameters")
+    void testMcpToolCallGetBuildLog(int length, long offset, int expectedContentSize, JenkinsRule jenkins)
+            throws Exception {
         WorkflowJob project = jenkins.createProject(WorkflowJob.class, "demo-job");
         project.setDefinition(new CpsFlowDefinition("", true));
         var build = project.scheduleBuild2(0).get();
@@ -286,12 +292,13 @@ class EndpointTest {
                 .capabilities(McpSchema.ClientCapabilities.builder().build())
                 .build()) {
             client.initialize();
+
             McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(
-                    "getBuildLog", Map.of("jobFullName", project.getFullName(), "length", 100, "offset", 0));
+                    "getBuildLog", Map.of("jobFullName", project.getFullName(), "length", length, "offset", offset));
 
             var response = client.callTool(request);
             assertThat(response.isError()).isFalse();
-            assertThat(response.content()).hasSize(4);
+            assertThat(response.content()).hasSize(expectedContentSize);
             response.content().forEach(content -> {
                 assertThat(content.type()).isEqualTo("text");
                 assertThat(content).isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
@@ -301,70 +308,13 @@ class EndpointTest {
         }
     }
 
-    @Test
-    void testMcpToolCallGetBuildLogWithOffset(JenkinsRule jenkins) throws Exception {
-        WorkflowJob project = jenkins.createProject(WorkflowJob.class, "demo-job");
-        project.setDefinition(new CpsFlowDefinition("", true));
-        var build = project.scheduleBuild2(0).get();
-
-        var url = jenkins.getURL();
-        var baseUrl = url.toString();
-
-        var transport = HttpClientSseClientTransport.builder(baseUrl)
-                .sseEndpoint(MCP_SERVER_SSE)
-                .build();
-
-        try (var client = McpClient.sync(transport)
-                .requestTimeout(Duration.ofSeconds(500))
-                .capabilities(McpSchema.ClientCapabilities.builder().build())
-                .build()) {
-            client.initialize();
-            McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(
-                    "getBuildLog", Map.of("jobFullName", project.getFullName(), "length", 100, "offset", 1));
-
-            var response = client.callTool(request);
-            assertThat(response.isError()).isFalse();
-            assertThat(response.content()).hasSize(3);
-            response.content().forEach(content -> {
-                assertThat(content.type()).isEqualTo("text");
-                assertThat(content).isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
-                    assertThat(textContent.text()).isNotEmpty();
-                });
-            });
-        }
-    }
-
-    @Test
-    void testMcpToolCallGetBuildLogWithLimit(JenkinsRule jenkins) throws Exception {
-        WorkflowJob project = jenkins.createProject(WorkflowJob.class, "demo-job");
-        project.setDefinition(new CpsFlowDefinition("", true));
-        var build = project.scheduleBuild2(0).get();
-
-        var url = jenkins.getURL();
-        var baseUrl = url.toString();
-
-        var transport = HttpClientSseClientTransport.builder(baseUrl)
-                .sseEndpoint(MCP_SERVER_SSE)
-                .build();
-
-        try (var client = McpClient.sync(transport)
-                .requestTimeout(Duration.ofSeconds(500))
-                .capabilities(McpSchema.ClientCapabilities.builder().build())
-                .build()) {
-            client.initialize();
-            McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(
-                    "getBuildLog", Map.of("jobFullName", project.getFullName(), "length", 3, "offset", 1));
-
-            var response = client.callTool(request);
-            assertThat(response.isError()).isFalse();
-            assertThat(response.content()).hasSize(3);
-            response.content().forEach(content -> {
-                assertThat(content.type()).isEqualTo("text");
-                assertThat(content).isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
-                    assertThat(textContent.text()).isNotEmpty();
-                });
-            });
-        }
+    static Stream<Arguments> buildLogTestParameters() {
+        return Stream.of(
+                // length, offset, expectedContentSize
+                Arguments.of(100, 0, 4), // Original test case
+                Arguments.of(100, 1, 3), // With offset
+                Arguments.of(3, 1, 3) // With limit
+                );
     }
 
     @Test
