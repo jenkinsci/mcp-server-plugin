@@ -27,12 +27,12 @@
 package io.jenkins.plugins.mcp.server.extensions;
 
 import hudson.Extension;
-import hudson.console.AnnotatedLargeText;
 import hudson.model.*;
 import io.jenkins.plugins.mcp.server.McpServerExtension;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
 import jakarta.annotation.Nullable;
+import java.io.IOException;
 import java.util.Comparator;
 import java.util.List;
 import jenkins.model.Jenkins;
@@ -123,15 +123,17 @@ public class DefaultMcpServer implements McpServerExtension {
     }
 
     @Tool(description = "Retrieves the full log for a specific build of the last build of a Jenkins job")
-    public AnnotatedLargeText getBuildLog(
+    public List<String> getBuildLog(
             @ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
-            @ToolParam(description = "The build number (optional, if not provided, returns the last build)") String buildNumber) {
+            @ToolParam(description = "The build number (optional, if not provided, returns the last build)")
+                    String buildNumber)
+            throws IOException {
         var job = Jenkins.get().getItemByFullName(jobFullName, Job.class);
         if (job != null) {
             if (buildNumber == null || buildNumber.isEmpty()) {
-                return job.getLastBuild().getLogText();
+                return job.getLastBuild().getLog(Integer.MAX_VALUE);
             } else {
-                return job.getBuildByNumber(Integer.parseInt(buildNumber)).getLogText();
+                return job.getBuildByNumber(Integer.parseInt(buildNumber)).getLog(Integer.MAX_VALUE);
             }
         }
         return null;
