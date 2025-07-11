@@ -32,7 +32,10 @@ import io.jenkins.plugins.mcp.server.McpServerExtension;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
 import jakarta.annotation.Nullable;
+
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.Reader;
 import java.util.Comparator;
 import java.util.List;
 import jenkins.model.Jenkins;
@@ -122,18 +125,42 @@ public class DefaultMcpServer implements McpServerExtension {
         }
     }
 
-    @Tool(description = "Retrieves the full log for a specific build of the last build of a Jenkins job")
+    @Tool(description = "Retrieves the log length for a specific build or the last build of a Jenkins job")
+    public long getBuildLogLength(
+            @ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
+            @ToolParam(description = "The build number (optional, if not provided, returns the last build)")
+            String buildNumber) {
+        var job = Jenkins.get().getItemByFullName(jobFullName, Job.class);
+        if (job != null) {
+            try (BufferedReader reader = new BufferedReader((buildNumber == null || buildNumber.isEmpty())
+                    ? job.getLastBuild().getLogReader()
+                    : job.getBuildByNumber(Integer.parseInt(buildNumber)).getLogReader())) {
+
+                return reader.lines().count();
+            } catch (Exception e) {
+                return 0;
+            }
+        }
+        return 0;
+    }
+
+    @Tool(description = "Retrieves some log lines with pagination for a specific build or the last build of a Jenkins job")
     public List<String> getBuildLog(
             @ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
             @ToolParam(description = "The build number (optional, if not provided, returns the last build)")
-                    String buildNumber)
-            throws IOException {
+                    String buildNumber,
+            @ToolParam(description = "The number of lines to return (optional, if not provided, returns 100 lines)") int length,
+            @ToolParam(description = "The offset (optional, if not provided, returns the first line)") long offset) {
+        if (length == 0) length = 100;
         var job = Jenkins.get().getItemByFullName(jobFullName, Job.class);
         if (job != null) {
-            if (buildNumber == null || buildNumber.isEmpty()) {
-                return job.getLastBuild().getLog(Integer.MAX_VALUE);
-            } else {
-                return job.getBuildByNumber(Integer.parseInt(buildNumber)).getLog(Integer.MAX_VALUE);
+            try (BufferedReader reader = new BufferedReader((buildNumber == null || buildNumber.isEmpty())
+                    ? job.getLastBuild().getLogReader()
+                    : job.getBuildByNumber(Integer.parseInt(buildNumber)).getLogReader())) {
+
+                return reader.lines().skip(offset).limit(length).toList();
+            } catch (Exception e) {
+                return null;
             }
         }
         return null;

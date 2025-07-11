@@ -70,7 +70,8 @@ The plugin provides built-in tools through the `DefaultMcpServer` class:
 - `getJob`: Get a Jenkins job by its full path.
 - `getAllJobs`: Get a list of all Jenkins jobs.
 - `triggerBuild`: Trigger a build of a job.
-- `getBuildLogs`: Retrieves the full log for a specific build of the last build of a Jenkins job.
+- `getBuildLog`: Retrieves some log lines with pagination for a specific build or the last build of a Jenkins job.
+- `getBuildLogLength`: Retrieves the log length for a specific build or the last build of a Jenkins job.
 
 ### Extending MCP Capabilities
 
