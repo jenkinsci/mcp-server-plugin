@@ -42,7 +42,7 @@ public class DefaultMcpServer implements McpServerExtension {
 
     @Tool(description = "Get a specific build or the last build of a Jenkins job")
     public Run getBuild(
-            @ToolParam(description = "Job full nam of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
+            @ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
             @Nullable
                     @ToolParam(
                             description = "Build number (optional, if not provided, returns the last build)",
