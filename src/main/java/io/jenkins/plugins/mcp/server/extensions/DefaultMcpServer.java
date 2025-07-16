@@ -36,6 +36,7 @@ import java.util.Comparator;
 import java.util.List;
 import jenkins.model.Jenkins;
 import jenkins.model.ParameterizedJobMixIn;
+import lombok.SneakyThrows;
 
 @Extension
 public class DefaultMcpServer implements McpServerExtension {
@@ -47,13 +48,13 @@ public class DefaultMcpServer implements McpServerExtension {
                     @ToolParam(
                             description = "Build number (optional, if not provided, returns the last build)",
                             required = false)
-                    String buildNumber) {
+                    Integer buildNumber) {
         var job = Jenkins.get().getItemByFullName(jobFullName, Job.class);
         if (job != null) {
-            if (buildNumber == null || buildNumber.isEmpty()) {
+            if (buildNumber == null) {
                 return job.getLastBuild();
             } else {
-                return job.getBuildByNumber(Integer.parseInt(buildNumber));
+                return job.getBuildByNumber(buildNumber);
             }
         }
         return null;
@@ -119,5 +120,41 @@ public class DefaultMcpServer implements McpServerExtension {
         } else {
             return List.of();
         }
+    }
+
+    @Tool(description = "Update build display name and/or description")
+    @SneakyThrows
+    public boolean updateBuild(
+            @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
+            @Nullable
+                    @ToolParam(
+                            description = "Build number (optional, if not provided, updates the last build)",
+                            required = false)
+                    Integer buildNumber,
+            @Nullable @ToolParam(description = "New display name for the build", required = false) String displayName,
+            @Nullable @ToolParam(description = "New description for the build", required = false) String description) {
+        var job = Jenkins.get().getItemByFullName(jobFullName, Job.class);
+
+        Run build = null;
+        if (job != null) {
+            if (buildNumber == null) {
+                build = job.getLastBuild();
+            } else {
+                build = job.getBuildByNumber(buildNumber);
+            }
+        }
+        if (build == null) {
+            return false;
+        }
+        boolean updated = false;
+        if (displayName != null && !displayName.isEmpty()) {
+            build.setDisplayName(displayName);
+            updated = true;
+        }
+        if (description != null && !description.isEmpty()) {
+            build.setDescription(description);
+            updated = true;
+        }
+        return updated;
     }
 }
