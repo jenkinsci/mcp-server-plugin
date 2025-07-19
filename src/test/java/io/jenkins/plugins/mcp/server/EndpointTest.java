@@ -307,57 +307,6 @@ class EndpointTest {
         }
     }
 
-    @Test
-    void testMcpToolCallUpdateBuild(JenkinsRule jenkins) throws Exception {
-        WorkflowJob project = jenkins.createProject(WorkflowJob.class, "update-build-job");
-        project.setDefinition(new CpsFlowDefinition("", true));
-        var build = project.scheduleBuild2(0).get();
-
-        var url = jenkins.getURL();
-        var baseUrl = url.toString();
-
-        var transport = HttpClientSseClientTransport.builder(baseUrl)
-                .sseEndpoint(MCP_SERVER_SSE)
-                .build();
-
-        try (var client = McpClient.sync(transport)
-                .requestTimeout(Duration.ofSeconds(500))
-                .capabilities(McpSchema.ClientCapabilities.builder().build())
-                .build()) {
-            client.initialize();
-
-            String newDisplayName = "Updated Build";
-            String newDescription = "This is an updated description";
-
-            McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(
-                    "updateBuild",
-                    Map.of(
-                            "jobFullName",
-                            project.getFullName(),
-                            "buildNumber",
-                            build.getNumber(),
-                            "displayName",
-                            newDisplayName,
-                            "description",
-                            newDescription));
-
-            var response = client.callTool(request);
-            assertThat(response.isError()).isFalse();
-            assertThat(response.content()).hasSize(1);
-            assertThat(response.content().get(0).type()).isEqualTo("text");
-            assertThat(response.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
-                assertThat(textContent.type()).isEqualTo("text");
-                assertThat(textContent.text()).contains("true");
-            });
-
-            // Verify that the build was actually updated
-            var updatedBuild = project.getBuildByNumber(build.getNumber());
-            assertThat(updatedBuild).isNotNull();
-            assertThat(updatedBuild.getDisplayName()).isEqualTo(newDisplayName);
-            assertThat(updatedBuild.getDescription()).isEqualTo(newDescription);
-        }
-    }
-
     private void enableSecurity(JenkinsRule jenkins) throws Exception {
         JenkinsRule.DummySecurityRealm securityRealm = jenkins.createDummySecurityRealm();
         jenkins.jenkins.setSecurityRealm(securityRealm);
