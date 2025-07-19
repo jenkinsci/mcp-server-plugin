@@ -64,14 +64,26 @@ Example of using the token:
 
 ### Available Tools
 
-The plugin provides built-in tools through the `DefaultMcpServer` class:
+The plugin provides the following built-in tools for interacting with Jenkins:
 
-- `getBuild`: Retrieve a specific build or the last build of a Jenkins job.
+#### Job Management
 - `getJob`: Get a Jenkins job by its full path.
-- `getAllJobs`: Get a list of all Jenkins jobs.
+- `getJobs`: Get a paginated list of Jenkins jobs, sorted by name.
 - `triggerBuild`: Trigger a build of a job.
-- `getBuildLog`: Retrieves some log lines with pagination for a specific build or the last build of a Jenkins job.
 
+#### Build Information
+- `getBuild`: Retrieve a specific build or the last build of a Jenkins job.
+- `updateBuild`: Update build display name and/or description.
+- `getBuildLog`: Retrieve log lines with pagination for a specific build or the last build.
+
+#### SCM Integration
+- `getJobScm`: Retrieve SCM configurations of a Jenkins job.
+- `getBuildScm`: Retrieve SCM configurations of a specific build.
+- `getBuildChangeSets`: Retrieve change log sets of a specific build.
+
+Each tool accepts specific parameters to customize its behavior. For detailed usage instructions and parameter descriptions, refer to the API documentation or use the MCP introspection capabilities.
+
+To use these tools, connect to the MCP server endpoint and make tool calls using your MCP client implementation.
 ### Extending MCP Capabilities
 
 To add new MCP tools or functionalities:
