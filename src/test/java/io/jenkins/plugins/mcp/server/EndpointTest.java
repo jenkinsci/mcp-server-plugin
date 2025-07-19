@@ -307,8 +307,6 @@ class EndpointTest {
         }
     }
 
-
-
     private void enableSecurity(JenkinsRule jenkins) throws Exception {
         JenkinsRule.DummySecurityRealm securityRealm = jenkins.createDummySecurityRealm();
         jenkins.jenkins.setSecurityRealm(securityRealm);

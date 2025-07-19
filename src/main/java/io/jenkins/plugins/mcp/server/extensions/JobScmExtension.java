@@ -26,5 +26,98 @@
 
 package io.jenkins.plugins.mcp.server.extensions;
 
-public class JobScmExtension {
+import hudson.Extension;
+import hudson.model.Job;
+import hudson.model.Run;
+import io.jenkins.plugins.mcp.server.McpServerExtension;
+import io.jenkins.plugins.mcp.server.annotation.Tool;
+import io.jenkins.plugins.mcp.server.annotation.ToolParam;
+import io.jenkins.plugins.mcp.server.extensions.util.GitScmUtil;
+import jakarta.annotation.Nullable;
+import java.util.List;
+import java.util.Objects;
+import jenkins.model.Jenkins;
+import jenkins.scm.RunWithSCM;
+import jenkins.triggers.SCMTriggerItem;
+
+@Extension
+public class JobScmExtension implements McpServerExtension {
+
+    public static boolean isGitPluginInstalled() {
+        var gitPlugin = Jenkins.get().getPluginManager().getPlugin("git");
+        return gitPlugin != null && gitPlugin.isActive();
+    }
+
+    @Tool(description = "Retrieves scm configurations of a Jenkins job")
+    public List getJobScm(
+            @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName) {
+        var job = Jenkins.get().getItemByFullName(jobFullName, Job.class);
+        if (job instanceof SCMTriggerItem scmItem) {
+            return scmItem.getSCMs().stream()
+                    .map(scm -> {
+                        Object result = null;
+                        if (scm.getType().equals("hudson.plugins.git.GitSCM")) {
+                            result = GitScmUtil.extractGitScmInfo(scm);
+                        }
+                        return result;
+                    })
+                    .filter(Objects::nonNull)
+                    .toList();
+        }
+        return List.of();
+    }
+
+    @Tool(description = "Retrieves scm configurations of a Jenkins build")
+    public List getBuildScm(
+            @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
+            @Nullable
+                    @ToolParam(
+                            description = "Build number (optional, if not provided, updates the last build)",
+                            required = false)
+                    Integer buildNumber) {
+        var job = Jenkins.get().getItemByFullName(jobFullName, Job.class);
+
+        Run build = null;
+        if (job != null) {
+            if (buildNumber == null) {
+                build = job.getLastBuild();
+            } else {
+                build = job.getBuildByNumber(buildNumber);
+            }
+        }
+
+        if (build != null) {
+            if (isGitPluginInstalled()) {
+                return List.of(GitScmUtil.extractGitScmInfo(build));
+            }
+        }
+
+        return List.of();
+    }
+
+    @Tool(description = "Retrieves change log sets of a Jenkins build")
+    public List getBuildChangeSets(
+            @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
+            @Nullable
+                    @ToolParam(
+                            description = "Build number (optional, if not provided, updates the last build)",
+                            required = false)
+                    Integer buildNumber) {
+        var job = Jenkins.get().getItemByFullName(jobFullName, Job.class);
+
+        Run build = null;
+        if (job != null) {
+            if (buildNumber == null) {
+                build = job.getLastBuild();
+            } else {
+                build = job.getBuildByNumber(buildNumber);
+            }
+        }
+
+        if (build != null && build instanceof RunWithSCM runWithSCM) {
+            return runWithSCM.getChangeSets();
+        }
+
+        return List.of();
+    }
 }
