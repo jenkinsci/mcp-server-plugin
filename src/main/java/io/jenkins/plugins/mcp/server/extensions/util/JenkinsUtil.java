@@ -24,13 +24,26 @@
  *
  */
 
-package io.jenkins.plugins.mcp.server.extensions;
+package io.jenkins.plugins.mcp.server.extensions.util;
 
-import java.util.List;
+import hudson.model.Job;
+import hudson.model.Run;
+import jakarta.annotation.Nullable;
+import java.util.Optional;
+import jenkins.model.Jenkins;
+import lombok.NonNull;
 
-public record GitScmConfig(List<String> uris, List<String> branches, String commit) {
+public class JenkinsUtil {
 
-    public String getName() {
-        return "Git";
+    public static Optional<Run> getBuildByNumberOrLast(@NonNull String fullJobName, @Nullable Integer buildNumber) {
+        return Optional.of(Jenkins.get())
+                .map(jenkins -> jenkins.getItemByFullName(fullJobName, Job.class))
+                .map(job -> {
+                    if (buildNumber == null || buildNumber <= 0) {
+                        return job.getLastBuild();
+                    } else {
+                        return job.getBuildByNumber(buildNumber);
+                    }
+                });
     }
 }

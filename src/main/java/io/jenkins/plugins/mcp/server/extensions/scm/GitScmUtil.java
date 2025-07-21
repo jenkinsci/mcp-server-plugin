@@ -24,7 +24,7 @@
  *
  */
 
-package io.jenkins.plugins.mcp.server.extensions.util;
+package io.jenkins.plugins.mcp.server.extensions.scm;
 
 import hudson.model.Run;
 import hudson.plugins.git.Branch;
@@ -33,7 +33,6 @@ import hudson.plugins.git.GitSCM;
 import hudson.plugins.git.Revision;
 import hudson.plugins.git.util.BuildData;
 import hudson.scm.SCM;
-import io.jenkins.plugins.mcp.server.extensions.GitScmConfig;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Optional;
@@ -58,21 +57,23 @@ public class GitScmUtil {
     }
 
     public static GitScmConfig extractGitScmInfo(Run run) {
-        BuildData buildData = run.getAction(BuildData.class);
-        if (buildData != null) {
-            var branches =
-                    Optional.of(buildData).map(BuildData::getLastBuiltRevision).map(Revision::getBranches).stream()
-                            .flatMap(Collection::stream)
-                            .map(Branch::getName)
-                            .toList();
-            var commit = Optional.of(buildData)
-                    .map(BuildData::getLastBuiltRevision)
-                    .map(Revision::getSha1)
-                    .map(AnyObjectId::toString)
-                    .orElse(null);
-            return new GitScmConfig(new ArrayList<>(buildData.getRemoteUrls()), branches, commit);
-        } else {
-            return null;
-        }
+        return Optional.ofNullable(run.getAction(BuildData.class))
+                .map(
+                        buildData -> {
+                            var branches = Optional.of(buildData)
+                                    .map(BuildData::getLastBuiltRevision)
+                                    .map(Revision::getBranches)
+                                    .stream()
+                                    .flatMap(Collection::stream)
+                                    .map(Branch::getName)
+                                    .toList();
+                            var commit = Optional.of(buildData)
+                                    .map(BuildData::getLastBuiltRevision)
+                                    .map(Revision::getSha1)
+                                    .map(AnyObjectId::toString)
+                                    .orElse(null);
+                            return new GitScmConfig(new ArrayList<>(buildData.getRemoteUrls()), branches, commit);
+                        })
+                .orElse(null);
     }
 }

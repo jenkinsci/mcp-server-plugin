@@ -1,17 +1,18 @@
 package io.jenkins.plugins.mcp.server.extensions;
 
+import static io.jenkins.plugins.mcp.server.extensions.util.JenkinsUtil.getBuildByNumberOrLast;
+
 import hudson.Extension;
-import hudson.model.Job;
-import hudson.model.Run;
 import io.jenkins.plugins.mcp.server.McpServerExtension;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.util.List;
-import jenkins.model.Jenkins;
+import lombok.extern.slf4j.Slf4j;
 
 @Extension
+@Slf4j
 public class BuildLogsExtension implements McpServerExtension {
 
     @Tool(
@@ -38,43 +39,29 @@ public class BuildLogsExtension implements McpServerExtension {
             limit = 100;
         }
         if (skip == null) {
-            skip = 0l;
+            skip = 0L;
         }
-        var job = Jenkins.get().getItemByFullName(jobFullName, Job.class);
-        if (job == null) return null;
 
-        try (BufferedReader reader = getReader(buildNumber, job)) {
+        final int limitF = limit;
+        final long skipF = skip;
+        return getBuildByNumberOrLast(jobFullName, buildNumber)
+                .map(build -> {
+                    try (BufferedReader reader = new BufferedReader(build.getLogReader())) {
+                        List<String> allLines = reader.lines().toList();
+                        long actualOffset = skipF;
+                        if (skipF < 0) actualOffset = Math.max(0, allLines.size() + skipF);
+                        int endIndex = (int) Math.min(actualOffset + limitF, allLines.size());
+                        var lines = allLines.subList((int) actualOffset, endIndex);
+                        boolean hasMoreContent = endIndex < allLines.size();
+                        return new BuildLogResponse(hasMoreContent, lines);
 
-            if (reader == null) {
-                return null;
-            }
-
-            List<String> allLines = reader.lines().toList();
-            long actualOffset = skip;
-            if (skip < 0) actualOffset = Math.max(0, allLines.size() + skip);
-            int endIndex = (int) Math.min(actualOffset + limit, allLines.size());
-            var lines = allLines.subList((int) actualOffset, endIndex);
-            boolean hasMoreContent = endIndex < allLines.size();
-            return new BuildLogResponse(hasMoreContent, lines);
-
-        } catch (IOException e) {
-            return null;
-        }
+                    } catch (IOException e) {
+                        log.error("Error reading log for job {} build {}", jobFullName, buildNumber, e);
+                        return null;
+                    }
+                })
+                .orElse(null);
     }
 
     record BuildLogResponse(boolean hasMoreContent, List<String> lines) {}
-
-    private static BufferedReader getReader(Integer buildNumber, Job job) throws IOException {
-        Run build;
-        if (buildNumber == null || buildNumber <= 0) {
-            build = job.getLastBuild();
-        } else {
-            build = job.getBuildByNumber(buildNumber);
-        }
-        if (build != null && build.getLogReader() != null) {
-            return new BufferedReader(build.getLogReader());
-        } else {
-            return null;
-        }
-    }
 }

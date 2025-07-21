@@ -24,7 +24,13 @@
  *
  */
 
-package io.jenkins.plugins.mcp.server.extensions;
+package io.jenkins.plugins.mcp.server.extensions.scm;
 
-public class EndPointTest {
+import java.util.List;
+
+public record GitScmConfig(List<String> uris, List<String> branches, String commit) {
+
+    public String getName() {
+        return "Git";
+    }
 }

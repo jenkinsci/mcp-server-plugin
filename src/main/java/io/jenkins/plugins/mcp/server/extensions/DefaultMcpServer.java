@@ -26,6 +26,8 @@
 
 package io.jenkins.plugins.mcp.server.extensions;
 
+import static io.jenkins.plugins.mcp.server.extensions.util.JenkinsUtil.getBuildByNumberOrLast;
+
 import hudson.Extension;
 import hudson.model.*;
 import io.jenkins.plugins.mcp.server.McpServerExtension;
@@ -49,15 +51,7 @@ public class DefaultMcpServer implements McpServerExtension {
                             description = "Build number (optional, if not provided, returns the last build)",
                             required = false)
                     Integer buildNumber) {
-        var job = Jenkins.get().getItemByFullName(jobFullName, Job.class);
-        if (job != null) {
-            if (buildNumber == null) {
-                return job.getLastBuild();
-            } else {
-                return job.getBuildByNumber(buildNumber);
-            }
-        }
-        return null;
+        return getBuildByNumberOrLast(jobFullName, buildNumber).orElse(null);
     }
 
     @Tool(description = "Get a Jenkins job by its full path")
@@ -133,28 +127,21 @@ public class DefaultMcpServer implements McpServerExtension {
                     Integer buildNumber,
             @Nullable @ToolParam(description = "New display name for the build", required = false) String displayName,
             @Nullable @ToolParam(description = "New description for the build", required = false) String description) {
-        var job = Jenkins.get().getItemByFullName(jobFullName, Job.class);
 
-        Run build = null;
-        if (job != null) {
-            if (buildNumber == null) {
-                build = job.getLastBuild();
-            } else {
-                build = job.getBuildByNumber(buildNumber);
+        var optBuild = getBuildByNumberOrLast(jobFullName, buildNumber);
+        boolean updated = false;
+        if (optBuild.isPresent()) {
+            var build = optBuild.get();
+            if (displayName != null && !displayName.isEmpty()) {
+                build.setDisplayName(displayName);
+                updated = true;
+            }
+            if (description != null && !description.isEmpty()) {
+                build.setDescription(description);
+                updated = true;
             }
         }
-        if (build == null) {
-            return false;
-        }
-        boolean updated = false;
-        if (displayName != null && !displayName.isEmpty()) {
-            build.setDisplayName(displayName);
-            updated = true;
-        }
-        if (description != null && !description.isEmpty()) {
-            build.setDescription(description);
-            updated = true;
-        }
+
         return updated;
     }
 }

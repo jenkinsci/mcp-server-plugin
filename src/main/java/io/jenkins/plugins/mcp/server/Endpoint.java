@@ -1,26 +1,26 @@
 /*
  *
- *  * The MIT License
- *  *
- *  * Copyright (c) 2025, Gong Yi.
- *  *
- *  * Permission is hereby granted, free of charge, to any person obtaining a copy
- *  * of this software and associated documentation files (the "Software"), to deal
- *  * in the Software without restriction, including without limitation the rights
- *  * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- *  * copies of the Software, and to permit persons to whom the Software is
- *  * furnished to do so, subject to the following conditions:
- *  *
- *  * The above copyright notice and this permission notice shall be included in
- *  * all copies or substantial portions of the Software.
- *  *
- *  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- *  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- *  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- *  * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- *  * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- *  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
- *  * THE SOFTWARE.
+ * The MIT License
+ *
+ * Copyright (c) 2025, Gong Yi.
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
  *
  */
 
@@ -48,6 +48,7 @@ import java.io.PrintWriter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
 import org.slf4j.Logger;
@@ -128,7 +129,7 @@ public class Endpoint extends CrumbExclusion implements RootAction, McpServerTra
         }
         if (requestedResource.startsWith("/" + MCP_SERVER_SSE)
                 && request.getMethod().equalsIgnoreCase("POST")) {
-            response.sendError(HttpServletResponse.SC_NOT_ACCEPTABLE);
+            response.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
             return true;
         }
         return false;
@@ -225,23 +226,7 @@ public class Endpoint extends CrumbExclusion implements RootAction, McpServerTra
      */
     @Override
     public Mono<Void> notifyClients(String method, Object params) {
-        if (sessions.isEmpty()) {
-            logger.debug("No active sessions to broadcast message to");
-            return Mono.empty();
-        }
-
-        logger.debug("Attempting to broadcast message to {} active sessions", sessions.size());
-
-        return Flux.fromIterable(sessions.values())
-                .flatMap(sessionObject -> sessionObject
-                        .session
-                        .sendNotification(method, params)
-                        .doOnError(e -> logger.error(
-                                "Failed to send message to session {}: {}",
-                                sessionObject.session.getId(),
-                                e.getMessage()))
-                        .onErrorComplete())
-                .then();
+        throw new UnsupportedOperationException("Not implemented for MCP server");
     }
 
     boolean isSSERequest(ServletRequest servletRequest, ServletResponse servletResponse) {
@@ -381,10 +366,11 @@ public class Endpoint extends CrumbExclusion implements RootAction, McpServerTra
             sessionObject.session.handle(message).block(); // Block for Servlet compatibility
 
             response.setStatus(HttpServletResponse.SC_OK);
-        } catch (Exception e) {
-            logger.error("Error processing message: {}", e.getMessage());
+        } catch (Throwable e) {
+            var rootCauseMessage = ExceptionUtils.getRootCauseMessage(e);
+            logger.error("Error processing message: {}", rootCauseMessage);
             try {
-                McpError mcpError = new McpError(e.getMessage());
+                McpError mcpError = new McpError(rootCauseMessage);
                 response.setContentType(APPLICATION_JSON);
                 response.setCharacterEncoding(UTF_8);
                 response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
@@ -394,7 +380,6 @@ public class Endpoint extends CrumbExclusion implements RootAction, McpServerTra
                 writer.flush();
             } catch (IOException ex) {
                 logger.error(FAILED_TO_SEND_ERROR_RESPONSE, ex.getMessage());
-                response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Error processing message");
             }
         }
     }

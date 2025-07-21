@@ -26,13 +26,14 @@
 
 package io.jenkins.plugins.mcp.server.extensions;
 
+import static io.jenkins.plugins.mcp.server.extensions.util.JenkinsUtil.getBuildByNumberOrLast;
+
 import hudson.Extension;
 import hudson.model.Job;
-import hudson.model.Run;
 import io.jenkins.plugins.mcp.server.McpServerExtension;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
-import io.jenkins.plugins.mcp.server.extensions.util.GitScmUtil;
+import io.jenkins.plugins.mcp.server.extensions.scm.GitScmUtil;
 import jakarta.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
@@ -75,24 +76,14 @@ public class JobScmExtension implements McpServerExtension {
                             description = "Build number (optional, if not provided, updates the last build)",
                             required = false)
                     Integer buildNumber) {
-        var job = Jenkins.get().getItemByFullName(jobFullName, Job.class);
-
-        Run build = null;
-        if (job != null) {
-            if (buildNumber == null) {
-                build = job.getLastBuild();
-            } else {
-                build = job.getBuildByNumber(buildNumber);
-            }
-        }
-
-        if (build != null) {
-            if (isGitPluginInstalled()) {
-                return List.of(GitScmUtil.extractGitScmInfo(build));
-            }
-        }
-
-        return List.of();
+        return getBuildByNumberOrLast(jobFullName, buildNumber)
+                .map(build -> {
+                    if (isGitPluginInstalled()) {
+                        return List.of(GitScmUtil.extractGitScmInfo(build));
+                    }
+                    return List.of();
+                })
+                .orElse(List.of());
     }
 
     @Tool(description = "Retrieves change log sets of a Jenkins build")
@@ -103,21 +94,11 @@ public class JobScmExtension implements McpServerExtension {
                             description = "Build number (optional, if not provided, updates the last build)",
                             required = false)
                     Integer buildNumber) {
-        var job = Jenkins.get().getItemByFullName(jobFullName, Job.class);
 
-        Run build = null;
-        if (job != null) {
-            if (buildNumber == null) {
-                build = job.getLastBuild();
-            } else {
-                build = job.getBuildByNumber(buildNumber);
-            }
-        }
-
-        if (build != null && build instanceof RunWithSCM runWithSCM) {
-            return runWithSCM.getChangeSets();
-        }
-
-        return List.of();
+        return getBuildByNumberOrLast(jobFullName, buildNumber)
+                .filter(RunWithSCM.class::isInstance)
+                .map(RunWithSCM.class::cast)
+                .map(RunWithSCM::getChangeSets)
+                .orElse(List.of());
     }
 }

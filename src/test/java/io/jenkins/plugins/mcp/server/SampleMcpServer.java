@@ -42,4 +42,9 @@ public class SampleMcpServer implements McpServerExtension {
     public int testInt() {
         return 10;
     }
+
+    @Tool
+    public int testWithError() {
+        throw new IllegalArgumentException("Error occurred during execution");
+    }
 }

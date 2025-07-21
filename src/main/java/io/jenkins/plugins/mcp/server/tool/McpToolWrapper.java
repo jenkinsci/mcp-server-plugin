@@ -56,6 +56,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
@@ -242,7 +243,6 @@ public class McpToolWrapper {
     }
 
     McpSchema.CallToolResult call(McpSyncServerExchange exchange, Map<String, Object> args) {
-
         var oldUser = User.current();
         try {
             String userId = (String) args.get("userId");
@@ -265,9 +265,13 @@ public class McpToolWrapper {
             var result = method.invoke(target, methodArgs);
             return toMcpResult(result);
         } catch (Exception e) {
+            var rootCauseMessage = ExceptionUtils.getRootCauseMessage(e);
+            if (rootCauseMessage.isEmpty()) {
+                rootCauseMessage = "Error invoking method: " + method.getName();
+            }
             return McpSchema.CallToolResult.builder()
-                    .addTextContent(e.getMessage())
                     .isError(true)
+                    .addTextContent(rootCauseMessage)
                     .build();
         } finally {
             ACL.as(oldUser);
