@@ -24,14 +24,26 @@
  *
  */
 
-package io.jenkins.plugins.mcp.server.jackson;
+package io.jenkins.plugins.mcp.server.extensions.util;
 
-import com.fasterxml.jackson.databind.module.SimpleModule;
+import hudson.model.Job;
+import hudson.model.Run;
+import jakarta.annotation.Nullable;
+import java.util.Optional;
+import jenkins.model.Jenkins;
+import lombok.NonNull;
 
-public class JenkinsExportedBeanModule extends SimpleModule {
+public class JenkinsUtil {
 
-    @Override
-    public void setupModule(SetupContext context) {
-        context.addBeanSerializerModifier(new JenkinsExportedBeanSerializerModifier());
+    public static Optional<Run> getBuildByNumberOrLast(@NonNull String fullJobName, @Nullable Integer buildNumber) {
+        return Optional.of(Jenkins.get())
+                .map(jenkins -> jenkins.getItemByFullName(fullJobName, Job.class))
+                .map(job -> {
+                    if (buildNumber == null || buildNumber <= 0) {
+                        return job.getLastBuild();
+                    } else {
+                        return job.getBuildByNumber(buildNumber);
+                    }
+                });
     }
 }

@@ -24,14 +24,13 @@
  *
  */
 
-package io.jenkins.plugins.mcp.server.jackson;
+package io.jenkins.plugins.mcp.server.extensions.scm;
 
-import com.fasterxml.jackson.databind.module.SimpleModule;
+import java.util.List;
 
-public class JenkinsExportedBeanModule extends SimpleModule {
+public record GitScmConfig(List<String> uris, List<String> branches, String commit) {
 
-    @Override
-    public void setupModule(SetupContext context) {
-        context.addBeanSerializerModifier(new JenkinsExportedBeanSerializerModifier());
+    public String getName() {
+        return "Git";
     }
 }
