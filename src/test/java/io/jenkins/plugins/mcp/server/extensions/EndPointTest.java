@@ -24,14 +24,7 @@
  *
  */
 
-package io.jenkins.plugins.mcp.server.jackson;
+package io.jenkins.plugins.mcp.server.extensions;
 
-import com.fasterxml.jackson.databind.module.SimpleModule;
-
-public class JenkinsExportedBeanModule extends SimpleModule {
-
-    @Override
-    public void setupModule(SetupContext context) {
-        context.addBeanSerializerModifier(new JenkinsExportedBeanSerializerModifier());
-    }
+public class EndPointTest {
 }
