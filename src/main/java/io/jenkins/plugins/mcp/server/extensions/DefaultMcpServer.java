@@ -79,7 +79,7 @@ public class DefaultMcpServer implements McpServerExtension {
                             description =
                                     "The full path of the Jenkins folder (e.g., 'folder'), if not specified, it returns the items under root",
                             required = false)
-                    String parentFllName,
+                    String parentFullName,
             @ToolParam(
                             description = "The 0 based started index, if not specified, then start from the first (0)",
                             required = false)
@@ -97,10 +97,10 @@ public class DefaultMcpServer implements McpServerExtension {
             limit = 10;
         }
         ItemGroup parent = null;
-        if (parentFllName == null || parentFllName.isEmpty()) {
+        if (parentFullName == null || parentFullName.isEmpty()) {
             parent = Jenkins.get();
         } else {
-            var fullNameItem = Jenkins.get().getItemByFullName(parentFllName, AbstractItem.class);
+            var fullNameItem = Jenkins.get().getItemByFullName(parentFullName, AbstractItem.class);
             if (fullNameItem instanceof ItemGroup) {
                 parent = (ItemGroup) fullNameItem;
             }
