@@ -70,7 +70,22 @@ The plugin provides the following built-in tools for interacting with Jenkins:
 - `getJob`: Get a Jenkins job by its full path.
 - `getJobs`: Get a paginated list of Jenkins jobs, sorted by name.
 - `triggerBuild`: Trigger a build of a job.
+  This tool supports parameterized builds. You can provide parameters as a JSON object where each key is the parameter name. For example:
 
+  ```json
+  {
+    "jobFullName": "my-job",
+    "parameters": {
+      "BRANCH": "main",
+      "DEBUG_MODE": "true"
+    }
+  }
+  ```
+  Note on Parameters:
+  - Only built-in parameter types in core Jenkins are fully supported.
+  - Unsupported parameter types will be ignored and set as null in the pipeline.
+  - File parameters are not currently supported.
+  - If you encounter a parameter type from a Jenkins plugin that is not supported, please create an issue in our repository.
 #### Build Information
 - `getBuild`: Retrieve a specific build or the last build of a Jenkins job.
 - `updateBuild`: Update build display name and/or description.
