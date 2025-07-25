@@ -191,7 +191,7 @@ class DefaultMcpServerTest {
             client.initialize();
             {
                 McpSchema.CallToolRequest request =
-                        new McpSchema.CallToolRequest("getJobs", Map.of("parentFllName", "test", "limit", 10));
+                        new McpSchema.CallToolRequest("getJobs", Map.of("parentFullName", "test", "limit", 10));
 
                 var response = client.callTool(request);
                 assertThat(response.isError()).isFalse();
