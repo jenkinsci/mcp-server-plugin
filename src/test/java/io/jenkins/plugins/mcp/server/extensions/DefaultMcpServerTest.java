@@ -33,12 +33,18 @@ import static org.awaitility.Awaitility.await;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import hudson.model.BooleanParameterDefinition;
+import hudson.model.ChoiceParameterDefinition;
+import hudson.model.ParametersDefinitionProperty;
+import hudson.model.Result;
+import hudson.model.StringParameterDefinition;
 import hudson.security.FullControlOnceLoggedInAuthorizationStrategy;
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.transport.HttpClientSseClientTransport;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.time.Duration;
 import java.util.Base64;
+import java.util.List;
 import java.util.Map;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
@@ -121,8 +127,104 @@ class DefaultMcpServerTest {
         }
         await().atMost(5, SECONDS)
                 .untilAsserted(
-                        () -> assertThat(jenkins.jenkins.getQueue().isEmpty()).isTrue());
+                        () -> assertThat(project.getLastBuild().getResult()).isEqualTo(Result.SUCCESS));
         assertThat(project.getLastBuild().getNumber()).isEqualTo(nextNumber);
+    }
+
+    @Test
+    void testMcpToolCallTriggerBuildWithParameters(JenkinsRule jenkins) throws Exception {
+        WorkflowJob project = jenkins.createProject(WorkflowJob.class, "demo-job");
+        project.addProperty(new ParametersDefinitionProperty(
+                new StringParameterDefinition("STRING_P", "default1", "Parameter 1"),
+                new BooleanParameterDefinition("BOOLEAN_P", false, "Parameter 2"),
+                new ChoiceParameterDefinition("CHOICE_P", new String[] {"option1", "option2"}, "Parameter 3")));
+
+        project.setDefinition(
+                new CpsFlowDefinition("echo env.STRING_P \n" + "echo env.BOOLEAN_P \n" + "echo env.CHOICE_P", true));
+        var nextNumber = project.getNextBuildNumber();
+
+        var url = jenkins.getURL();
+        var baseUrl = url.toString();
+
+        var transport = HttpClientSseClientTransport.builder(baseUrl)
+                .sseEndpoint(MCP_SERVER_SSE)
+                .build();
+
+        try (var client = McpClient.sync(transport)
+                .requestTimeout(Duration.ofSeconds(500))
+                .capabilities(McpSchema.ClientCapabilities.builder().build())
+                .build()) {
+            client.initialize();
+            McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(
+                    "triggerBuild",
+                    Map.of(
+                            "jobFullName",
+                            project.getFullName(),
+                            "parameters",
+                            Map.of("STRING_P", "string_value", "BOOLEAN_P", false, "CHOICE_P", "option2")));
+
+            var response = client.callTool(request);
+            assertThat(response.isError()).isFalse();
+            assertThat(response.content()).hasSize(1);
+            assertThat(response.content().get(0).type()).isEqualTo("text");
+            assertThat(response.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                assertThat(textContent.type()).isEqualTo("text");
+                assertThat(textContent.text()).contains("true");
+            });
+        }
+        await().atMost(5, SECONDS)
+                .untilAsserted(
+                        () -> assertThat(project.getLastBuild().getResult()).isEqualTo(Result.SUCCESS));
+        assertThat(project.getLastBuild().getNumber()).isEqualTo(nextNumber);
+        assertThat(project.getLastBuild().getLog()).contains(List.of("string_value", "false", "option2"));
+    }
+
+    @Test
+    void testMcpToolCallTriggerBuildWithPartialParameters(JenkinsRule jenkins) throws Exception {
+        WorkflowJob project = jenkins.createProject(WorkflowJob.class, "demo-job");
+        project.addProperty(new ParametersDefinitionProperty(
+                new StringParameterDefinition("STRING_P", "default1", "Parameter 1"),
+                new BooleanParameterDefinition("BOOLEAN_P", false, "Parameter 2"),
+                new ChoiceParameterDefinition("CHOICE_P", new String[] {"option1", "option2"}, "Parameter 3")));
+
+        project.setDefinition(
+                new CpsFlowDefinition("echo env.STRING_P \n" + "echo env.BOOLEAN_P \n" + "echo env.CHOICE_P", true));
+        var nextNumber = project.getNextBuildNumber();
+
+        var url = jenkins.getURL();
+        var baseUrl = url.toString();
+
+        var transport = HttpClientSseClientTransport.builder(baseUrl)
+                .sseEndpoint(MCP_SERVER_SSE)
+                .build();
+
+        try (var client = McpClient.sync(transport)
+                .requestTimeout(Duration.ofSeconds(500))
+                .capabilities(McpSchema.ClientCapabilities.builder().build())
+                .build()) {
+            client.initialize();
+            McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(
+                    "triggerBuild",
+                    Map.of(
+                            "jobFullName",
+                            project.getFullName(),
+                            "parameters",
+                            Map.of("BOOLEAN_P", false, "CHOICE_P", "option2")));
+
+            var response = client.callTool(request);
+            assertThat(response.isError()).isFalse();
+            assertThat(response.content()).hasSize(1);
+            assertThat(response.content().get(0).type()).isEqualTo("text");
+            assertThat(response.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                assertThat(textContent.type()).isEqualTo("text");
+                assertThat(textContent.text()).contains("true");
+            });
+        }
+        await().atMost(5, SECONDS)
+                .untilAsserted(
+                        () -> assertThat(project.getLastBuild().getResult()).isEqualTo(Result.SUCCESS));
+        assertThat(project.getLastBuild().getNumber()).isEqualTo(nextNumber);
+        assertThat(project.getLastBuild().getLog()).contains(List.of("default1", "false", "option2"));
     }
 
     @Test
