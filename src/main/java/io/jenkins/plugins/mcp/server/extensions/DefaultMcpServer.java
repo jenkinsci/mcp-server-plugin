@@ -29,18 +29,29 @@ package io.jenkins.plugins.mcp.server.extensions;
 import static io.jenkins.plugins.mcp.server.extensions.util.JenkinsUtil.getBuildByNumberOrLast;
 
 import hudson.Extension;
-import hudson.model.*;
+import hudson.model.AbstractItem;
+import hudson.model.Item;
+import hudson.model.ItemGroup;
+import hudson.model.Job;
+import hudson.model.ParametersAction;
+import hudson.model.ParametersDefinitionProperty;
+import hudson.model.Run;
+import hudson.model.SimpleParameterDefinition;
 import io.jenkins.plugins.mcp.server.McpServerExtension;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
 import jakarta.annotation.Nullable;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import jenkins.model.Jenkins;
 import jenkins.model.ParameterizedJobMixIn;
 import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 
 @Extension
+@Slf4j
 public class DefaultMcpServer implements McpServerExtension {
 
     @Tool(description = "Get a specific build or the last build of a Jenkins job")
@@ -62,10 +73,37 @@ public class DefaultMcpServer implements McpServerExtension {
 
     @Tool(description = "Trigger a build for a Jenkins job")
     public boolean triggerBuild(
-            @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName) {
+            @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
+            @ToolParam(description = "Build parameters (optional, e.g., {key1=value1,key2=value2})", required = false)
+                    Map<String, Object> parameters) {
         var job = Jenkins.get().getItemByFullName(jobFullName, ParameterizedJobMixIn.ParameterizedJob.class);
+
         if (job != null) {
-            job.scheduleBuild2(0);
+            if (job.isParameterized() && job instanceof Job j) {
+                ParametersDefinitionProperty parametersDefinition =
+                        (ParametersDefinitionProperty) j.getProperty(ParametersDefinitionProperty.class);
+                var parameterValues = parametersDefinition.getParameterDefinitions().stream()
+                        .map(param -> {
+                            if (param instanceof SimpleParameterDefinition sd) {
+                                if (parameters != null && parameters.containsKey(param.getName())) {
+                                    var value = parameters.get(param.getName());
+                                    return sd.createValue(String.valueOf(value));
+                                } else {
+                                    return sd.getDefaultParameterValue();
+                                }
+                            } else {
+                                log.warn(
+                                        "Unsupported parameter type: {}",
+                                        param.getClass().getName());
+                                return null;
+                            }
+                        })
+                        .filter(Objects::nonNull)
+                        .toList();
+                job.scheduleBuild2(0, new ParametersAction(parameterValues));
+            } else {
+                job.scheduleBuild2(0);
+            }
             return true;
         }
         return false;
