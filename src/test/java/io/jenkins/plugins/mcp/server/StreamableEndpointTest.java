@@ -40,6 +40,8 @@ import java.time.Duration;
 import java.util.Map;
 import org.htmlunit.HttpMethod;
 import org.htmlunit.WebRequest;
+import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
+import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.junit.jupiter.api.Test;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
@@ -166,22 +168,23 @@ public class StreamableEndpointTest {
         var url = jenkins.getURL();
         var baseUrl = url.toString();
         var streamableUrl = baseUrl + MCP_SERVER_MCP;
-        JenkinsRule.WebClient webClient = jenkins.createWebClient();
+        try (JenkinsRule.WebClient webClient = jenkins.createWebClient()) {
 
-        // Test that GET without proper headers returns error
-        var getRequest = new WebRequest(new URL(streamableUrl), HttpMethod.GET);
-        var getResponse = webClient.loadWebResponse(getRequest);
-        assertThat(getResponse.getStatusCode()).isEqualTo(HttpServletResponse.SC_BAD_REQUEST);
+            // Test that GET without proper headers returns error
+            var getRequest = new WebRequest(new URL(streamableUrl), HttpMethod.GET);
+            var getResponse = webClient.loadWebResponse(getRequest);
+            assertThat(getResponse.getStatusCode()).isEqualTo(HttpServletResponse.SC_BAD_REQUEST);
 
-        // Test that PUT is not allowed
-        var putRequest = new WebRequest(new URL(streamableUrl), HttpMethod.PUT);
-        var putResponse = webClient.loadWebResponse(putRequest);
-        assertThat(putResponse.getStatusCode()).isEqualTo(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+            // Test that PUT is not allowed
+            var putRequest = new WebRequest(new URL(streamableUrl), HttpMethod.PUT);
+            var putResponse = webClient.loadWebResponse(putRequest);
+            assertThat(putResponse.getStatusCode()).isEqualTo(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
 
-        // Test that DELETE is not allowed
-        var deleteRequest = new WebRequest(new URL(streamableUrl), HttpMethod.DELETE);
-        var deleteResponse = webClient.loadWebResponse(deleteRequest);
-        assertThat(deleteResponse.getStatusCode()).isEqualTo(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+            // Test that DELETE is not allowed
+            var deleteRequest = new WebRequest(new URL(streamableUrl), HttpMethod.DELETE);
+            var deleteResponse = webClient.loadWebResponse(deleteRequest);
+            assertThat(deleteResponse.getStatusCode()).isEqualTo(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+        }
     }
 
     @Test
@@ -189,22 +192,30 @@ public class StreamableEndpointTest {
         var url = jenkins.getURL();
         var baseUrl = url.toString();
         var streamableUrl = baseUrl + MCP_SERVER_MCP;
-        JenkinsRule.WebClient webClient = jenkins.createWebClient();
+        try (JenkinsRule.WebClient webClient = jenkins.createWebClient()) {
 
-        // Test POST without proper Accept headers
-        var postRequest = new WebRequest(new URL(streamableUrl), HttpMethod.POST);
-        postRequest.setAdditionalHeader("Content-Type", "application/json");
-        var postResponse = webClient.loadWebResponse(postRequest);
-        assertThat(postResponse.getStatusCode()).isEqualTo(HttpServletResponse.SC_BAD_REQUEST);
+            // Test POST without proper Accept headers
+            var postRequest = new WebRequest(new URL(streamableUrl), HttpMethod.POST);
+            postRequest.setAdditionalHeader("Content-Type", "application/json");
+            var postResponse = webClient.loadWebResponse(postRequest);
+            assertThat(postResponse.getStatusCode()).isEqualTo(HttpServletResponse.SC_BAD_REQUEST);
 
-        // Test GET without proper Accept headers
-        var getRequest = new WebRequest(new URL(streamableUrl), HttpMethod.GET);
-        var getResponse = webClient.loadWebResponse(getRequest);
-        assertThat(getResponse.getStatusCode()).isEqualTo(HttpServletResponse.SC_BAD_REQUEST);
+            // Test GET without proper Accept headers
+            var getRequest = new WebRequest(new URL(streamableUrl), HttpMethod.GET);
+            var getResponse = webClient.loadWebResponse(getRequest);
+            assertThat(getResponse.getStatusCode()).isEqualTo(HttpServletResponse.SC_BAD_REQUEST);
+        }
     }
 
     @Test
     void testStreamableJenkinsToolCalls(JenkinsRule jenkins) throws Exception {
+
+        WorkflowJob project = jenkins.createProject(WorkflowJob.class, "demo-job-1");
+        project.setDefinition(new CpsFlowDefinition("", true));
+
+        project = jenkins.createProject(WorkflowJob.class, "demo-job-2");
+        project.setDefinition(new CpsFlowDefinition("", true));
+
         var url = jenkins.getURL();
         var baseUrl = url.toString();
 
@@ -223,13 +234,15 @@ public class StreamableEndpointTest {
             McpSchema.CallToolRequest getJobsRequest = new McpSchema.CallToolRequest("getJobs", Map.of("limit", 5));
             var getJobsResponse = client.callTool(getJobsRequest);
             assertThat(getJobsResponse.isError()).isFalse();
-            assertThat(getJobsResponse.content()).hasSize(1);
+            assertThat(getJobsResponse.content()).hasSize(2);
             assertThat(getJobsResponse.content().get(0).type()).isEqualTo("text");
 
             // Test that the response contains valid JSON (even if empty list)
-            assertThat(getJobsResponse.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
-                assertThat(textContent.text()).startsWith("[").endsWith("]"); // Should be JSON array
-            });
+            assertThat(getJobsResponse.content())
+                    .first()
+                    .isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                        assertThat(textContent.text()).startsWith("{").endsWith("}");
+                    });
         }
     }
 
@@ -248,13 +261,13 @@ public class StreamableEndpointTest {
 
         // Test that multiple clients can connect simultaneously
         try (var client1 = McpClient.sync(transport1)
-                .requestTimeout(Duration.ofSeconds(500))
-                .capabilities(McpSchema.ClientCapabilities.builder().build())
-                .build();
-             var client2 = McpClient.sync(transport2)
-                .requestTimeout(Duration.ofSeconds(500))
-                .capabilities(McpSchema.ClientCapabilities.builder().build())
-                .build()) {
+                        .requestTimeout(Duration.ofSeconds(500))
+                        .capabilities(McpSchema.ClientCapabilities.builder().build())
+                        .build();
+                var client2 = McpClient.sync(transport2)
+                        .requestTimeout(Duration.ofSeconds(500))
+                        .capabilities(McpSchema.ClientCapabilities.builder().build())
+                        .build()) {
 
             client1.initialize();
             client2.initialize();

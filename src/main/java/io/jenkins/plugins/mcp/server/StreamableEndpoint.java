@@ -44,6 +44,7 @@ import java.io.PrintWriter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.apache.commons.lang3.StringUtils;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
 import org.slf4j.Logger;
@@ -140,7 +141,8 @@ public class StreamableEndpoint extends CrumbExclusion implements McpStreamableS
                         throws IOException, ServletException {
                     if (isStreamableRequest(servletRequest, servletResponse)) {
                         // Handle streamable requests through the process method
-                        if (servletRequest instanceof HttpServletRequest request && servletResponse instanceof HttpServletResponse response) {
+                        if (servletRequest instanceof HttpServletRequest request
+                                && servletResponse instanceof HttpServletResponse response) {
                             if (!process(request, response, filterChain)) {
                                 filterChain.doFilter(servletRequest, servletResponse);
                             }
@@ -180,17 +182,25 @@ public class StreamableEndpoint extends CrumbExclusion implements McpStreamableS
         return "2025-03-26";
     }
 
+    private static final List<String> ACCEPTED_METHODS = List.of("POST", "GET");
+
     @Override
     public boolean process(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws IOException, ServletException {
+
+        String method = StringUtils.upperCase(request.getMethod(), Locale.ENGLISH);
+
+        if (!ACCEPTED_METHODS.contains(method)) {
+            response.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED, "Method not allowed: " + method);
+            return true;
+        }
+
         String requestedResource = getRequestedResourcePath(request);
-        if (requestedResource.startsWith("/" + MCP_SERVER_MCP)
-                && request.getMethod().equalsIgnoreCase("POST")) {
+        if (requestedResource.startsWith("/" + MCP_SERVER_MCP) && method.equalsIgnoreCase("POST")) {
             handleStreamableMessage(request, response);
             return true;
         }
-        if (requestedResource.startsWith("/" + MCP_SERVER_MCP)
-                && request.getMethod().equalsIgnoreCase("GET")) {
+        if (requestedResource.startsWith("/" + MCP_SERVER_MCP) && method.equalsIgnoreCase("GET")) {
             handleStreamableConnect(request, response);
             return true;
         }
@@ -252,7 +262,8 @@ public class StreamableEndpoint extends CrumbExclusion implements McpStreamableS
     /**
      * Handles streamable SSE connection requests for message replay.
      */
-    protected void handleStreamableConnect(HttpServletRequest request, HttpServletResponse response) throws IOException {
+    protected void handleStreamableConnect(HttpServletRequest request, HttpServletResponse response)
+            throws IOException {
         if (isClosing.get()) {
             response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE, "Server is shutting down");
             return;
@@ -302,16 +313,14 @@ public class StreamableEndpoint extends CrumbExclusion implements McpStreamableS
             if (lastEventId != null) {
                 logger.debug("Handling replay request for session {} from event ID: {}", sessionId, lastEventId);
                 try {
-                    session.replay(lastEventId)
-                            .toIterable()
-                            .forEach(message -> {
-                                try {
-                                    sessionTransport.sendMessage(message).block();
-                                } catch (Exception e) {
-                                    logger.error("Failed to replay message: {}", e.getMessage());
-                                    asyncContext.complete();
-                                }
-                            });
+                    session.replay(lastEventId).toIterable().forEach(message -> {
+                        try {
+                            sessionTransport.sendMessage(message).block();
+                        } catch (Exception e) {
+                            logger.error("Failed to replay message: {}", e.getMessage());
+                            asyncContext.complete();
+                        }
+                    });
                 } catch (Exception e) {
                     logger.error("Failed to replay messages: {}", e.getMessage());
                     asyncContext.complete();
@@ -359,7 +368,8 @@ public class StreamableEndpoint extends CrumbExclusion implements McpStreamableS
     /**
      * Handles streamable message processing.
      */
-    protected void handleStreamableMessage(HttpServletRequest request, HttpServletResponse response) throws IOException {
+    protected void handleStreamableMessage(HttpServletRequest request, HttpServletResponse response)
+            throws IOException {
         if (isClosing.get()) {
             response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE, "Server is shutting down");
             return;
@@ -381,6 +391,10 @@ public class StreamableEndpoint extends CrumbExclusion implements McpStreamableS
             String line;
             while ((line = reader.readLine()) != null) {
                 body.append(line);
+            }
+
+            if (body.isEmpty() && request.getMethod().equals("POST")) {
+                response.sendError(HttpServletResponse.SC_BAD_REQUEST);
             }
 
             McpSchema.JSONRPCMessage message = McpSchema.deserializeJsonRpcMessage(objectMapper, body.toString());
@@ -406,8 +420,8 @@ public class StreamableEndpoint extends CrumbExclusion implements McpStreamableS
 
             McpStreamableServerSession session = sessions.get(sessionId);
             if (session == null) {
-                responseError(response, HttpServletResponse.SC_NOT_FOUND,
-                        new McpError("Session not found: " + sessionId));
+                responseError(
+                        response, HttpServletResponse.SC_NOT_FOUND, new McpError("Session not found: " + sessionId));
                 return;
             }
 
@@ -434,7 +448,8 @@ public class StreamableEndpoint extends CrumbExclusion implements McpStreamableS
             McpSchema.JSONRPCRequest jsonrpcRequest,
             HttpServletRequest request,
             HttpServletResponse response,
-            List<String> badRequestErrors) throws IOException {
+            List<String> badRequestErrors)
+            throws IOException {
 
         if (!badRequestErrors.isEmpty()) {
             String combinedMessage = String.join("; ", badRequestErrors);
@@ -442,11 +457,10 @@ public class StreamableEndpoint extends CrumbExclusion implements McpStreamableS
             return;
         }
 
-        McpSchema.InitializeRequest initializeRequest = objectMapper.convertValue(
-                jsonrpcRequest.params(), new TypeReference<>() {});
+        McpSchema.InitializeRequest initializeRequest =
+                objectMapper.convertValue(jsonrpcRequest.params(), new TypeReference<>() {});
 
-        McpStreamableServerSession.McpStreamableServerSessionInit init =
-                sessionFactory.startSession(initializeRequest);
+        McpStreamableServerSession.McpStreamableServerSessionInit init = sessionFactory.startSession(initializeRequest);
         sessions.put(init.session().getId(), init.session());
 
         try {
@@ -457,15 +471,17 @@ public class StreamableEndpoint extends CrumbExclusion implements McpStreamableS
             response.setHeader(HttpHeaders.MCP_SESSION_ID, init.session().getId());
             response.setStatus(HttpServletResponse.SC_OK);
 
-            String jsonResponse = objectMapper.writeValueAsString(new McpSchema.JSONRPCResponse(
-                    McpSchema.JSONRPC_VERSION, jsonrpcRequest.id(), initResult, null));
+            String jsonResponse = objectMapper.writeValueAsString(
+                    new McpSchema.JSONRPCResponse(McpSchema.JSONRPC_VERSION, jsonrpcRequest.id(), initResult, null));
 
             PrintWriter writer = response.getWriter();
             writer.write(jsonResponse);
             writer.flush();
         } catch (Exception e) {
             logger.error("Failed to initialize session: {}", e.getMessage());
-            responseError(response, HttpServletResponse.SC_INTERNAL_SERVER_ERROR,
+            responseError(
+                    response,
+                    HttpServletResponse.SC_INTERNAL_SERVER_ERROR,
                     new McpError("Failed to initialize session: " + e.getMessage()));
         }
     }
@@ -475,7 +491,8 @@ public class StreamableEndpoint extends CrumbExclusion implements McpStreamableS
             McpSchema.JSONRPCRequest jsonrpcRequest,
             String sessionId,
             HttpServletRequest request,
-            HttpServletResponse response) throws IOException {
+            HttpServletResponse response)
+            throws IOException {
 
         response.setContentType("text/event-stream");
         response.setCharacterEncoding(UTF_8);
@@ -504,7 +521,10 @@ public class StreamableEndpoint extends CrumbExclusion implements McpStreamableS
                         sessionTransport.close();
                     })
                     .doFinally(signalType -> {
-                        logger.debug("Streaming request processing completed for session: {} with signal: {}", sessionId, signalType);
+                        logger.debug(
+                                "Streaming request processing completed for session: {} with signal: {}",
+                                sessionId,
+                                signalType);
                     })
                     .subscribe();
 
@@ -556,7 +576,8 @@ public class StreamableEndpoint extends CrumbExclusion implements McpStreamableS
         private final PrintWriter writer;
         private volatile boolean closed = false;
 
-        public HttpServletStreamableMcpSessionTransport(String sessionId, AsyncContext asyncContext, PrintWriter writer) {
+        public HttpServletStreamableMcpSessionTransport(
+                String sessionId, AsyncContext asyncContext, PrintWriter writer) {
             this.sessionId = sessionId;
             this.asyncContext = asyncContext;
             this.writer = writer;
@@ -581,12 +602,14 @@ public class StreamableEndpoint extends CrumbExclusion implements McpStreamableS
                         if (message instanceof McpSchema.JSONRPCRequest request) {
                             finalMessageId = request.id() != null ? request.id().toString() : null;
                         } else if (message instanceof McpSchema.JSONRPCResponse response) {
-                            finalMessageId = response.id() != null ? response.id().toString() : null;
+                            finalMessageId =
+                                    response.id() != null ? response.id().toString() : null;
                         }
                     }
 
                     String jsonText = objectMapper.writeValueAsString(message);
-                    StreamableEndpoint.this.sendEvent(writer, MESSAGE_EVENT_TYPE, jsonText, finalMessageId != null ? finalMessageId : sessionId);
+                    StreamableEndpoint.this.sendEvent(
+                            writer, MESSAGE_EVENT_TYPE, jsonText, finalMessageId != null ? finalMessageId : sessionId);
                     logger.debug("Message sent to session {} with ID {}", sessionId, finalMessageId);
                 } catch (Exception e) {
                     logger.error("Failed to send message to session {}: {}", sessionId, e.getMessage());

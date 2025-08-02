@@ -182,6 +182,12 @@ public class Endpoint extends CrumbExclusion implements RootAction, McpServerTra
             public void doFilter(
                     ServletRequest servletRequest, ServletResponse servletResponse, FilterChain filterChain)
                     throws IOException, ServletException {
+                StreamableEndpoint streamableEndpoint = ExtensionList.lookupSingleton(StreamableEndpoint.class);
+                if (streamableEndpoint.isStreamableRequest(servletRequest, servletResponse)) {
+                    streamableEndpoint.process(
+                            (HttpServletRequest) servletRequest, (HttpServletResponse) servletResponse, filterChain);
+                    return;
+                }
                 if (isSSERequest(servletRequest, servletResponse)) {
                     handleSSE((HttpServletRequest) servletRequest, (HttpServletResponse) servletResponse);
                 } else {
