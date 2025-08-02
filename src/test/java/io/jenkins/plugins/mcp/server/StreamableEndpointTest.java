@@ -163,6 +163,16 @@ public class StreamableEndpointTest {
 
     @Test
     void testStreamableEndpointUrlSupportPostOnly(JenkinsRule jenkins) throws Exception {
+        // Force loading of StreamableEndpoint extension
+        var extensions = jenkins.getInstance().getExtensionList(StreamableEndpoint.class);
+        for (StreamableEndpoint ext : extensions) {
+            System.out.println("Extension: " + ext.getClass().getName());
+        }
+        if (extensions.isEmpty()) {
+            var endpoint = new StreamableEndpoint();
+            System.out.println("Manually created StreamableEndpoint");
+        }
+
         var url = jenkins.getURL();
         var baseUrl = url.toString();
         var streamableUrl = baseUrl + MCP_SERVER_MCP;

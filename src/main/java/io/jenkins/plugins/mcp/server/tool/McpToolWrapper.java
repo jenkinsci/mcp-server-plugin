@@ -230,8 +230,14 @@ public class McpToolWrapper {
 
             var resultBuilder = McpSchema.CallToolResult.builder().isError(false);
             if (result instanceof List listResult) {
-                for (var item : listResult) {
-                    resultBuilder.addTextContent(toJson(item));
+                if (listResult.isEmpty()) {
+                    // For empty lists, add the JSON representation of the empty list
+                    resultBuilder.addTextContent(toJson(listResult));
+                } else {
+                    // For non-empty lists, add each item as separate content
+                    for (var item : listResult) {
+                        resultBuilder.addTextContent(toJson(item));
+                    }
                 }
             } else {
                 resultBuilder.addTextContent(toJson(result));

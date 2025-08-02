@@ -44,8 +44,6 @@ import java.io.PrintWriter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
-import org.kohsuke.accmod.Restricted;
-import org.kohsuke.accmod.restrictions.NoExternalUse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -54,7 +52,6 @@ import reactor.core.publisher.Mono;
  * Streamable HTTP transport endpoint for MCP server.
  * This endpoint implements the new streamable transport protocol at /mcp.
  */
-@Restricted(NoExternalUse.class)
 @Extension
 public class StreamableEndpoint extends CrumbExclusion implements McpStreamableServerTransportProvider {
     public static final String UTF_8 = "UTF-8";
@@ -176,17 +173,26 @@ public class StreamableEndpoint extends CrumbExclusion implements McpStreamableS
     public boolean process(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws IOException, ServletException {
         String requestedResource = getRequestedResourcePath(request);
-        if (requestedResource.startsWith("/" + MCP_SERVER_MCP)
-                && request.getMethod().equalsIgnoreCase("POST")) {
-            handleStreamableMessage(request, response);
-            return true;
-        }
-        if (requestedResource.startsWith("/" + MCP_SERVER_MCP)
-                && request.getMethod().equalsIgnoreCase("GET")) {
-            handleStreamableConnect(request, response);
-            return true;
+        if (requestedResource.startsWith("/" + MCP_SERVER_MCP)) {
+            String method = request.getMethod();
+            if (method.equalsIgnoreCase("POST")) {
+                handleStreamableMessage(request, response);
+                return true;
+            } else if (method.equalsIgnoreCase("GET")) {
+                handleStreamableConnect(request, response);
+                return true;
+            } else {
+                // Return 405 Method Not Allowed for unsupported methods (PUT, DELETE, etc.)
+                response.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+                return true;
+            }
         }
         return false;
+    }
+
+    @Override
+    public String protocolVersion() {
+        return "2025-03-26";
     }
 
     @Override
@@ -270,7 +276,8 @@ public class StreamableEndpoint extends CrumbExclusion implements McpStreamableS
 
         McpStreamableServerSession session = sessions.get(sessionId);
         if (session == null) {
-            response.sendError(HttpServletResponse.SC_NOT_FOUND);
+            responseError(response, HttpServletResponse.SC_NOT_FOUND,
+                    new McpError("Session not found: " + sessionId));
             return;
         }
 
@@ -375,7 +382,23 @@ public class StreamableEndpoint extends CrumbExclusion implements McpStreamableS
                 body.append(line);
             }
 
-            McpSchema.JSONRPCMessage message = McpSchema.deserializeJsonRpcMessage(objectMapper, body.toString());
+            String bodyString = body.toString().trim();
+            if (bodyString.isEmpty()) {
+                badRequestErrors.add("Request body is required");
+                String combinedMessage = String.join("; ", badRequestErrors);
+                responseError(response, HttpServletResponse.SC_BAD_REQUEST, new McpError(combinedMessage));
+                return;
+            }
+
+            McpSchema.JSONRPCMessage message;
+            try {
+                message = McpSchema.deserializeJsonRpcMessage(objectMapper, bodyString);
+            } catch (Exception e) {
+                badRequestErrors.add("Invalid JSON-RPC message: " + e.getMessage());
+                String combinedMessage = String.join("; ", badRequestErrors);
+                responseError(response, HttpServletResponse.SC_BAD_REQUEST, new McpError(combinedMessage));
+                return;
+            }
 
             // Handle initialization request
             if (message instanceof McpSchema.JSONRPCRequest jsonrpcRequest
