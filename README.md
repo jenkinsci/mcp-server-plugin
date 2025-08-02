@@ -62,7 +62,7 @@ The MCP Server Plugin requires the same credentials as the Jenkins instance it's
     "servers": {
       "jenkins": {
         "type": "http",
-        "url": "https://jenkins-host/mcp-server/mcp",
+        "url": "https://jenkins-host/mcp-server/mcp-stream",
         "headers": {
           "Authorization": "Basic <user:token base64>"
         }
