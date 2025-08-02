@@ -6,15 +6,17 @@ The MCP (Model Context Protocol) Server Plugin for Jenkins implements the server
 
 - **MCP Server Implementation**: Implements the server-side of the Model Context Protocol.
 - **Jenkins Integration**: Exposes Jenkins functionalities as MCP tools and resources.
-- **Real-time Communication**: Uses Server-Sent Events (SSE) for efficient, real-time communication with clients.
+- **Multiple Transport Options**: Supports both Server-Sent Events (SSE) and Streamable transport for efficient, real-time communication with clients.
+- **Backward Compatibility**: Maintains support for legacy SSE transport while providing modern streamable transport.
 - **Extensible Architecture**: Allows easy extension of MCP capabilities through the `McpServerExtension` interface.
 
 ## Key Components
 
-1. **Endpoint**: The main entry point for MCP communication, handling SSE connections and message routing.
-2. **DefaultMcpServer**: Implements `McpServerExtension`, providing default tools for interacting with Jenkins jobs and builds.
-3. **McpToolWrapper**: Wraps Java methods as MCP tools, handling parameter parsing and result formatting.
-4. **McpServerExtension**: Interface for extending MCP server capabilities.
+1. **Endpoint**: The main entry point for legacy SSE-based MCP communication, handling SSE connections and message routing.
+2. **StreamableEndpoint**: The modern entry point for streamable MCP communication, providing enhanced transport capabilities with message replay and improved session management.
+3. **DefaultMcpServer**: Implements `McpServerExtension`, providing default tools for interacting with Jenkins jobs and builds.
+4. **McpToolWrapper**: Wraps Java methods as MCP tools, handling parameter parsing and result formatting.
+5. **McpServerExtension**: Interface for extending MCP server capabilities.
 
 ## MCP SDK Version
 
@@ -34,17 +36,43 @@ The MCP Server plugin automatically sets up necessary endpoints and tools upon i
 
 ### Connecting to the MCP Server
 
-MCP clients can connect to the server using:
+MCP clients can connect to the server using either transport option:
 
+#### Streamable Transport (Recommended)
+- Streamable Endpoint: `<jenkins-url>/mcp-server/mcp`
+- Supports message replay and enhanced session management
+- Better error handling and connection recovery
+
+#### Legacy SSE Transport
 - SSE Endpoint: `<jenkins-url>/mcp-server/sse`
 - Message Endpoint: `<jenkins-url>/mcp-server/message`
+- Maintained for backward compatibility
 
 ### Authentication and Credentials
 
 The MCP Server Plugin requires the same credentials as the Jenkins instance it's running on. To authenticate your MCP queries:
 
 1. **Jenkins API Token**: Generate an API token from your Jenkins user account.
-2. **Basic Authentication**: Use the API token in the HTTP Basic Authentication header. Below is an example of VS code settings.xml
+2. **Basic Authentication**: Use the API token in the HTTP Basic Authentication header. Below are examples for both transport types:
+
+#### Streamable Transport Configuration (Recommended)
+```json
+{
+  "mcp": {
+    "servers": {
+      "jenkins": {
+        "type": "http",
+        "url": "https://jenkins-host/mcp-server/mcp",
+        "headers": {
+          "Authorization": "Basic <user:token base64>"
+        }
+      }
+    }
+  }
+}
+```
+
+#### Legacy SSE Transport Configuration
 ```json
 {
   "mcp": {
@@ -60,6 +88,20 @@ The MCP Server Plugin requires the same credentials as the Jenkins instance it's
   }
 }
 ```
+
+### Transport Comparison
+
+| Feature | Streamable Transport | Legacy SSE Transport |
+|---------|---------------------|---------------------|
+| **Message Replay** | ✅ Supports replay from Last-Event-ID | ❌ No replay support |
+| **Session Management** | ✅ Enhanced with proper lifecycle handling | ⚠️ Basic session handling |
+| **Error Recovery** | ✅ Robust error handling and recovery | ⚠️ Limited error recovery |
+| **Connection Stability** | ✅ Better connection management | ⚠️ Basic connection handling |
+| **Performance** | ✅ Optimized for modern clients | ⚠️ Legacy performance |
+| **Backward Compatibility** | ❌ Requires modern MCP clients | ✅ Works with older clients |
+
+**Recommendation**: Use Streamable Transport for new integrations and modern MCP clients. Legacy SSE Transport is maintained for backward compatibility.
+
 Example of using the token:
 
 ### Available Tools
@@ -98,7 +140,7 @@ The plugin provides the following built-in tools for interacting with Jenkins:
 
 Each tool accepts specific parameters to customize its behavior. For detailed usage instructions and parameter descriptions, refer to the API documentation or use the MCP introspection capabilities.
 
-To use these tools, connect to the MCP server endpoint and make tool calls using your MCP client implementation.
+To use these tools, connect to either the streamable endpoint (`/mcp-server/mcp`) or the legacy SSE endpoint (`/mcp-server/sse`) and make tool calls using your MCP client implementation.
 ### Extending MCP Capabilities
 
 To add new MCP tools or functionalities:
