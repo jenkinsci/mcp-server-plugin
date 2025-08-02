@@ -236,9 +236,11 @@ public class StreamableEndpointTest {
             assertThat(getJobsResponse.content().get(0).type()).isEqualTo("text");
 
             // Test that the response contains valid JSON (even if empty list)
-            assertThat(getJobsResponse.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
-                assertThat(textContent.text()).startsWith("[").endsWith("]"); // Should be JSON array
-            });
+            assertThat(getJobsResponse.content())
+                    .first()
+                    .isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                        assertThat(textContent.text()).startsWith("[").endsWith("]"); // Should be JSON array
+                    });
         }
     }
 
@@ -257,13 +259,13 @@ public class StreamableEndpointTest {
 
         // Test that multiple clients can connect simultaneously
         try (var client1 = McpClient.sync(transport1)
-                .requestTimeout(Duration.ofSeconds(500))
-                .capabilities(McpSchema.ClientCapabilities.builder().build())
-                .build();
-             var client2 = McpClient.sync(transport2)
-                .requestTimeout(Duration.ofSeconds(500))
-                .capabilities(McpSchema.ClientCapabilities.builder().build())
-                .build()) {
+                        .requestTimeout(Duration.ofSeconds(500))
+                        .capabilities(McpSchema.ClientCapabilities.builder().build())
+                        .build();
+                var client2 = McpClient.sync(transport2)
+                        .requestTimeout(Duration.ofSeconds(500))
+                        .capabilities(McpSchema.ClientCapabilities.builder().build())
+                        .build()) {
 
             client1.initialize();
             client2.initialize();
