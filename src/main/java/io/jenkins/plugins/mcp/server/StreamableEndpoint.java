@@ -61,7 +61,7 @@ public class StreamableEndpoint extends CrumbExclusion implements McpStreamableS
     public static final String APPLICATION_JSON = "application/json";
     public static final String FAILED_TO_SEND_ERROR_RESPONSE = "Failed to send error response: {}";
     public static final String MCP_SERVER = "mcp-server";
-    public static final String MCP_ENDPOINT = "/mcp";
+    public static final String MCP_ENDPOINT = "/mcp-stream";
     public static final String MCP_SERVER_MCP = MCP_SERVER + MCP_ENDPOINT;
 
     /**
@@ -170,6 +170,14 @@ public class StreamableEndpoint extends CrumbExclusion implements McpStreamableS
             requestURI = requestURI.substring(contextPath.length());
         }
         return requestURI;
+    }
+
+    @Override
+    public String protocolVersion() {
+        // FIXME this should be done in sdk itself as returning "2024-11-05"
+        // looks wrong for streamable
+        // see https://github.com/modelcontextprotocol/java-sdk/pull/441
+        return "2025-03-26";
     }
 
     @Override
@@ -435,7 +443,7 @@ public class StreamableEndpoint extends CrumbExclusion implements McpStreamableS
         }
 
         McpSchema.InitializeRequest initializeRequest = objectMapper.convertValue(
-                jsonrpcRequest.params(), new TypeReference<McpSchema.InitializeRequest>() {});
+                jsonrpcRequest.params(), new TypeReference<>() {});
 
         McpStreamableServerSession.McpStreamableServerSessionInit init =
                 sessionFactory.startSession(initializeRequest);

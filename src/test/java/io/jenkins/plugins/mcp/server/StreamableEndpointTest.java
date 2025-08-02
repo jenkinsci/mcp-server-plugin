@@ -213,6 +213,7 @@ public class StreamableEndpointTest {
                 .build();
 
         try (var client = McpClient.sync(transport)
+                .initializationTimeout(Duration.ofSeconds(500))
                 .requestTimeout(Duration.ofSeconds(500))
                 .capabilities(McpSchema.ClientCapabilities.builder().build())
                 .build()) {

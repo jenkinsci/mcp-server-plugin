@@ -31,6 +31,7 @@ import static io.modelcontextprotocol.spec.McpSchema.METHOD_INITIALIZE;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import hudson.Extension;
+import hudson.ExtensionList;
 import hudson.model.RootAction;
 import hudson.model.User;
 import hudson.security.csrf.CrumbExclusion;
@@ -130,6 +131,10 @@ public class Endpoint extends CrumbExclusion implements RootAction, McpServerTra
         if (requestedResource.startsWith("/" + MCP_SERVER_SSE)
                 && request.getMethod().equalsIgnoreCase("POST")) {
             response.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+            return true;
+        }
+        if (requestedResource.startsWith("/" + StreamableEndpoint.MCP_SERVER_MCP)) {
+            ExtensionList.lookupSingleton(StreamableEndpoint.class).process(request, response, chain);
             return true;
         }
         return false;
