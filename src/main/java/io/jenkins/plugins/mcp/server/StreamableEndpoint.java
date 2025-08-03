@@ -355,24 +355,18 @@ public class StreamableEndpoint extends CrumbExclusion implements McpStreamableS
                     @Override
                     public void onComplete(AsyncEvent event) {
                         logger.debug("SSE connection completed for sessionObject: {}", sessionId);
-                        String sessionId = request.getHeader(HttpHeaders.MCP_SESSION_ID);
-                        sessions.remove(sessionId);
                         listeningStream.close();
                     }
 
                     @Override
                     public void onTimeout(AsyncEvent event) {
                         logger.debug("SSE connection timed out for sessionObject: {}", sessionId);
-                        String sessionId = request.getHeader(HttpHeaders.MCP_SESSION_ID);
-                        sessions.remove(sessionId);
                         listeningStream.close();
                     }
 
                     @Override
                     public void onError(AsyncEvent event) {
                         logger.debug("SSE connection error for sessionObject: {}", sessionId);
-                        String sessionId = request.getHeader(HttpHeaders.MCP_SESSION_ID);
-                        sessions.remove(sessionId);
                         listeningStream.close();
                     }
 
