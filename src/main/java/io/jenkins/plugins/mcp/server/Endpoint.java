@@ -108,9 +108,11 @@ public class Endpoint extends CrumbExclusion implements RootAction, McpServerTra
      */
     private McpServerSession.Factory sessionFactory;
 
-    public Endpoint() throws ServletException {
+    private StreamableEndpoint streamableEndpoint;
 
+    public Endpoint() throws ServletException {
         init();
+        streamableEndpoint = ExtensionList.lookupSingleton(StreamableEndpoint.class);
     }
 
     public static String getRequestedResourcePath(HttpServletRequest httpServletRequest) {
@@ -134,7 +136,7 @@ public class Endpoint extends CrumbExclusion implements RootAction, McpServerTra
             return true;
         }
         if (requestedResource.startsWith("/" + StreamableEndpoint.MCP_SERVER_MCP)) {
-            ExtensionList.lookupSingleton(StreamableEndpoint.class).process(request, response, chain);
+            streamableEndpoint.process(request, response, chain);
             return true;
         }
         return false;
@@ -182,7 +184,6 @@ public class Endpoint extends CrumbExclusion implements RootAction, McpServerTra
             public void doFilter(
                     ServletRequest servletRequest, ServletResponse servletResponse, FilterChain filterChain)
                     throws IOException, ServletException {
-                StreamableEndpoint streamableEndpoint = ExtensionList.lookupSingleton(StreamableEndpoint.class);
                 if (streamableEndpoint.isStreamableRequest(servletRequest, servletResponse)) {
                     streamableEndpoint.process(
                             (HttpServletRequest) servletRequest, (HttpServletResponse) servletResponse, filterChain);
