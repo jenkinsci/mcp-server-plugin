@@ -62,7 +62,7 @@ public class StreamableEndpoint extends CrumbExclusion implements McpStreamableS
     public static final String APPLICATION_JSON = "application/json";
     public static final String FAILED_TO_SEND_ERROR_RESPONSE = "Failed to send error response: {}";
     public static final String MCP_SERVER = "mcp-server";
-    public static final String MCP_ENDPOINT = "/mcp-stream";
+    public static final String MCP_ENDPOINT = "/streamable";
     public static final String MCP_SERVER_MCP = MCP_SERVER + MCP_ENDPOINT;
 
     /**

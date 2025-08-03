@@ -39,7 +39,7 @@ The MCP Server plugin automatically sets up necessary endpoints and tools upon i
 MCP clients can connect to the server using either transport option:
 
 #### Streamable Transport (Recommended)
-- Streamable Endpoint: `<jenkins-url>/mcp-server/mcp`
+- Streamable Endpoint: `<jenkins-url>/mcp-server/streamable`
 - Supports message replay and enhanced session management
 - Better error handling and connection recovery
 
@@ -62,7 +62,7 @@ The MCP Server Plugin requires the same credentials as the Jenkins instance it's
     "servers": {
       "jenkins": {
         "type": "http",
-        "url": "https://jenkins-host/mcp-server/mcp-stream",
+        "url": "https://jenkins-host/mcp-server/streamable",
         "headers": {
           "Authorization": "Basic <user:token base64>"
         }
