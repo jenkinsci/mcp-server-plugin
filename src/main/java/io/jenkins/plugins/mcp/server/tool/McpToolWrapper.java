@@ -67,6 +67,8 @@ public class McpToolWrapper {
     private static final boolean PROPERTY_REQUIRED_BY_DEFAULT = true;
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
+    public static final String USER_ID_KEY = McpToolWrapper.class.getName() + "-params-userId";
+
     static {
         OBJECT_MAPPER.registerModule(new JenkinsExportedBeanModule());
     }
@@ -245,7 +247,7 @@ public class McpToolWrapper {
     McpSchema.CallToolResult call(McpSyncServerExchange exchange, Map<String, Object> args) {
         var oldUser = User.current();
         try {
-            String userId = (String) args.get("userId");
+            String userId = (String) args.get(USER_ID_KEY);
             var user = User.get(userId, false, Map.of());
             if (user != null) {
                 ACL.as(user);

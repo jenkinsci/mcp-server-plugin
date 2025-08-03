@@ -135,7 +135,7 @@ public class Endpoint extends CrumbExclusion implements RootAction, McpServerTra
             response.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
             return true;
         }
-        if (requestedResource.startsWith("/" + StreamableEndpoint.MCP_SERVER_MCP)) {
+        if (requestedResource.startsWith("/" + StreamableEndpoint.MCP_SERVER_STREAMABLE)) {
             streamableEndpoint.process(request, response, chain);
             return true;
         }
@@ -369,7 +369,7 @@ public class Endpoint extends CrumbExclusion implements RootAction, McpServerTra
                         && jsonrpcRequest.params() instanceof Map params) {
                     Map arguments = (Map) params.get("arguments");
                     if (arguments != null) {
-                        arguments.put("userId", sessionObject.userId);
+                        arguments.put(McpToolWrapper.USER_ID_KEY, sessionObject.userId);
                     }
                 }
             }

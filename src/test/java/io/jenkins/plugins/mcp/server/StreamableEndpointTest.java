@@ -26,7 +26,7 @@
 
 package io.jenkins.plugins.mcp.server;
 
-import static io.jenkins.plugins.mcp.server.StreamableEndpoint.MCP_SERVER_MCP;
+import static io.jenkins.plugins.mcp.server.StreamableEndpoint.MCP_SERVER_STREAMABLE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -55,7 +55,7 @@ public class StreamableEndpointTest {
         var baseUrl = url.toString();
 
         var transport = HttpClientStreamableHttpTransport.builder(baseUrl)
-                .endpoint(MCP_SERVER_MCP)
+                .endpoint(MCP_SERVER_STREAMABLE)
                 .build();
 
         try (var client = McpClient.sync(transport)
@@ -107,7 +107,7 @@ public class StreamableEndpointTest {
         var baseUrl = url.toString();
 
         var transport = HttpClientStreamableHttpTransport.builder(baseUrl)
-                .endpoint(MCP_SERVER_MCP)
+                .endpoint(MCP_SERVER_STREAMABLE)
                 .build();
 
         try (var client = McpClient.sync(transport)
@@ -142,7 +142,7 @@ public class StreamableEndpointTest {
         var baseUrl = url.toString();
 
         var transport = HttpClientStreamableHttpTransport.builder(baseUrl)
-                .endpoint(MCP_SERVER_MCP)
+                .endpoint(MCP_SERVER_STREAMABLE)
                 .build();
 
         try (var client = McpClient.sync(transport)
@@ -167,7 +167,7 @@ public class StreamableEndpointTest {
     void testStreamableEndpointUrlSupportPostOnly(JenkinsRule jenkins) throws Exception {
         var url = jenkins.getURL();
         var baseUrl = url.toString();
-        var streamableUrl = baseUrl + MCP_SERVER_MCP;
+        var streamableUrl = baseUrl + MCP_SERVER_STREAMABLE;
         try (JenkinsRule.WebClient webClient = jenkins.createWebClient()) {
 
             // Test that GET without proper headers returns error
@@ -191,7 +191,7 @@ public class StreamableEndpointTest {
     void testStreamableEndpointRequiresProperHeaders(JenkinsRule jenkins) throws Exception {
         var url = jenkins.getURL();
         var baseUrl = url.toString();
-        var streamableUrl = baseUrl + MCP_SERVER_MCP;
+        var streamableUrl = baseUrl + MCP_SERVER_STREAMABLE;
         try (JenkinsRule.WebClient webClient = jenkins.createWebClient()) {
 
             // Test POST without proper Accept headers
@@ -220,7 +220,7 @@ public class StreamableEndpointTest {
         var baseUrl = url.toString();
 
         var transport = HttpClientStreamableHttpTransport.builder(baseUrl)
-                .endpoint(MCP_SERVER_MCP)
+                .endpoint(MCP_SERVER_STREAMABLE)
                 .build();
 
         try (var client = McpClient.sync(transport)
@@ -252,11 +252,11 @@ public class StreamableEndpointTest {
         var baseUrl = url.toString();
 
         var transport1 = HttpClientStreamableHttpTransport.builder(baseUrl)
-                .endpoint(MCP_SERVER_MCP)
+                .endpoint(MCP_SERVER_STREAMABLE)
                 .build();
 
         var transport2 = HttpClientStreamableHttpTransport.builder(baseUrl)
-                .endpoint(MCP_SERVER_MCP)
+                .endpoint(MCP_SERVER_STREAMABLE)
                 .build();
 
         // Test that multiple clients can connect simultaneously

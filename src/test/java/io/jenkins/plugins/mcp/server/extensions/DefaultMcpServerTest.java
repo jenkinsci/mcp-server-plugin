@@ -39,8 +39,10 @@ import hudson.model.ParametersDefinitionProperty;
 import hudson.model.Result;
 import hudson.model.StringParameterDefinition;
 import hudson.security.FullControlOnceLoggedInAuthorizationStrategy;
+import io.jenkins.plugins.mcp.server.StreamableEndpoint;
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.transport.HttpClientSseClientTransport;
+import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTransport;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.time.Duration;
 import java.util.Base64;
@@ -259,7 +261,7 @@ class DefaultMcpServerTest {
     }
 
     @Test
-    void testMcpToolCallGetJobs(JenkinsRule jenkins) throws Exception {
+    void testMcpToolCallGetJobsSse(JenkinsRule jenkins) throws Exception {
         enableSecurity(jenkins);
         for (int i = 0; i < 2; i++) {
             jenkins.createProject(WorkflowJob.class, "demo-job" + i);
@@ -281,6 +283,85 @@ class DefaultMcpServerTest {
 
         var transport = HttpClientSseClientTransport.builder(baseUrl)
                 .sseEndpoint(MCP_SERVER_SSE)
+                .customizeRequest(request -> {
+                    request.setHeader("Authorization", "Basic " + encodedAuth);
+                })
+                .build();
+
+        try (var client = McpClient.sync(transport)
+                .requestTimeout(Duration.ofSeconds(500))
+                .capabilities(McpSchema.ClientCapabilities.builder().build())
+                .build()) {
+            client.initialize();
+            {
+                McpSchema.CallToolRequest request =
+                        new McpSchema.CallToolRequest("getJobs", Map.of("parentFullName", "test", "limit", 10));
+
+                var response = client.callTool(request);
+                assertThat(response.isError()).isFalse();
+                assertThat(response.content()).hasSize(10);
+                assertThat(response.content().get(0).type()).isEqualTo("text");
+                assertThat(response.content())
+                        .first()
+                        .isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                            assertThat(textContent.type()).isEqualTo("text");
+
+                            ObjectMapper objectMapper = new ObjectMapper();
+                            try {
+                                var contetMap = objectMapper.readValue(textContent.text(), Map.class);
+                                assertThat(contetMap).containsEntry("name", "sub-demo-job0");
+                            } catch (JsonProcessingException e) {
+                                throw new RuntimeException(e);
+                            }
+                        });
+            }
+            {
+                McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("getJobs", Map.of());
+
+                var response = client.callTool(request);
+                assertThat(response.isError()).isFalse();
+                assertThat(response.content()).hasSize(3);
+                assertThat(response.content().get(0).type()).isEqualTo("text");
+                assertThat(response.content())
+                        .first()
+                        .isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                            assertThat(textContent.type()).isEqualTo("text");
+
+                            ObjectMapper objectMapper = new ObjectMapper();
+                            try {
+                                var contetMap = objectMapper.readValue(textContent.text(), Map.class);
+                                assertThat(contetMap).containsEntry("name", "demo-job0");
+                            } catch (JsonProcessingException e) {
+                                throw new RuntimeException(e);
+                            }
+                        });
+            }
+        }
+    }
+
+    @Test
+    void testMcpToolCallGetJobsStreamable(JenkinsRule jenkins) throws Exception {
+        enableSecurity(jenkins);
+        for (int i = 0; i < 2; i++) {
+            jenkins.createProject(WorkflowJob.class, "demo-job" + i);
+        }
+
+        var folder = jenkins.createFolder("test");
+
+        for (int i = 0; i < 20; i++) {
+            folder.createProject(WorkflowJob.class, "sub-demo-job" + i);
+        }
+
+        var url = jenkins.getURL();
+        var baseUrl = url.toString();
+
+        String username = "admin";
+        String password = "admin";
+        String authString = username + ":" + password;
+        String encodedAuth = Base64.getEncoder().encodeToString(authString.getBytes());
+
+        var transport = HttpClientStreamableHttpTransport.builder(baseUrl)
+                .endpoint(StreamableEndpoint.MCP_SERVER_STREAMABLE)
                 .customizeRequest(request -> {
                     request.setHeader("Authorization", "Basic " + encodedAuth);
                 })
