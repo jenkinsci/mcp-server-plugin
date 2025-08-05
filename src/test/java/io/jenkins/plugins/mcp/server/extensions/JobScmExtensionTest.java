@@ -26,36 +26,30 @@
 
 package io.jenkins.plugins.mcp.server.extensions;
 
-import static io.jenkins.plugins.mcp.server.Endpoint.MCP_SERVER_SSE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import hudson.model.FreeStyleProject;
 import hudson.plugins.git.GitSCM;
-import io.modelcontextprotocol.client.McpClient;
-import io.modelcontextprotocol.client.transport.HttpClientSseClientTransport;
+import io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder;
+import io.jenkins.plugins.mcp.server.junit.McpClientTest;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.io.File;
-import java.time.Duration;
 import java.util.Map;
 import jenkins.plugins.git.GitSampleRepoRule;
+import jenkins.plugins.git.junit.jupiter.GitSampleRepoExtension;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
+@ExtendWith(GitSampleRepoExtension.class)
 @WithJenkins
 public class JobScmExtensionTest {
 
-    @Rule
-    public JenkinsRule jenkins = new JenkinsRule();
-
-    @Rule
-    public GitSampleRepoRule gitRepo = new GitSampleRepoRule();
-
-    @Test
-    public void testGetJobScm() throws Exception {
+    @McpClientTest
+    void testGetJobScm(JenkinsRule jenkins, GitSampleRepoRule gitRepo, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
+            throws Exception {
         // Setup Git repository
         gitRepo.init();
         gitRepo.write("file", "content");
@@ -64,25 +58,11 @@ public class JobScmExtensionTest {
 
         // Create a job with Git SCM
         FreeStyleProject project = jenkins.createFreeStyleProject("test-project");
-        // To workaround test on Windows;
-        // We use "/" as separator on Windows too
         String repoRoot = gitRepo.getRoot().getAbsolutePath().replace(File.separator, "/");
         GitSCM scm = new GitSCM(repoRoot);
         project.setScm(scm);
 
-        // Setup MCP client
-        var url = jenkins.getURL();
-        var baseUrl = url.toString();
-        var transport = HttpClientSseClientTransport.builder(baseUrl)
-                .sseEndpoint(MCP_SERVER_SSE)
-                .build();
-
-        try (var client = McpClient.sync(transport)
-                .requestTimeout(Duration.ofSeconds(500))
-                .capabilities(McpSchema.ClientCapabilities.builder().build())
-                .build()) {
-            client.initialize();
-
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
             // Call getJobScm tool
             McpSchema.CallToolRequest request =
                     new McpSchema.CallToolRequest("getJobScm", Map.of("jobFullName", project.getFullName()));
@@ -100,8 +80,10 @@ public class JobScmExtensionTest {
         }
     }
 
-    @Test
-    public void testGetBuildScm() throws Exception {
+    @McpClientTest
+    void testGetBuildScm(
+            JenkinsRule jenkins, GitSampleRepoRule gitRepo, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
+            throws Exception {
         // Setup Git repository
         gitRepo.init();
         gitRepo.write("file", "content");
@@ -110,27 +92,13 @@ public class JobScmExtensionTest {
 
         // Create a job with Git SCM
         WorkflowJob project = jenkins.createProject(WorkflowJob.class, "test-project");
-        // To workaround test on Windows;
-        // We use "/" as separator on Windows too
         String repoRoot = gitRepo.getRoot().getAbsolutePath().replace(File.separator, "/");
         project.setDefinition(new CpsFlowDefinition("node { git '" + repoRoot + "' }", true));
 
         // Trigger a build
         jenkins.buildAndAssertSuccess(project);
 
-        // Setup MCP client
-        var url = jenkins.getURL();
-        var baseUrl = url.toString();
-        var transport = HttpClientSseClientTransport.builder(baseUrl)
-                .sseEndpoint(MCP_SERVER_SSE)
-                .build();
-
-        try (var client = McpClient.sync(transport)
-                .requestTimeout(Duration.ofSeconds(500))
-                .capabilities(McpSchema.ClientCapabilities.builder().build())
-                .build()) {
-            client.initialize();
-
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
             // Call getBuildScm tool
             McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(
                     "getBuildScm", Map.of("jobFullName", project.getFullName(), "buildNumber", 1));
@@ -148,8 +116,10 @@ public class JobScmExtensionTest {
         }
     }
 
-    @Test
-    public void testGetBuildChangeSets() throws Exception {
+    @McpClientTest
+    void testGetBuildChangeSets(
+            JenkinsRule jenkins, GitSampleRepoRule gitRepo, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
+            throws Exception {
         // Setup Git repository
         gitRepo.init();
         gitRepo.write("file1", "initial content");
@@ -158,8 +128,6 @@ public class JobScmExtensionTest {
 
         // Create a job with Git SCM
         WorkflowJob project = jenkins.createProject(WorkflowJob.class, "change-set-test-project");
-        // To workaround test on Windows;
-        // We use "/" as separator on Windows too
         String repoRoot = gitRepo.getRoot().getAbsolutePath().replace(File.separator, "/");
         project.setDefinition(new CpsFlowDefinition("node { git '" + repoRoot + "' }", true));
 
@@ -178,19 +146,7 @@ public class JobScmExtensionTest {
         // Trigger second build
         jenkins.buildAndAssertSuccess(project);
 
-        // Setup MCP client
-        var url = jenkins.getURL();
-        var baseUrl = url.toString();
-        var transport = HttpClientSseClientTransport.builder(baseUrl)
-                .sseEndpoint(MCP_SERVER_SSE)
-                .build();
-
-        try (var client = McpClient.sync(transport)
-                .requestTimeout(Duration.ofSeconds(500))
-                .capabilities(McpSchema.ClientCapabilities.builder().build())
-                .build()) {
-            client.initialize();
-
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
             // Call getBuildChangeSets tool for the second build
             McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(
                     "getBuildChangeSets", Map.of("jobFullName", project.getFullName(), "buildNumber", 2));

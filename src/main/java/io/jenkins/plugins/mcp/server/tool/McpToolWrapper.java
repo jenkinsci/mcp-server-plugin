@@ -26,6 +26,8 @@
 
 package io.jenkins.plugins.mcp.server.tool;
 
+import static io.jenkins.plugins.mcp.server.Endpoint.USER_ID;
+
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -158,17 +160,6 @@ public class McpToolWrapper {
 
     private static String toJson(Object item) throws IOException {
         return OBJECT_MAPPER.writeValueAsString(item);
-        //
-        //		var isExported = item.getClass().getAnnotation(ExportedBean.class) != null;
-        //		if (isExported) {
-        //			StringWriter sw = new StringWriter();
-        //			var dw = Flavor.JSON.createDataWriter(item, sw);
-        //			Model p = MODEL_BUILDER.get(item.getClass());
-        //			p.writeTo(item, dw);
-        //			return sw.toString();
-        //		} else {
-        //			return OBJECT_MAPPER.writeValueAsString(item);
-        //		}
     }
 
     String generateForMethodInput() {
@@ -242,11 +233,13 @@ public class McpToolWrapper {
         }
     }
 
-    McpSchema.CallToolResult call(McpSyncServerExchange exchange, Map<String, Object> args) {
+    McpSchema.CallToolResult callRequest(McpSyncServerExchange exchange, McpSchema.CallToolRequest request) {
+
+        //        request.progressToken()
+        var args = request.arguments();
         var oldUser = User.current();
         try {
-            String userId = (String) args.get("userId");
-            var user = User.get(userId, false, Map.of());
+            var user = tryGetUser(exchange, request);
             if (user != null) {
                 ACL.as(user);
             }
@@ -278,8 +271,27 @@ public class McpToolWrapper {
         }
     }
 
+    private static User tryGetUser(McpSyncServerExchange exchange, McpSchema.CallToolRequest request) {
+        String userId = null;
+        var context = exchange.transportContext();
+        if (context != null) {
+            userId = (String) context.get(USER_ID);
+        }
+        if (userId == null && request.meta() != null) {
+            userId = (String) request.meta().get(USER_ID);
+        }
+        var user = User.get(userId, false, Map.of());
+        return user;
+    }
+
     public McpServerFeatures.SyncToolSpecification asSyncToolSpecification() {
-        return new McpServerFeatures.SyncToolSpecification(
-                new McpSchema.Tool(getToolName(), getToolDescription(), generateForMethodInput()), this::call);
+        return McpServerFeatures.SyncToolSpecification.builder()
+                .tool(McpSchema.Tool.builder()
+                        .name(getToolName())
+                        .description(getToolDescription())
+                        .inputSchema(generateForMethodInput())
+                        .build())
+                .callHandler(this::callRequest)
+                .build();
     }
 }

@@ -26,13 +26,11 @@
 
 package io.jenkins.plugins.mcp.server.extensions;
 
-import static io.jenkins.plugins.mcp.server.Endpoint.MCP_SERVER_SSE;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.modelcontextprotocol.client.McpClient;
-import io.modelcontextprotocol.client.transport.HttpClientSseClientTransport;
+import io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder;
+import io.jenkins.plugins.mcp.server.junit.TestUtils;
 import io.modelcontextprotocol.spec.McpSchema;
-import java.time.Duration;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -58,18 +56,25 @@ public class UpdateBuildTest {
                         .flatMap(desc -> displayNames.stream().map(name -> Arrays.asList(number, desc, name))))
                 .filter(args -> (args.get(1) != null || args.get(2) != null))
                 .toList();
-        return IntStream.range(0, argsList.size())
+        var baseArgs = IntStream.range(0, argsList.size())
                 .mapToObj(index -> Arguments.of(
                         argsList.get(index).get(0),
                         argsList.get(index).get(1),
                         argsList.get(index).get(2),
                         index));
+
+        return TestUtils.appendMcpClientArgs(baseArgs);
     }
 
     @ParameterizedTest
     @MethodSource("buildLogTestParameters")
     void testMcpToolCallUpdateBuild(
-            Integer builderNumber, String description, String displayName, int idx, JenkinsRule jenkins)
+            Integer builderNumber,
+            String description,
+            String displayName,
+            int idx,
+            JenkinsMcpClientBuilder jenkinsMcpClientBuilder,
+            JenkinsRule jenkins)
             throws Exception {
         WorkflowJob project = jenkins.createProject(WorkflowJob.class, "update-build-job");
         project.setDefinition(new CpsFlowDefinition("", true));
@@ -78,15 +83,7 @@ public class UpdateBuildTest {
         var url = jenkins.getURL();
         var baseUrl = url.toString();
 
-        var transport = HttpClientSseClientTransport.builder(baseUrl)
-                .sseEndpoint(MCP_SERVER_SSE)
-                .build();
-
-        try (var client = McpClient.sync(transport)
-                .requestTimeout(Duration.ofSeconds(500))
-                .capabilities(McpSchema.ClientCapabilities.builder().build())
-                .build()) {
-            client.initialize();
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
 
             Map<String, Object> requests = new HashMap<>();
             if (builderNumber != null) {
