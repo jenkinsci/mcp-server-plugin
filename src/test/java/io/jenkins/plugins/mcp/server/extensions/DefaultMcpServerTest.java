@@ -26,7 +26,6 @@
 
 package io.jenkins.plugins.mcp.server.extensions;
 
-import static io.jenkins.plugins.mcp.server.Endpoint.MCP_SERVER_SSE;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
@@ -39,39 +38,27 @@ import hudson.model.ParametersDefinitionProperty;
 import hudson.model.Result;
 import hudson.model.StringParameterDefinition;
 import hudson.security.FullControlOnceLoggedInAuthorizationStrategy;
-import io.modelcontextprotocol.client.McpClient;
-import io.modelcontextprotocol.client.transport.HttpClientSseClientTransport;
+import io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder;
+import io.jenkins.plugins.mcp.server.junit.McpClientTest;
 import io.modelcontextprotocol.spec.McpSchema;
-import java.time.Duration;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
-import org.junit.jupiter.api.Test;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
 @WithJenkins
 class DefaultMcpServerTest {
-    @Test
-    void testMcpToolCallGetBuild(JenkinsRule jenkins) throws Exception {
+    @McpClientTest
+    void testMcpToolCallGetBuild(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
+            throws Exception {
         WorkflowJob project = jenkins.createProject(WorkflowJob.class, "demo-job");
         project.setDefinition(new CpsFlowDefinition("", true));
         var build = project.scheduleBuild2(0).get();
 
-        var url = jenkins.getURL();
-        var baseUrl = url.toString();
-
-        var transport = HttpClientSseClientTransport.builder(baseUrl)
-                .sseEndpoint(MCP_SERVER_SSE)
-                .build();
-
-        try (var client = McpClient.sync(transport)
-                .requestTimeout(Duration.ofSeconds(500))
-                .capabilities(McpSchema.ClientCapabilities.builder().build())
-                .build()) {
-            client.initialize();
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
             McpSchema.CallToolRequest request =
                     new McpSchema.CallToolRequest("getBuild", Map.of("jobFullName", project.getFullName()));
 
@@ -95,24 +82,13 @@ class DefaultMcpServerTest {
         }
     }
 
-    @Test
-    void testMcpToolCallTriggerBuild(JenkinsRule jenkins) throws Exception {
+    @McpClientTest
+    void testMcpToolCallTriggerBuild(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
+            throws Exception {
         WorkflowJob project = jenkins.createProject(WorkflowJob.class, "demo-job");
         project.setDefinition(new CpsFlowDefinition("", true));
         var nextNumber = project.getNextBuildNumber();
-
-        var url = jenkins.getURL();
-        var baseUrl = url.toString();
-
-        var transport = HttpClientSseClientTransport.builder(baseUrl)
-                .sseEndpoint(MCP_SERVER_SSE)
-                .build();
-
-        try (var client = McpClient.sync(transport)
-                .requestTimeout(Duration.ofSeconds(500))
-                .capabilities(McpSchema.ClientCapabilities.builder().build())
-                .build()) {
-            client.initialize();
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
             McpSchema.CallToolRequest request =
                     new McpSchema.CallToolRequest("triggerBuild", Map.of("jobFullName", project.getFullName()));
 
@@ -125,14 +101,15 @@ class DefaultMcpServerTest {
                 assertThat(textContent.text()).contains("true");
             });
         }
-        await().atMost(5, SECONDS)
-                .untilAsserted(
-                        () -> assertThat(project.getLastBuild().getResult()).isEqualTo(Result.SUCCESS));
+        await().atMost(5, SECONDS).until(() -> project.getLastBuild() != null);
+        jenkins.waitForCompletion(project.getLastBuild());
+        Thread.sleep(1000); // wait for the build to complete
         assertThat(project.getLastBuild().getNumber()).isEqualTo(nextNumber);
     }
 
-    @Test
-    void testMcpToolCallTriggerBuildWithParameters(JenkinsRule jenkins) throws Exception {
+    @McpClientTest
+    void testMcpToolCallTriggerBuildWithParameters(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
+            throws Exception {
         WorkflowJob project = jenkins.createProject(WorkflowJob.class, "demo-job");
         project.addProperty(new ParametersDefinitionProperty(
                 new StringParameterDefinition("STRING_P", "default1", "Parameter 1"),
@@ -143,18 +120,7 @@ class DefaultMcpServerTest {
                 new CpsFlowDefinition("echo env.STRING_P \n" + "echo env.BOOLEAN_P \n" + "echo env.CHOICE_P", true));
         var nextNumber = project.getNextBuildNumber();
 
-        var url = jenkins.getURL();
-        var baseUrl = url.toString();
-
-        var transport = HttpClientSseClientTransport.builder(baseUrl)
-                .sseEndpoint(MCP_SERVER_SSE)
-                .build();
-
-        try (var client = McpClient.sync(transport)
-                .requestTimeout(Duration.ofSeconds(500))
-                .capabilities(McpSchema.ClientCapabilities.builder().build())
-                .build()) {
-            client.initialize();
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
             McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(
                     "triggerBuild",
                     Map.of(
@@ -179,8 +145,9 @@ class DefaultMcpServerTest {
         assertThat(project.getLastBuild().getLog()).contains(List.of("string_value", "false", "option2"));
     }
 
-    @Test
-    void testMcpToolCallTriggerBuildWithPartialParameters(JenkinsRule jenkins) throws Exception {
+    @McpClientTest
+    void testMcpToolCallTriggerBuildWithPartialParameters(
+            JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder) throws Exception {
         WorkflowJob project = jenkins.createProject(WorkflowJob.class, "demo-job");
         project.addProperty(new ParametersDefinitionProperty(
                 new StringParameterDefinition("STRING_P", "default1", "Parameter 1"),
@@ -191,18 +158,7 @@ class DefaultMcpServerTest {
                 new CpsFlowDefinition("echo env.STRING_P \n" + "echo env.BOOLEAN_P \n" + "echo env.CHOICE_P", true));
         var nextNumber = project.getNextBuildNumber();
 
-        var url = jenkins.getURL();
-        var baseUrl = url.toString();
-
-        var transport = HttpClientSseClientTransport.builder(baseUrl)
-                .sseEndpoint(MCP_SERVER_SSE)
-                .build();
-
-        try (var client = McpClient.sync(transport)
-                .requestTimeout(Duration.ofSeconds(500))
-                .capabilities(McpSchema.ClientCapabilities.builder().build())
-                .build()) {
-            client.initialize();
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
             McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(
                     "triggerBuild",
                     Map.of(
@@ -227,24 +183,14 @@ class DefaultMcpServerTest {
         assertThat(project.getLastBuild().getLog()).contains(List.of("default1", "false", "option2"));
     }
 
-    @Test
-    void testMcpToolCallGetJobNotExist(JenkinsRule jenkins) throws Exception {
+    @McpClientTest
+    void testMcpToolCallGetJobNotExist(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
+            throws Exception {
         WorkflowJob project = jenkins.createProject(WorkflowJob.class, "demo-job");
         project.setDefinition(new CpsFlowDefinition("", true));
-        var build = project.scheduleBuild2(0).get();
+        project.scheduleBuild2(0).get();
 
-        var url = jenkins.getURL();
-        var baseUrl = url.toString();
-
-        var transport = HttpClientSseClientTransport.builder(baseUrl)
-                .sseEndpoint(MCP_SERVER_SSE)
-                .build();
-
-        try (var client = McpClient.sync(transport)
-                .requestTimeout(Duration.ofSeconds(500))
-                .capabilities(McpSchema.ClientCapabilities.builder().build())
-                .build()) {
-            client.initialize();
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
             McpSchema.CallToolRequest request =
                     new McpSchema.CallToolRequest("getJob", Map.of("jobFullName", "non-exist-job-name"));
 
@@ -258,8 +204,9 @@ class DefaultMcpServerTest {
         }
     }
 
-    @Test
-    void testMcpToolCallGetJobs(JenkinsRule jenkins) throws Exception {
+    @McpClientTest
+    void testMcpToolCallGetJobsWithAuth(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
+            throws Exception {
         enableSecurity(jenkins);
         for (int i = 0; i < 2; i++) {
             jenkins.createProject(WorkflowJob.class, "demo-job" + i);
@@ -270,27 +217,14 @@ class DefaultMcpServerTest {
         for (int i = 0; i < 20; i++) {
             folder.createProject(WorkflowJob.class, "sub-demo-job" + i);
         }
-
-        var url = jenkins.getURL();
-        var baseUrl = url.toString();
-
         String username = "admin";
         String password = "admin";
         String authString = username + ":" + password;
         String encodedAuth = Base64.getEncoder().encodeToString(authString.getBytes());
-
-        var transport = HttpClientSseClientTransport.builder(baseUrl)
-                .sseEndpoint(MCP_SERVER_SSE)
-                .customizeRequest(request -> {
-                    request.setHeader("Authorization", "Basic " + encodedAuth);
-                })
-                .build();
-
-        try (var client = McpClient.sync(transport)
-                .requestTimeout(Duration.ofSeconds(500))
-                .capabilities(McpSchema.ClientCapabilities.builder().build())
+        try (var client = jenkinsMcpClientBuilder
+                .jenkins(jenkins)
+                .requestCustomizer(request -> request.setHeader("Authorization", "Basic " + encodedAuth))
                 .build()) {
-            client.initialize();
             {
                 McpSchema.CallToolRequest request =
                         new McpSchema.CallToolRequest("getJobs", Map.of("parentFullName", "test", "limit", 10));

@@ -31,12 +31,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.modelcontextprotocol.client.McpClient;
-import io.modelcontextprotocol.client.transport.HttpClientSseClientTransport;
+import io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder;
+import io.jenkins.plugins.mcp.server.junit.McpClientTest;
 import io.modelcontextprotocol.spec.McpSchema;
 import jakarta.servlet.http.HttpServletResponse;
 import java.net.URL;
-import java.time.Duration;
 import java.util.Map;
 import org.htmlunit.HttpMethod;
 import org.htmlunit.WebRequest;
@@ -46,21 +45,10 @@ import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
 @WithJenkins
 public class EndPointTest {
-    @Test
-    void testMcpToolCallSimpleJson(JenkinsRule jenkins) throws Exception {
+    @McpClientTest
+    void testMcpToolCallSimpleJson(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder) {
 
-        var url = jenkins.getURL();
-        var baseUrl = url.toString();
-
-        var transport = HttpClientSseClientTransport.builder(baseUrl)
-                .sseEndpoint(MCP_SERVER_SSE)
-                .build();
-
-        try (var client = McpClient.sync(transport)
-                .requestTimeout(Duration.ofSeconds(500))
-                .capabilities(McpSchema.ClientCapabilities.builder().build())
-                .build()) {
-            client.initialize();
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
             client.getServerCapabilities();
             var tools = client.listTools();
             assertThat(tools.tools())
@@ -99,21 +87,14 @@ public class EndPointTest {
         }
     }
 
-    @Test
-    void testMcpToolCallIntResult(JenkinsRule jenkins) throws Exception {
+    @McpClientTest
+    void testMcpToolCallIntResult(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
+            throws Exception {
 
         var url = jenkins.getURL();
         var baseUrl = url.toString();
 
-        var transport = HttpClientSseClientTransport.builder(baseUrl)
-                .sseEndpoint(MCP_SERVER_SSE)
-                .build();
-
-        try (var client = McpClient.sync(transport)
-                .requestTimeout(Duration.ofSeconds(500))
-                .capabilities(McpSchema.ClientCapabilities.builder().build())
-                .build()) {
-            client.initialize();
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
             McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("testInt", Map.of());
 
             var response = client.callTool(request);
@@ -135,21 +116,11 @@ public class EndPointTest {
         }
     }
 
-    @Test
-    void testMcpToolCallWithException(JenkinsRule jenkins) throws Exception {
+    @McpClientTest
+    void testMcpToolCallWithException(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
+            throws Exception {
 
-        var url = jenkins.getURL();
-        var baseUrl = url.toString();
-
-        var transport = HttpClientSseClientTransport.builder(baseUrl)
-                .sseEndpoint(MCP_SERVER_SSE)
-                .build();
-
-        try (var client = McpClient.sync(transport)
-                .requestTimeout(Duration.ofSeconds(500))
-                .capabilities(McpSchema.ClientCapabilities.builder().build())
-                .build()) {
-            client.initialize();
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
             McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("testWithError", Map.of());
 
             var response = client.callTool(request);
@@ -168,9 +139,10 @@ public class EndPointTest {
         var url = jenkins.getURL();
         var baseUrl = url.toString();
         var sseUrl = baseUrl + MCP_SERVER_SSE;
-        JenkinsRule.WebClient webClient = jenkins.createWebClient();
-        var request = new WebRequest(new URL(sseUrl), HttpMethod.POST);
-        var response = webClient.loadWebResponse(request);
-        assertThat(response.getStatusCode()).isEqualTo(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+        try (JenkinsRule.WebClient webClient = jenkins.createWebClient()) {
+            var request = new WebRequest(new URL(sseUrl), HttpMethod.POST);
+            var response = webClient.loadWebResponse(request);
+            assertThat(response.getStatusCode()).isEqualTo(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+        }
     }
 }

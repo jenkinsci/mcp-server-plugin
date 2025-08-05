@@ -18,7 +18,7 @@ The MCP (Model Context Protocol) Server Plugin for Jenkins implements the server
 
 ## MCP SDK Version
 
-This MCP Server is based on the MCP Java SDK version 0.10.0, which implements the MCP specification version 2024-11-05. We plan to upgrade to the next SDK version when it becomes available, which will likely implement the MCP specification version 2025-03-26.
+This MCP Server is based on the MCP Java SDK version 0.11.0, which implements the MCP specification version 2025-03-26.
 
 ## Getting Started
 
@@ -35,7 +35,7 @@ The MCP Server plugin automatically sets up necessary endpoints and tools upon i
 ### Connecting to the MCP Server
 
 MCP clients can connect to the server using:
-
+- Streamable HTTP Endpoint: `<jenkins-url>/mcp-server/mcp`
 - SSE Endpoint: `<jenkins-url>/mcp-server/sse`
 - Message Endpoint: `<jenkins-url>/mcp-server/message`
 
@@ -44,7 +44,28 @@ MCP clients can connect to the server using:
 The MCP Server Plugin requires the same credentials as the Jenkins instance it's running on. To authenticate your MCP queries:
 
 1. **Jenkins API Token**: Generate an API token from your Jenkins user account.
-2. **Basic Authentication**: Use the API token in the HTTP Basic Authentication header. Below is an example of VS code settings.xml
+2. **Basic Authentication**: Use the API token in the HTTP Basic Authentication header.
+#### Cline Configuration 
+```json
+{
+  "mcpServers": {
+    "jenkins": {
+      "autoApprove": [
+        
+      ],
+      "disabled": false,
+      "timeout": 60,
+      "type": "streamableHttp",
+      "url": "https://jenkins-host/mcp-server/mcp",
+      "headers": {
+        "Authorization": "Basic <user:token base64>"
+      }
+    }
+  }
+}
+```
+#### Copilot Configuration
+Copilot doesn't work well with the Streamable transport as of now, and I'm still investigating the issues. Please continue to use the SSE endpoint.
 ```json
 {
   "mcp": {
@@ -60,7 +81,26 @@ The MCP Server Plugin requires the same credentials as the Jenkins instance it's
   }
 }
 ```
-Example of using the token:
+#### Windsurf Configuration
+```json
+{
+  "servers": {
+    "jenkins": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "http://localhost:8080/mcp-server/mcp",
+        "--header",
+        "Authorization: Bearer ${AUTH_TOKEN}"
+      ],
+      "env": {
+        "AUTH_TOKEN": "Basic <user:token base64>"
+      }
+    }
+  }
+}
+```
+
 
 ### Available Tools
 
