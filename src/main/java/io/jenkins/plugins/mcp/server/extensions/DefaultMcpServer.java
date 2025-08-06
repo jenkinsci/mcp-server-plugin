@@ -37,6 +37,7 @@ import hudson.model.ParametersAction;
 import hudson.model.ParametersDefinitionProperty;
 import hudson.model.Run;
 import hudson.model.SimpleParameterDefinition;
+import hudson.model.User;
 import io.jenkins.plugins.mcp.server.McpServerExtension;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
@@ -45,6 +46,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import jenkins.model.Jenkins;
 import jenkins.model.ParameterizedJobMixIn;
 import lombok.SneakyThrows;
@@ -53,6 +55,8 @@ import lombok.extern.slf4j.Slf4j;
 @Extension
 @Slf4j
 public class DefaultMcpServer implements McpServerExtension {
+
+    public static final String FULL_NAME = "fullName";
 
     @Tool(description = "Get a specific build or the last build of a Jenkins job")
     public Run getBuild(
@@ -181,5 +185,15 @@ public class DefaultMcpServer implements McpServerExtension {
         }
 
         return updated;
+    }
+
+    @Tool(
+            description =
+                    "Get information about the currently authenticated user, including their full name or 'anonymous' if not authenticated")
+    @SneakyThrows
+    public Map<String, String> whoAmI() {
+        return Optional.ofNullable(User.current())
+                .map(user -> Map.of(FULL_NAME, user.getFullName()))
+                .orElse(Map.of(FULL_NAME, "anonymous"));
     }
 }

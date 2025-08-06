@@ -6,12 +6,11 @@ The MCP (Model Context Protocol) Server Plugin for Jenkins implements the server
 
 - **MCP Server Implementation**: Implements the server-side of the Model Context Protocol.
 - **Jenkins Integration**: Exposes Jenkins functionalities as MCP tools and resources.
-- **Real-time Communication**: Uses Server-Sent Events (SSE) for efficient, real-time communication with clients.
 - **Extensible Architecture**: Allows easy extension of MCP capabilities through the `McpServerExtension` interface.
 
 ## Key Components
 
-1. **Endpoint**: The main entry point for MCP communication, handling SSE connections and message routing.
+1. **Endpoint**: The main entry point for MCP communication, handling MCP transport connections and message routing.
 2. **DefaultMcpServer**: Implements `McpServerExtension`, providing default tools for interacting with Jenkins jobs and builds.
 3. **McpToolWrapper**: Wraps Java methods as MCP tools, handling parameter parsing and result formatting.
 4. **McpServerExtension**: Interface for extending MCP server capabilities.
@@ -89,7 +88,7 @@ Copilot doesn't work well with the Streamable transport as of now, and I'm still
       "command": "npx",
       "args": [
         "mcp-remote",
-        "http://localhost:8080/mcp-server/mcp",
+        "http://jenkins-host/mcp-server/mcp",
         "--header",
         "Authorization: Bearer ${AUTH_TOKEN}"
       ],
@@ -135,6 +134,11 @@ The plugin provides the following built-in tools for interacting with Jenkins:
 - `getJobScm`: Retrieve SCM configurations of a Jenkins job.
 - `getBuildScm`: Retrieve SCM configurations of a specific build.
 - `getBuildChangeSets`: Retrieve change log sets of a specific build.
+
+#### Management Information
+- `whoAmI`: Get information about the current user.
+
+
 
 Each tool accepts specific parameters to customize its behavior. For detailed usage instructions and parameter descriptions, refer to the API documentation or use the MCP introspection capabilities.
 

@@ -26,6 +26,7 @@
 
 package io.jenkins.plugins.mcp.server.extensions;
 
+import static io.jenkins.plugins.mcp.server.extensions.DefaultMcpServer.FULL_NAME;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
@@ -40,17 +41,27 @@ import hudson.model.StringParameterDefinition;
 import hudson.security.FullControlOnceLoggedInAuthorizationStrategy;
 import io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder;
 import io.jenkins.plugins.mcp.server.junit.McpClientTest;
+import io.jenkins.plugins.mcp.server.junit.TestUtils;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
 @WithJenkins
 class DefaultMcpServerTest {
+    public static Stream<Arguments> whoAmITestParameters() {
+        Stream<Arguments> baseArgs = Stream.of(Arguments.of(true, "admin"), Arguments.of(false, "anonymous"));
+        return TestUtils.appendMcpClientArgs(baseArgs);
+    }
+
     @McpClientTest
     void testMcpToolCallGetBuild(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
             throws Exception {
@@ -263,6 +274,54 @@ class DefaultMcpServerTest {
                             try {
                                 var contetMap = objectMapper.readValue(textContent.text(), Map.class);
                                 assertThat(contetMap).containsEntry("name", "demo-job0");
+                            } catch (JsonProcessingException e) {
+                                throw new RuntimeException(e);
+                            }
+                        });
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @MethodSource("whoAmITestParameters")
+    @WithJenkins
+    void testMcpToolCallWhoAmI(
+            boolean enableSecurity,
+            String expectedUser,
+            JenkinsMcpClientBuilder jenkinsMcpClientBuilder,
+            JenkinsRule jenkins)
+            throws Exception {
+        if (enableSecurity) {
+            enableSecurity(jenkins);
+        }
+        try (var client = jenkinsMcpClientBuilder
+                .jenkins(jenkins)
+                .requestCustomizer(request -> {
+                    if (enableSecurity) {
+                        String username = "admin";
+                        String password = "admin";
+                        String authString = username + ":" + password;
+                        String encodedAuth = Base64.getEncoder().encodeToString(authString.getBytes());
+                        request.setHeader("Authorization", "Basic " + encodedAuth);
+                    }
+                })
+                .build()) {
+            {
+                McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("whoAmI", Map.of());
+
+                var response = client.callTool(request);
+                assertThat(response.isError()).isFalse();
+                assertThat(response.content()).hasSize(1);
+                assertThat(response.content().get(0).type()).isEqualTo("text");
+                assertThat(response.content())
+                        .first()
+                        .isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                            assertThat(textContent.type()).isEqualTo("text");
+
+                            ObjectMapper objectMapper = new ObjectMapper();
+                            try {
+                                var contetMap = objectMapper.readValue(textContent.text(), Map.class);
+                                assertThat(contetMap).containsEntry(FULL_NAME, expectedUser);
                             } catch (JsonProcessingException e) {
                                 throw new RuntimeException(e);
                             }
