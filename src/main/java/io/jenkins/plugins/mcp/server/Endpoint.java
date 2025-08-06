@@ -47,9 +47,11 @@ import jakarta.servlet.ServletResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import jenkins.util.SystemProperties;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
 
@@ -75,7 +77,15 @@ public class Endpoint extends CrumbExclusion implements RootAction {
     private static final String MESSAGE_ENDPOINT = "/message";
 
     public static final String MCP_SERVER_MESSAGE = MCP_SERVER + MESSAGE_ENDPOINT;
-    public static final String USER_ID = "userId";
+    public static final String USER_ID = Endpoint.class.getName() + ".userId";
+
+    /**
+     * The interval in seconds for sending keep-alive messages to the client.
+     * Default is 0 seconds (so disabled per default), can be overridden by setting the system property
+     * it's not static final on purpose to allow dynamic configuration via script console.
+     */
+    private int keepAliveInterval = SystemProperties.getInteger(Endpoint.class.getName() + ".keepAliveInterval", 0);
+
     /**
      * JSON object mapper for serialization/deserialization
      */
@@ -85,7 +95,6 @@ public class Endpoint extends CrumbExclusion implements RootAction {
     HttpServletStreamableServerTransportProvider httpServletStreamableServerTransportProvider;
 
     public Endpoint() throws ServletException {
-
         init();
     }
 
@@ -157,6 +166,7 @@ public class Endpoint extends CrumbExclusion implements RootAction {
                 .baseUrl(rootUrl)
                 .messageEndpoint(MCP_SERVER_MESSAGE)
                 .objectMapper(objectMapper)
+                .keepAliveInterval(keepAliveInterval > 0 ? Duration.ofSeconds(keepAliveInterval) : null)
                 .build();
 
         io.modelcontextprotocol.server.McpServer.sync(httpServletSseServerTransportProvider)
@@ -176,6 +186,7 @@ public class Endpoint extends CrumbExclusion implements RootAction {
                     }
                     return context;
                 })
+                .keepAliveInterval(keepAliveInterval > 0 ? Duration.ofSeconds(keepAliveInterval) : null)
                 .build();
 
         io.modelcontextprotocol.server.McpServer.sync(httpServletStreamableServerTransportProvider)
