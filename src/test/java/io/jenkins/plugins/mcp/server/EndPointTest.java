@@ -54,6 +54,7 @@ public class EndPointTest {
             assertThat(tools.tools())
                     .extracting(McpSchema.Tool::name)
                     .containsOnly(
+                            "whoAmI",
                             "sayHello",
                             "testInt",
                             "testWithError",
