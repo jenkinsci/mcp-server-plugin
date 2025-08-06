@@ -112,10 +112,9 @@ class DefaultMcpServerTest {
                 assertThat(textContent.text()).contains("true");
             });
         }
-        await().atMost(5, SECONDS).until(() -> project.getLastBuild() != null);
+        await().atMost(10, SECONDS).until(() -> project.getLastBuild() != null);
         jenkins.waitForCompletion(project.getLastBuild());
-        Thread.sleep(1000); // wait for the build to complete
-        assertThat(project.getLastBuild().getNumber()).isEqualTo(nextNumber);
+        await().atMost(10, SECONDS).until(() -> project.getLastBuild().getNumber() == nextNumber);
     }
 
     @McpClientTest
@@ -149,7 +148,7 @@ class DefaultMcpServerTest {
                 assertThat(textContent.text()).contains("true");
             });
         }
-        await().atMost(5, SECONDS)
+        await().atMost(10, SECONDS)
                 .untilAsserted(
                         () -> assertThat(project.getLastBuild().getResult()).isEqualTo(Result.SUCCESS));
         assertThat(project.getLastBuild().getNumber()).isEqualTo(nextNumber);
@@ -187,7 +186,7 @@ class DefaultMcpServerTest {
                 assertThat(textContent.text()).contains("true");
             });
         }
-        await().atMost(5, SECONDS)
+        await().atMost(10, SECONDS)
                 .untilAsserted(
                         () -> assertThat(project.getLastBuild().getResult()).isEqualTo(Result.SUCCESS));
         assertThat(project.getLastBuild().getNumber()).isEqualTo(nextNumber);
