@@ -43,6 +43,8 @@ import io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder;
 import io.jenkins.plugins.mcp.server.junit.McpClientTest;
 import io.jenkins.plugins.mcp.server.junit.TestUtils;
 import io.modelcontextprotocol.spec.McpSchema;
+
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -321,6 +323,50 @@ class DefaultMcpServerTest {
                             try {
                                 var contetMap = objectMapper.readValue(textContent.text(), Map.class);
                                 assertThat(contetMap).containsEntry(FULL_NAME, expectedUser);
+                            } catch (JsonProcessingException e) {
+                                throw new RuntimeException(e);
+                            }
+                        });
+            }
+        }
+    }
+
+    @McpClientTest
+    void testMcpToolCallGetStatusWithAuth(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
+            throws Exception {
+        enableSecurity(jenkins);
+        String username = "admin";
+        String password = "admin";
+        String authString = username + ":" + password;
+        String encodedAuth = Base64.getEncoder().encodeToString(authString.getBytes());
+        try (var client = jenkinsMcpClientBuilder
+                .jenkins(jenkins)
+                .requestCustomizer(request -> request.setHeader("Authorization", "Basic " + encodedAuth))
+                .build()) {
+            {
+                McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("getStatus", Map.of());
+
+                var response = client.callTool(request);
+                assertThat(response.isError()).isFalse();
+                assertThat(response.content().get(0).type()).isEqualTo("text");
+                assertThat(response.content())
+                        .first()
+                        .isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                            assertThat(textContent.type()).isEqualTo("text");
+
+                            ObjectMapper objectMapper = new ObjectMapper();
+                            try {
+                                var contentMap = objectMapper.readValue(textContent.text(), Map.class);
+                                // Do not want to be too specific here as defaults may change and test become flaky
+                                assertThat(contentMap).containsKey("Active administrative monitors");
+                                assertThat(contentMap).containsKey("Available executors (any label)");
+                                assertThat(contentMap).containsKey("Buildable Queue Size");
+                                assertThat(contentMap).containsKey("Defined clouds that can provide agents (any label)");
+                                // This should not change
+                                assertThat(contentMap).containsEntry("Full Queue Size",0);
+                                assertThat(contentMap).containsEntry("Quiet Mode", false);
+
+
                             } catch (JsonProcessingException e) {
                                 throw new RuntimeException(e);
                             }
