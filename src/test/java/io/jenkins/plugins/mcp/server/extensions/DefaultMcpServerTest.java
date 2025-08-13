@@ -84,9 +84,9 @@ class DefaultMcpServerTest {
 
                 ObjectMapper objectMapper = new ObjectMapper();
                 try {
-                    var contetMap = objectMapper.readValue(textContent.text(), Map.class);
-                    assertThat(contetMap).extractingByKey("result").isEqualTo("SUCCESS");
-                    assertThat(contetMap).extractingByKey("number").isEqualTo(build.getNumber());
+                    var contentMap = objectMapper.readValue(textContent.text(), Map.class);
+                    assertThat(contentMap).extractingByKey("result").isEqualTo("SUCCESS");
+                    assertThat(contentMap).extractingByKey("number").isEqualTo(build.getNumber());
 
                 } catch (JsonProcessingException e) {
                     throw new RuntimeException(e);
@@ -252,8 +252,8 @@ class DefaultMcpServerTest {
 
                             ObjectMapper objectMapper = new ObjectMapper();
                             try {
-                                var contetMap = objectMapper.readValue(textContent.text(), Map.class);
-                                assertThat(contetMap).containsEntry("name", "sub-demo-job0");
+                                var contentMap = objectMapper.readValue(textContent.text(), Map.class);
+                                assertThat(contentMap).containsEntry("name", "sub-demo-job0");
                             } catch (JsonProcessingException e) {
                                 throw new RuntimeException(e);
                             }
@@ -273,8 +273,8 @@ class DefaultMcpServerTest {
 
                             ObjectMapper objectMapper = new ObjectMapper();
                             try {
-                                var contetMap = objectMapper.readValue(textContent.text(), Map.class);
-                                assertThat(contetMap).containsEntry("name", "demo-job0");
+                                var contentMap = objectMapper.readValue(textContent.text(), Map.class);
+                                assertThat(contentMap).containsEntry("name", "demo-job0");
                             } catch (JsonProcessingException e) {
                                 throw new RuntimeException(e);
                             }
@@ -321,8 +321,8 @@ class DefaultMcpServerTest {
 
                             ObjectMapper objectMapper = new ObjectMapper();
                             try {
-                                var contetMap = objectMapper.readValue(textContent.text(), Map.class);
-                                assertThat(contetMap).containsEntry(FULL_NAME, expectedUser);
+                                var contentMap = objectMapper.readValue(textContent.text(), Map.class);
+                                assertThat(contentMap).containsEntry(FULL_NAME, expectedUser);
                             } catch (JsonProcessingException e) {
                                 throw new RuntimeException(e);
                             }
