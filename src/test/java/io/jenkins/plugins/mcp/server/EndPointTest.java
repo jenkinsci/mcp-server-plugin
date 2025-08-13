@@ -66,7 +66,8 @@ public class EndPointTest {
                             "getJob",
                             "getJobScm",
                             "getBuildScm",
-                            "getBuildChangeSets");
+                            "getBuildChangeSets",
+                            "getStatus");
             McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("sayHello", Map.of("name", "foo"));
 
             var response = client.callTool(request);

@@ -30,6 +30,8 @@ import static io.jenkins.plugins.mcp.server.extensions.util.JenkinsUtil.getBuild
 
 import hudson.Extension;
 import hudson.model.AbstractItem;
+import hudson.model.AdministrativeMonitor;
+import hudson.model.Computer;
 import hudson.model.Item;
 import hudson.model.ItemGroup;
 import hudson.model.Job;
@@ -38,11 +40,14 @@ import hudson.model.ParametersDefinitionProperty;
 import hudson.model.Run;
 import hudson.model.SimpleParameterDefinition;
 import hudson.model.User;
+import hudson.slaves.Cloud;
 import io.jenkins.plugins.mcp.server.McpServerExtension;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
 import jakarta.annotation.Nullable;
+import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -195,5 +200,47 @@ public class DefaultMcpServer implements McpServerExtension {
         return Optional.ofNullable(User.current())
                 .map(user -> Map.of(FULL_NAME, user.getFullName()))
                 .orElse(Map.of(FULL_NAME, "anonymous"));
+    }
+
+    @Tool(
+            description =
+                    "Checks the health and readiness status of a Jenkins instance, including whether it's in quiet"
+                            + " mode, has active administrative monitors, current queue size, and available executor capacity."
+                            + " This tool provides a comprehensive overview of the controller's operational state to determine if"
+                            + " it's stable and ready to build. Use this tool to assess Jenkins instance health rather than"
+                            + " simple up/down status.")
+    public Map<String, Object> getStatus() {
+        var map = new HashMap<String, Object>();
+        var jenkins = Jenkins.get();
+        var quietMode = jenkins.isQuietingDown();
+        var queue = jenkins.getQueue();
+        var availableExecutors = Arrays.stream(jenkins.getComputers())
+                .filter(Computer::isOnline)
+                .map(Computer::countExecutors)
+                .reduce(0, Integer::sum);
+
+        map.put("Quiet Mode", quietMode);
+        if (quietMode) {
+            map.put(
+                    "Quiet Mode reason",
+                    jenkins.getQuietDownReason() != null ? jenkins.getQuietDownReason() : "Unknown");
+        }
+        map.put("Full Queue Size", queue.getItems().length);
+        map.put("Buildable Queue Size", queue.countBuildableItems());
+        map.put("Available executors (any label)", availableExecutors);
+        // Tell me which clouds are defined as they can be used to provision ephemeral agents
+        map.put(
+                "Defined clouds that can provide agents (any label)",
+                jenkins.clouds.stream()
+                        .filter(cloud -> cloud.canProvision(new Cloud.CloudState(null, 1)))
+                        .map(Cloud::getDisplayName)
+                        .toList());
+        // getActiveAdministrativeMonitors is already protected, so no need to check the user
+        map.put(
+                "Active administrative monitors",
+                jenkins.getActiveAdministrativeMonitors().stream()
+                        .map(AdministrativeMonitor::getDisplayName)
+                        .toList());
+        return map;
     }
 }
