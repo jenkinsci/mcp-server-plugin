@@ -43,8 +43,6 @@ import io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder;
 import io.jenkins.plugins.mcp.server.junit.McpClientTest;
 import io.jenkins.plugins.mcp.server.junit.TestUtils;
 import io.modelcontextprotocol.spec.McpSchema;
-
-import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -361,11 +359,11 @@ class DefaultMcpServerTest {
                                 assertThat(contentMap).containsKey("Active administrative monitors");
                                 assertThat(contentMap).containsKey("Available executors (any label)");
                                 assertThat(contentMap).containsKey("Buildable Queue Size");
-                                assertThat(contentMap).containsKey("Defined clouds that can provide agents (any label)");
+                                assertThat(contentMap)
+                                        .containsKey("Defined clouds that can provide agents (any label)");
                                 // This should not change
-                                assertThat(contentMap).containsEntry("Full Queue Size",0);
+                                assertThat(contentMap).containsEntry("Full Queue Size", 0);
                                 assertThat(contentMap).containsEntry("Quiet Mode", false);
-
 
                             } catch (JsonProcessingException e) {
                                 throw new RuntimeException(e);
