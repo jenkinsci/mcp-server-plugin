@@ -149,8 +149,7 @@ class DefaultMcpServerTest {
             });
         }
         await().atMost(10, SECONDS)
-                .untilAsserted(
-                        () -> assertThat(project.getLastBuild()).isNotNull());
+                .untilAsserted(() -> assertThat(project.getLastBuild()).isNotNull());
         await().atMost(10, SECONDS)
                 .untilAsserted(
                         () -> assertThat(project.getLastBuild().getResult()).isEqualTo(Result.SUCCESS));
@@ -190,8 +189,7 @@ class DefaultMcpServerTest {
             });
         }
         await().atMost(10, SECONDS)
-                .untilAsserted(
-                        () -> assertThat(project.getLastBuild()).isNotNull());
+                .untilAsserted(() -> assertThat(project.getLastBuild()).isNotNull());
         await().atMost(10, SECONDS)
                 .untilAsserted(
                         () -> assertThat(project.getLastBuild().getResult()).isEqualTo(Result.SUCCESS));
