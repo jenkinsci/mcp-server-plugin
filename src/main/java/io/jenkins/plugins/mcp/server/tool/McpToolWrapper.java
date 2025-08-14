@@ -58,13 +58,14 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
 
 public class McpToolWrapper {
-    private static final SchemaGenerator TYPE_SCHEMA_GENERATOR;
     private static final SchemaGenerator SUBTYPE_SCHEMA_GENERATOR;
     private static final boolean PROPERTY_REQUIRED_BY_DEFAULT = true;
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
@@ -84,9 +85,6 @@ public class McpToolWrapper {
                 .with(openApiModule)
                 .with(Option.EXTRA_OPEN_API_FORMAT_VALUES)
                 .with(Option.PLAIN_DEFINITION_KEYS);
-
-        SchemaGeneratorConfig typeSchemaGeneratorConfig = schemaGeneratorConfigBuilder.build();
-        TYPE_SCHEMA_GENERATOR = new SchemaGenerator(typeSchemaGeneratorConfig);
 
         SchemaGeneratorConfig subtypeSchemaGeneratorConfig = schemaGeneratorConfigBuilder
                 .without(Option.SCHEMA_VERSION_INDICATOR)
@@ -284,11 +282,39 @@ public class McpToolWrapper {
         return user;
     }
 
+    private Supplier<Map<String, Object>> _meta() {
+        var tool = method.getAnnotation(Tool.class);
+        if (tool.metas().length > 0) {
+            Map<String, Object> metaMap = Arrays.stream(tool.metas())
+                    .sequential()
+                    .filter(meta -> StringUtils.hasText(meta.property()) && StringUtils.hasText(meta.parameter()))
+                    .collect(Collectors.toMap(Tool.Meta::property, Tool.Meta::parameter));
+            return () -> metaMap;
+        }
+        return Map::of;
+    }
+
+    private Supplier<McpSchema.ToolAnnotations> toolAnnotations() {
+        var tool = method.getAnnotation(Tool.class);
+        if (tool.annotations() != null) {
+            return () -> new McpSchema.ToolAnnotations(
+                    tool.annotations().title(),
+                    tool.annotations().readOnlyHint(),
+                    tool.annotations().destructiveHint(),
+                    tool.annotations().idempotentHint(),
+                    tool.annotations().openWorldHint(),
+                    tool.annotations().returnDirect());
+        }
+        return () -> null;
+    }
+
     public McpServerFeatures.SyncToolSpecification asSyncToolSpecification() {
         return McpServerFeatures.SyncToolSpecification.builder()
                 .tool(McpSchema.Tool.builder()
                         .name(getToolName())
                         .description(getToolDescription())
+                        .meta(_meta().get())
+                        .annotations(toolAnnotations().get())
                         .inputSchema(generateForMethodInput())
                         .build())
                 .callHandler(this::callRequest)
