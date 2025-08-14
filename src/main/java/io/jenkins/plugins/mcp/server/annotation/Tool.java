@@ -46,4 +46,70 @@ public @interface Tool {
      * The description of the tool. If not provided, the method name will be used.
      */
     String description() default "";
+
+    /**
+     * To add some _meta content to the tool.
+     */
+    Meta[] metas() default @Meta;
+
+    /**
+     * The _meta property/parameter is reserved by MCP to allow clients and servers
+     * to attach additional metadata to their interactions.
+     * <a href="https://modelcontextprotocol.io/specification/2025-06-18/basic/index#meta">specifications available</a>
+     */
+    @Retention(RetentionPolicy.RUNTIME)
+    @Target(ElementType.ANNOTATION_TYPE)
+    @interface Meta {
+
+        String property() default "";
+
+        String parameter() default "";
+    }
+
+    /**
+     * Additional hints for clients.
+     * There is no default value for this. If you need it you need to explicitly add it.
+     */
+    Annotations annotations() default @Annotations;
+
+    /**
+     * <a href="https://modelcontextprotocol.io/specification/2025-06-18/schema#toolannotations">specifications available</a>
+     */
+    @Retention(RetentionPolicy.RUNTIME)
+    @Target(ElementType.ANNOTATION_TYPE)
+    @interface Annotations {
+
+        /**
+         * A human-readable title for the tool.
+         */
+        String title() default "";
+
+        /**
+         * If true, the tool does not modify its environment.
+         */
+        boolean readOnlyHint() default false;
+
+        /**
+         * If true, the tool may perform destructive updates to its environment. If false, the tool performs only additive
+         * updates.
+         */
+        boolean destructiveHint() default true;
+
+        /**
+         * If true, calling the tool repeatedly with the same arguments will have no additional effect on the its environment.
+         */
+        boolean idempotentHint() default false;
+
+        /**
+         * If true, this tool may interact with an "open world" of external entities. If false, the tool's domain of interaction
+         * is closed.
+         */
+        boolean openWorldHint() default true;
+
+        /**
+         * hint indicating that the tool's result should be returned directly to the client,
+         * rather than being processed or modified by the server
+         */
+        boolean returnDirect() default true;
+    }
 }

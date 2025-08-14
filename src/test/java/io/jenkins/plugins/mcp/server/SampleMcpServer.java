@@ -33,7 +33,19 @@ import java.util.Map;
 
 @Extension
 public class SampleMcpServer implements McpServerExtension {
-    @Tool
+    @Tool(
+            annotations =
+                    @Tool.Annotations(
+                            title = "Beta tool",
+                            readOnlyHint = true,
+                            destructiveHint = false,
+                            idempotentHint = true,
+                            openWorldHint = false,
+                            returnDirect = false),
+            metas = {
+                @Tool.Meta(property = "version", parameter = "1.0"),
+                @Tool.Meta(property = "author", parameter = "Someone")
+            })
     public Map sayHello(@ToolParam(description = "The name to greet") String name) {
         return Map.of("message", "Hello, " + name + "!");
     }

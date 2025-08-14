@@ -68,6 +68,26 @@ public class EndPointTest {
                             "getBuildScm",
                             "getBuildChangeSets",
                             "getStatus");
+
+            var sayHelloTool = tools.tools().stream()
+                    .filter(tool -> "sayHello".equals(tool.name()))
+                    .findFirst();
+
+            assertThat(sayHelloTool).isPresent();
+
+            assertThat(sayHelloTool.get().meta())
+                    .hasSize(2)
+                    .containsEntry("version", "1.0")
+                    .containsEntry("author", "Someone");
+
+            assertThat(sayHelloTool.get().annotations()).isNotNull();
+            assertThat(sayHelloTool.get().annotations().title()).isEqualTo("Beta tool");
+            assertThat(sayHelloTool.get().annotations().readOnlyHint()).isTrue();
+            assertThat(sayHelloTool.get().annotations().destructiveHint()).isFalse();
+            assertThat(sayHelloTool.get().annotations().idempotentHint()).isTrue();
+            assertThat(sayHelloTool.get().annotations().openWorldHint()).isFalse();
+            assertThat(sayHelloTool.get().annotations().returnDirect()).isFalse();
+
             McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("sayHello", Map.of("name", "foo"));
 
             var response = client.callTool(request);
