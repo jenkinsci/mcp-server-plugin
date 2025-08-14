@@ -150,6 +150,9 @@ class DefaultMcpServerTest {
         }
         await().atMost(10, SECONDS)
                 .untilAsserted(
+                        () -> assertThat(project.getLastBuild()).isNotNull());
+        await().atMost(10, SECONDS)
+                .untilAsserted(
                         () -> assertThat(project.getLastBuild().getResult()).isEqualTo(Result.SUCCESS));
         assertThat(project.getLastBuild().getNumber()).isEqualTo(nextNumber);
         assertThat(project.getLastBuild().getLog()).contains(List.of("string_value", "false", "option2"));
@@ -186,6 +189,9 @@ class DefaultMcpServerTest {
                 assertThat(textContent.text()).contains("true");
             });
         }
+        await().atMost(10, SECONDS)
+                .untilAsserted(
+                        () -> assertThat(project.getLastBuild()).isNotNull());
         await().atMost(10, SECONDS)
                 .untilAsserted(
                         () -> assertThat(project.getLastBuild().getResult()).isEqualTo(Result.SUCCESS));
