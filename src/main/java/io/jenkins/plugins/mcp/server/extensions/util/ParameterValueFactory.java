@@ -46,7 +46,7 @@ import lombok.extern.slf4j.Slf4j;
  * Supports both core Jenkins parameter types and common plugin parameter types.
  */
 @Slf4j
-public class ParameterValueFactory {
+public final class ParameterValueFactory {
 
     /**
      * Creates a parameter value from a parameter definition and input value.
