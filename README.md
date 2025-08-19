@@ -121,10 +121,12 @@ The plugin provides the following built-in tools for interacting with Jenkins:
   }
   ```
   Note on Parameters:
-  - Only built-in parameter types in core Jenkins are fully supported.
-  - Unsupported parameter types will be ignored and set as null in the pipeline.
-  - File parameters are not currently supported.
-  - If you encounter a parameter type from a Jenkins plugin that is not supported, please create an issue in our repository.
+  - **Core Jenkins Parameters**: Fully supported (String, Boolean, Choice, Text, Password, Run)
+  - **Plugin Parameters**: Automatically detected and handled using reflection
+  - **File Parameters**: Not supported via MCP (require file uploads)
+  - **Multi-select Parameters**: Supported as arrays or lists
+  - **Custom Plugin Parameters**: Automatically attempted using reflection-based detection
+  - **Fallback Behavior**: Unsupported parameters fall back to default values with logging
 #### Build Information
 - `getBuild`: Retrieve a specific build or the last build of a Jenkins job.
 - `updateBuild`: Update build display name and/or description.
@@ -143,6 +145,43 @@ The plugin provides the following built-in tools for interacting with Jenkins:
 Each tool accepts specific parameters to customize its behavior. For detailed usage instructions and parameter descriptions, refer to the API documentation or use the MCP introspection capabilities.
 
 To use these tools, connect to the MCP server endpoint and make tool calls using your MCP client implementation.
+### Enhanced Parameter Support
+
+The MCP Server Plugin now provides comprehensive support for Jenkins parameters:
+
+#### Supported Parameter Types
+
+- **String Parameters**: Text input with default values
+- **Boolean Parameters**: True/false values with automatic type conversion
+- **Choice Parameters**: Dropdown selections with validation
+- **Text Parameters**: Multi-line text input
+- **Password Parameters**: Secure input with Secret handling
+- **Run Parameters**: Build number references
+- **Plugin Parameters**: Automatically detected and handled
+
+#### Parameter Handling Features
+
+- **Type Conversion**: Automatic conversion between JSON types and Jenkins parameter types
+- **Validation**: Choice parameters validate input against available options
+- **Fallback**: Unsupported parameters gracefully fall back to defaults
+- **Reflection**: Plugin parameter types automatically detected and handled
+- **Logging**: Comprehensive logging for debugging parameter issues
+
+#### Example Usage
+
+```json
+{
+  "jobFullName": "my-parameterized-job",
+  "parameters": {
+    "BRANCH": "main",
+    "DEBUG_MODE": true,
+    "ENVIRONMENT": "production",
+    "FEATURES": ["feature1", "feature2"],
+    "NOTES": "Build triggered via MCP"
+  }
+}
+```
+
 ### Extending MCP Capabilities
 
 To add new MCP tools or functionalities:
