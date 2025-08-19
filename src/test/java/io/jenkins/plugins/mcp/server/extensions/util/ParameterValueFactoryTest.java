@@ -34,7 +34,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * These tests focus on the logic and behavior without requiring Jenkins objects.
  * Designed to be fully compatible with Jenkins CI environment.
  */
-class ParameterValueFactoryTest {
+public class ParameterValueFactoryTest {
 
     @Test
     void testParameterValueFactoryExists() {
