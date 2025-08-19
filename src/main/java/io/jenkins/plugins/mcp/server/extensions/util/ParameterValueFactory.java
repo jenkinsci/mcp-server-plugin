@@ -47,6 +47,7 @@ public final class ParameterValueFactory {
 
     /**
      * Creates a parameter value from a parameter definition and input value.
+     * This method supports both core Jenkins parameter types and plugin-specific types.
      * 
      * @param param the parameter definition
      * @param inputValue the input value from the user
