@@ -27,6 +27,7 @@
 package io.jenkins.plugins.mcp.server.extensions;
 
 import static io.jenkins.plugins.mcp.server.extensions.util.JenkinsUtil.getBuildByNumberOrLast;
+import static io.jenkins.plugins.mcp.server.extensions.util.ParameterValueFactory.createParameterValue;
 
 import hudson.Extension;
 import hudson.model.AbstractItem;
@@ -93,23 +94,21 @@ public class DefaultMcpServer implements McpServerExtension {
                         (ParametersDefinitionProperty) j.getProperty(ParametersDefinitionProperty.class);
                 var parameterValues = parametersDefinition.getParameterDefinitions().stream()
                         .map(param -> {
-                            if (param instanceof SimpleParameterDefinition sd) {
-                                if (parameters != null && parameters.containsKey(param.getName())) {
-                                    var value = parameters.get(param.getName());
-                                    return sd.createValue(String.valueOf(value));
-                                } else {
-                                    return sd.getDefaultParameterValue();
-                                }
+                            if (parameters != null && parameters.containsKey(param.getName())) {
+                                var value = parameters.get(param.getName());
+                                return createParameterValue(param, value);
                             } else {
-                                log.warn(
-                                        "Unsupported parameter type: {}",
-                                        param.getClass().getName());
-                                return null;
+                                return param.getDefaultParameterValue();
                             }
                         })
                         .filter(Objects::nonNull)
                         .toList();
-                job.scheduleBuild2(0, new ParametersAction(parameterValues));
+                
+                if (!parameterValues.isEmpty()) {
+                    job.scheduleBuild2(0, new ParametersAction(parameterValues));
+                } else {
+                    job.scheduleBuild2(0);
+                }
             } else {
                 job.scheduleBuild2(0);
             }
