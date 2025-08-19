@@ -108,9 +108,7 @@ public final class ParameterValueFactory {
             if (param.getChoices().contains(value)) {
                 return param.createValue(value);
             } else {
-                log.warn(
-                    "Invalid choice '{}' for parameter '{}'. Valid choices: {}",
-                    value, param.getName(), param.getChoices());
+                log.warn("Invalid choice '{}' for parameter '{}'. Valid choices: {}", value, param.getName(), param.getChoices());
                 return param.getDefaultParameterValue();
             }
         }

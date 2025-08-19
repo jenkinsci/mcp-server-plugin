@@ -116,24 +116,11 @@ public class DefaultMcpServer implements McpServerExtension {
         return false;
     }
 
-    @Tool(
-            description =
-                    "Get a paginated list of Jenkins jobs, sorted by name. Returns up to 'limit' jobs starting from the 'skip' index. If no jobs are available in the requested range, returns an empty list.")
+    @Tool(description = "Get a paginated list of Jenkins jobs, sorted by name. Returns up to 'limit' jobs starting from the 'skip' index. If no jobs are available in the requested range, returns an empty list.")
     public List<Job> getJobs(
-            @ToolParam(
-                            description =
-                                    "The full path of the Jenkins folder (e.g., 'folder'), if not specified, it returns the items under root",
-                            required = false)
-                    String parentFullName,
-            @ToolParam(
-                            description = "The 0 based started index, if not specified, then start from the first (0)",
-                            required = false)
-                    Integer skip,
-            @ToolParam(
-                            description =
-                                    "The maximum number of items to return. If not specified, returns 10 items. Cannot exceed 10 items.",
-                            required = false)
-                    Integer limit) {
+            @ToolParam(description = "The full path of the Jenkins folder (e.g., 'folder'), if not specified, it returns the items under root", required = false) String parentFullName,
+            @ToolParam(description = "The 0 based started index, if not specified, then start from the first (0)", required = false) Integer skip,
+            @ToolParam(description = "The maximum number of items to return. If not specified, returns 10 items. Cannot exceed 10 items.", required = false) Integer limit) {
 
         if (skip == null || skip < 0) {
             skip = 0;
@@ -165,11 +152,7 @@ public class DefaultMcpServer implements McpServerExtension {
     @SneakyThrows
     public boolean updateBuild(
             @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
-            @Nullable
-                    @ToolParam(
-                            description = "Build number (optional, if not provided, updates the last build)",
-                            required = false)
-                    Integer buildNumber,
+            @Nullable @ToolParam(description = "Build number (optional, if not provided, updates the last build)", required = false) Integer buildNumber,
             @Nullable @ToolParam(description = "New display name for the build", required = false) String displayName,
             @Nullable @ToolParam(description = "New description for the build", required = false) String description) {
 
@@ -190,9 +173,7 @@ public class DefaultMcpServer implements McpServerExtension {
         return updated;
     }
 
-    @Tool(
-            description =
-                    "Get information about the currently authenticated user, including their full name or 'anonymous' if not authenticated")
+    @Tool(description = "Get information about the currently authenticated user, including their full name or 'anonymous' if not authenticated")
     @SneakyThrows
     public Map<String, String> whoAmI() {
         return Optional.ofNullable(User.current())
