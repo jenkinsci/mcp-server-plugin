@@ -32,6 +32,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Unit tests for ParameterValueFactory utility class.
  * These tests focus on the logic and behavior without requiring Jenkins objects.
+ * Designed to be fully compatible with Jenkins CI environment.
  */
 class ParameterValueFactoryTest {
 
@@ -44,16 +45,21 @@ class ParameterValueFactoryTest {
 
     @Test
     void testParameterValueFactoryHasCreateMethod() {
-        // Test that the main method exists
-        try {
-            var method = ParameterValueFactory.class.getMethod("createParameterValue", 
-                Class.forName("hudson.model.ParameterDefinition"), Object.class);
-            assertNotNull(method);
-            assertTrue(java.lang.reflect.Modifier.isStatic(method.getModifiers()));
-        } catch (Exception e) {
-            // This is expected in unit test environment without Jenkins classes
-            assertTrue(true, "Method exists but Jenkins classes not available in unit test");
+        // Test that the main method exists by checking method names
+        var methods = ParameterValueFactory.class.getDeclaredMethods();
+        boolean hasCreateMethod = false;
+        
+        for (var method : methods) {
+            if (method.getName().equals("createParameterValue")) {
+                hasCreateMethod = true;
+                // Check that it's static
+                assertTrue(java.lang.reflect.Modifier.isStatic(method.getModifiers()), 
+                    "createParameterValue method should be static");
+                break;
+            }
         }
+        
+        assertTrue(hasCreateMethod, "Should have createParameterValue method");
     }
 
     @Test
@@ -86,5 +92,32 @@ class ParameterValueFactoryTest {
         
         // Test that it's not abstract
         assertFalse(java.lang.reflect.Modifier.isAbstract(ParameterValueFactory.class.getModifiers()));
+        
+        // Test that it's not an interface
+        assertFalse(ParameterValueFactory.class.isInterface());
+    }
+
+    @Test
+    void testParameterValueFactoryHasCorrectPackage() {
+        // Test that the class is in the correct package
+        String expectedPackage = "io.jenkins.plugins.mcp.server.extensions.util";
+        assertEquals(expectedPackage, ParameterValueFactory.class.getPackageName());
+    }
+
+    @Test
+    void testParameterValueFactoryIsFinal() {
+        // Test that the class is final (utility class pattern)
+        assertTrue(java.lang.reflect.Modifier.isFinal(ParameterValueFactory.class.getModifiers()));
+    }
+
+    @Test
+    void testParameterValueFactoryHasNoInstanceFields() {
+        // Test that utility class has no instance fields
+        var fields = ParameterValueFactory.class.getDeclaredFields();
+        for (var field : fields) {
+            assertTrue(java.lang.reflect.Modifier.isStatic(field.getModifiers()) || 
+                      java.lang.reflect.Modifier.isFinal(field.getModifiers()),
+                "Utility class should only have static or final fields");
+        }
     }
 }
