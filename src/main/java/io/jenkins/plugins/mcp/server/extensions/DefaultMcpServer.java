@@ -39,7 +39,6 @@ import hudson.model.Job;
 import hudson.model.ParametersAction;
 import hudson.model.ParametersDefinitionProperty;
 import hudson.model.Run;
-import hudson.model.SimpleParameterDefinition;
 import hudson.model.User;
 import hudson.slaves.Cloud;
 import io.jenkins.plugins.mcp.server.McpServerExtension;
