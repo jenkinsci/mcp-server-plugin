@@ -35,9 +35,6 @@ import hudson.model.PasswordParameterDefinition;
 import hudson.model.RunParameterDefinition;
 import hudson.model.StringParameterDefinition;
 import hudson.model.TextParameterDefinition;
-import hudson.util.Secret;
-import java.util.Map;
-import java.util.Objects;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 
@@ -110,7 +107,8 @@ public final class ParameterValueFactory {
             if (param.getChoices().contains(value)) {
                 return param.createValue(value);
             } else {
-                log.warn("Invalid choice '{}' for parameter '{}'. Valid choices: {}", 
+                log.warn(
+                    "Invalid choice '{}' for parameter '{}'. Valid choices: {}",
                     value, param.getName(), param.getChoices());
                 return param.getDefaultParameterValue();
             }
