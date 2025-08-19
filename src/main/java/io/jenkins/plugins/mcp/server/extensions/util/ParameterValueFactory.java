@@ -98,7 +98,7 @@ public final class ParameterValueFactory {
             } else {
                 value = Boolean.parseBoolean(String.valueOf(inputValue));
             }
-            return param.createValue(value);
+            return param.createValue(String.valueOf(value));
         }
         return param.getDefaultParameterValue();
     }
@@ -128,7 +128,7 @@ public final class ParameterValueFactory {
     private static ParameterValue createPasswordParameterValue(PasswordParameterDefinition param, Object inputValue) {
         if (inputValue != null) {
             String value = String.valueOf(inputValue);
-            return param.createValue(Secret.fromString(value));
+            return param.createValue(value);
         }
         return param.getDefaultParameterValue();
     }
