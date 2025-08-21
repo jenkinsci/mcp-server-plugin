@@ -34,10 +34,10 @@ import hudson.model.Run;
 import io.jenkins.plugins.mcp.server.McpServerExtension;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
-import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
@@ -80,14 +80,9 @@ public class BuildLogsExtension implements McpServerExtension {
                 .map(build -> {
                     try {
                         // TODO need to find some mechanism to not read all the logs in memory
-                        List<String> allLines = getLogLines(build);
-                        long actualOffset = skipF;
-                        if (skipF < 0) actualOffset = Math.max(0, allLines.size() + skipF);
-                        int endIndex = (int) Math.min(actualOffset + limitF, allLines.size());
-                        var lines = allLines.subList((int) actualOffset, endIndex);
-                        boolean hasMoreContent = endIndex < allLines.size();
+                        var lines = getLogLines(build, skipF, limitF);
+                        boolean hasMoreContent = true;
                         return new BuildLogResponse(hasMoreContent, lines);
-
                     } catch (IOException e) {
                         log.error("Error reading log for job {} build {}", jobFullName, buildNumber, e);
                         return null;
@@ -96,13 +91,33 @@ public class BuildLogsExtension implements McpServerExtension {
                 .orElse(null);
     }
 
-    private List<String> getLogLines(Run<?, ?> run) throws IOException {
+    private List<String> getLogLines(Run<?, ?> run, long skip, int limit) throws IOException {
         try (InputStream input = run.getLogInputStream();
-             ByteArrayOutputStream os = new ByteArrayOutputStream();
-             PlainTextConsoleOutputStream out = new PlainTextConsoleOutputStream(os)) {
+                ByteArrayOutputStream os = new ByteArrayOutputStream();
+                SkipLogReader out = new SkipLogReader(os, skip, limit)) {
             IOUtils.copy(input, out);
             // is the right charset here?
             return os.toString(StandardCharsets.UTF_8).lines().toList();
+        }
+    }
+
+    private static class SkipLogReader extends PlainTextConsoleOutputStream {
+        private final long skip;
+        private final int limit;
+        private long current;
+
+        public SkipLogReader(OutputStream out, long skip, int limit) throws IOException {
+            super(out);
+            this.skip = skip;
+            this.limit = limit;
+        }
+
+        @Override
+        protected void eol(byte[] in, int sz) throws IOException {
+            if (this.skip > current && this.limit <= (current + skip)) {
+                super.eol(in, sz);
+            }
+            current++;
         }
     }
 
