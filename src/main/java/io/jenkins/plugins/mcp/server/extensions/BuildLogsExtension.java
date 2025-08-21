@@ -29,13 +29,19 @@ package io.jenkins.plugins.mcp.server.extensions;
 import static io.jenkins.plugins.mcp.server.extensions.util.JenkinsUtil.getBuildByNumberOrLast;
 
 import hudson.Extension;
+import hudson.console.PlainTextConsoleOutputStream;
+import hudson.model.Run;
 import io.jenkins.plugins.mcp.server.McpServerExtension;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.io.IOUtils;
 
 @Extension
 @Slf4j
@@ -72,8 +78,9 @@ public class BuildLogsExtension implements McpServerExtension {
         final long skipF = skip;
         return getBuildByNumberOrLast(jobFullName, buildNumber)
                 .map(build -> {
-                    try (BufferedReader reader = new BufferedReader(build.getLogReader())) {
-                        List<String> allLines = reader.lines().toList();
+                    try {
+                        // TODO need to find some mechanism to not read all the logs in memory
+                        List<String> allLines = getLogLines(build);
                         long actualOffset = skipF;
                         if (skipF < 0) actualOffset = Math.max(0, allLines.size() + skipF);
                         int endIndex = (int) Math.min(actualOffset + limitF, allLines.size());
@@ -87,6 +94,16 @@ public class BuildLogsExtension implements McpServerExtension {
                     }
                 })
                 .orElse(null);
+    }
+
+    private List<String> getLogLines(Run<?, ?> run) throws IOException {
+        try (InputStream input = run.getLogInputStream();
+             ByteArrayOutputStream os = new ByteArrayOutputStream();
+             PlainTextConsoleOutputStream out = new PlainTextConsoleOutputStream(os)) {
+            IOUtils.copy(input, out);
+            // is the right charset here?
+            return os.toString(StandardCharsets.UTF_8).lines().toList();
+        }
     }
 
     public record BuildLogResponse(boolean hasMoreContent, List<String> lines) {}
