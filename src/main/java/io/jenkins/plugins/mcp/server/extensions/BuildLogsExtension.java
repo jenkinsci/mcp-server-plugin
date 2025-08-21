@@ -79,10 +79,7 @@ public class BuildLogsExtension implements McpServerExtension {
         return getBuildByNumberOrLast(jobFullName, buildNumber)
                 .map(build -> {
                     try {
-                        // TODO need to find some mechanism to not read all the logs in memory
-                        var lines = getLogLines(build, skipF, limitF);
-                        boolean hasMoreContent = true;
-                        return new BuildLogResponse(hasMoreContent, lines);
+                        return getLogLines(build, skipF, limitF);
                     } catch (IOException e) {
                         log.error("Error reading log for job {} build {}", jobFullName, buildNumber, e);
                         return null;
@@ -91,13 +88,15 @@ public class BuildLogsExtension implements McpServerExtension {
                 .orElse(null);
     }
 
-    private List<String> getLogLines(Run<?, ?> run, long skip, int limit) throws IOException {
+    private BuildLogResponse getLogLines(Run<?, ?> run, long skip, int limit) throws IOException {
         try (InputStream input = run.getLogInputStream();
                 ByteArrayOutputStream os = new ByteArrayOutputStream();
                 SkipLogReader out = new SkipLogReader(os, skip, limit)) {
             IOUtils.copy(input, out);
             // is the right charset here?
-            return os.toString(StandardCharsets.UTF_8).lines().toList();
+            return new BuildLogResponse(
+                    out.hasMoreContent,
+                    os.toString(StandardCharsets.UTF_8).lines().toList());
         }
     }
 
@@ -105,6 +104,7 @@ public class BuildLogsExtension implements McpServerExtension {
         private final long skip;
         private final int limit;
         private long current;
+        private boolean hasMoreContent;
 
         public SkipLogReader(OutputStream out, long skip, int limit) throws IOException {
             super(out);
@@ -114,8 +114,13 @@ public class BuildLogsExtension implements McpServerExtension {
 
         @Override
         protected void eol(byte[] in, int sz) throws IOException {
-            if (this.skip > current && this.limit <= (current + skip)) {
+            if (this.current >= this.skip && this.limit > (current - skip)) {
                 super.eol(in, sz);
+            } else {
+                // skip the line but update hasMoreContent
+                if (this.current - skip >= this.limit) {
+                    hasMoreContent = true;
+                }
             }
             current++;
         }
