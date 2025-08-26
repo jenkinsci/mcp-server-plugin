@@ -38,12 +38,14 @@ import io.jenkins.plugins.mcp.server.annotation.ToolParam;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.List;
+import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.input.ReversedLinesFileReader;
 
@@ -63,12 +65,12 @@ public class BuildLogsExtension implements McpServerExtension {
                     Integer buildNumber,
             @ToolParam(
                             description =
-                                    "The skip (optional, if not provided, returns the first line). Negative values function as 'from the end', with -1 meaning starting with the last line",
+                                    "The skip (optional, if not provided, returns from the first line). Negative values function as 'from the end', with -1 meaning starting with the last line",
                             required = false)
                     Long skip,
             @ToolParam(
                             description =
-                                    "The number of lines to return (optional, if not provided, returns 100 lines)",
+                                    "The number of lines to return (optional, if not provided, returns 100 lines), positive values return lines from the start, negative values return lines from the end",
                             required = false)
                     Integer limit) {
         if (limit == null || limit == 0) {
@@ -93,41 +95,53 @@ public class BuildLogsExtension implements McpServerExtension {
     }
 
     private BuildLogResponse getLogLines(Run<?, ?> run, long skip, int limit) throws Exception {
+
         if (skip < 0) {
             // TODO can get gz file?
             File logFile = run.getLogFile();
+            boolean removedElement = false;
             try (ReversedLinesFileReader input =
                     ReversedLinesFileReader.builder().setFile(logFile).get()) {
+                // we need this one if limit is positive
+                Optional<LimitedQueue<String>> linesBucket =
+                        limit > 0 ? Optional.of(new LimitedQueue<>(limit)) : Optional.empty();
                 int current = -1;
-                // here ww advance the pointer so we may keep track of the line as it needs to be returned
+                // here we advance the pointer so we may keep track of the line as it needs to be returned
                 String currentLine = input.readLine();
                 while (currentLine != null) {
+                    if (linesBucket.isPresent()) {
+                        removedElement = linesBucket.get().add(currentLine);
+                    }
                     if (current <= skip) {
                         break;
                     }
                     currentLine = input.readLine();
                     current--;
                 }
-                if (currentLine == null) {
+                if (currentLine == null
+                        && (linesBucket.isEmpty() || linesBucket.get().isEmpty())) {
                     // no more lines and nothing to return last time to avoid NPE
                     return new BuildLogResponse(false, Collections.emptyList());
                 }
-                List<String> lines = new ArrayList<>(input.readLines(limit - 1));
+                List<String> lines = limit > 0
+                        ? new ArrayList<>(linesBucket.get().deque.stream().toList())
+                        : new ArrayList<>(input.readLines(Math.abs(limit) - 1));
                 // could be more simple to test if more line to populate hasMoreContent but if already reading too much
                 // the call throw NPE (and catch NPE for this would be ugly)
                 // so we try one line more and test number of lines returned
                 // boolean hasMoreContent = input.readLine() != null;
-                boolean hasMoreContent = lines.size() > limit;
+                boolean hasMoreContent = limit > 0 ? removedElement : lines.size() > limit;
                 Collections.reverse(lines);
-                lines.add(currentLine);
+                if (limit < 0) {
+                    lines.add(currentLine);
+                }
                 lines = ConsoleNote.removeNotes(lines);
                 return new BuildLogResponse(hasMoreContent, lines);
             }
 
         } else {
             // more simple run.getLogText().writeLogTo(0, new SkipLogOutputStream(System.out, skip, limit));
-            try (InputStream input = run.getLogInputStream();
-                    ByteArrayOutputStream os = new ByteArrayOutputStream();
+            try (ByteArrayOutputStream os = new ByteArrayOutputStream();
                     SkipLogOutputStream out = new SkipLogOutputStream(os, skip, limit)) {
                 run.writeWholeLogTo(out);
                 // is the right charset here?
@@ -165,4 +179,41 @@ public class BuildLogsExtension implements McpServerExtension {
     }
 
     public record BuildLogResponse(boolean hasMoreContent, List<String> lines) {}
+
+    private static class LimitedQueue<E> {
+        private final int maxSize;
+        private final Deque<E> deque;
+
+        public LimitedQueue(int maxSize) {
+            this.maxSize = maxSize;
+            this.deque = new ArrayDeque<>(maxSize);
+        }
+
+        public boolean add(E e) {
+            boolean removed = false;
+            if (deque.size() == maxSize) {
+                removed = true;
+                deque.removeFirst();
+            }
+            deque.addLast(e);
+            return removed;
+        }
+
+        public E remove() {
+            return deque.removeFirst();
+        }
+
+        public int size() {
+            return deque.size();
+        }
+
+        public boolean isEmpty() {
+            return deque.isEmpty();
+        }
+
+        @Override
+        public String toString() {
+            return deque.toString();
+        }
+    }
 }
