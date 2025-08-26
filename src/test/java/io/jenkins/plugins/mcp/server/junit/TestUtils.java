@@ -33,7 +33,7 @@ import org.junit.jupiter.params.provider.Arguments;
 public class TestUtils {
     public static Stream<Arguments> appendMcpClientArgs(Stream<Arguments> baseArgs) {
         return baseArgs.flatMap(args -> Stream.of(
-                // Arguments.of(append(args.get(), new JenkinsSSEMcpClientBuilder())),
+                Arguments.of(append(args.get(), new JenkinsSSEMcpClientBuilder())),
                 Arguments.of(append(args.get(), new JenkinsStreamableMcpClientBuilder()))));
     }
 
