@@ -46,6 +46,8 @@ import java.util.Collections;
 import java.util.Deque;
 import java.util.List;
 import java.util.Optional;
+
+import jenkins.util.SystemProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.input.ReversedLinesFileReader;
 
@@ -95,6 +97,10 @@ public class BuildLogsExtension implements McpServerExtension {
     }
 
     private BuildLogResponse getLogLines(Run<?, ?> run, long skip, int limit) throws Exception {
+
+        int maxLimit = SystemProperties.getInteger(BuildLogsExtension.class.getName() + ".limit.max", 10000);
+
+        limit = Math.min(Math.abs(limit), maxLimit);
 
         if (skip < 0) {
             // TODO can get gz file?
