@@ -90,6 +90,16 @@ public class BuildLogsExtension implements McpServerExtension {
     }
 
     private BuildLogResponse getLogLines(Run<?, ?> run, long skip, int limit) throws Exception {
+        int maxLimit = SystemProperties.getInteger(BuildLogsExtension.class.getName() + ".limit.max", 10000);
+        boolean negativeLimit = limit < 0;
+        if (Math.abs(limit) > maxLimit) {
+            log.warn("Limit {} is too large, using the default max limit {}", limit, maxLimit);
+        }
+        limit = Math.min(Math.abs(limit), maxLimit);
+        if (negativeLimit) {
+            limit = -limit;
+        }
+
         // first need number of lines
         long skipInit = skip;
         int limitInit = limit;
@@ -102,13 +112,6 @@ public class BuildLogsExtension implements McpServerExtension {
             log.debug("counted {} lines in {} ms", linesNumber, System.currentTimeMillis() - start);
         }
         // now we can make the maths to skip, limit and start from for the capture read
-        int maxLimit = SystemProperties.getInteger(BuildLogsExtension.class.getName() + ".limit.max", 10000);
-        boolean negativeLimit = limit < 0;
-        limit = Math.min(Math.abs(limit), maxLimit);
-        if (negativeLimit) {
-            limit = -limit;
-        }
-
         // special for skip > 0 and limit < 0, we simply recalculate the skip and positive the limit
         if (skip > 0 && limit < 0) {
             skip = Math.max(0, skip - Math.abs(limit));
