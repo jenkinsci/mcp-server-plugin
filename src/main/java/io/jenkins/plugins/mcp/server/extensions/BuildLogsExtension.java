@@ -98,9 +98,11 @@ public class BuildLogsExtension implements McpServerExtension {
     private BuildLogResponse getLogLines(Run<?, ?> run, long skip, int limit) throws Exception {
 
         int maxLimit = SystemProperties.getInteger(BuildLogsExtension.class.getName() + ".limit.max", 10000);
-
+        boolean negativeLimit = limit < 0;
         limit = Math.min(Math.abs(limit), maxLimit);
-
+        if (negativeLimit) {
+            limit = -limit;
+        }
         if (skip < 0) {
             // TODO can get gz file?
             File logFile = run.getLogFile();
@@ -145,6 +147,12 @@ public class BuildLogsExtension implements McpServerExtension {
             }
 
         } else {
+            // special for skip > 0 and limit < 0, we simply recalculate the skip and positive the limit
+            if (skip > 0 && limit < 0) {
+                skip = Math.max(0, skip - Math.abs(limit));
+                limit = Math.abs(limit);
+            }
+
             // more simple run.getLogText().writeLogTo(0, new SkipLogOutputStream(System.out, skip, limit));
             try (ByteArrayOutputStream os = new ByteArrayOutputStream();
                     SkipLogOutputStream out = new SkipLogOutputStream(os, skip, limit)) {
