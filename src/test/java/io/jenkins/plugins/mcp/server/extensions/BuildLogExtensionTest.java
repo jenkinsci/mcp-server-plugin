@@ -43,6 +43,7 @@ import java.util.Map;
 import java.util.stream.Stream;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
+import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -56,8 +57,8 @@ public class BuildLogExtensionTest {
     @ParameterizedTest
     @MethodSource("buildLogTestParameters")
     void testMcpToolCallGetBuildLog(
-            Integer limit,
             Long skip,
+            Integer limit,
             Integer expectedContentSize,
             boolean hasMoreContent,
             List<String> expectedLines,
@@ -138,13 +139,13 @@ public class BuildLogExtensionTest {
     }
 
     static Stream<Arguments> buildLogTestParameters() {
-
+        WorkflowRun workflowRun;
         // all lines Started;[Pipeline] Start of Pipeline;[Pipeline] End of Pipeline;Finished: SUCCESS
         // "Started;[Pipeline] Start of Pipeline;[Pipeline] End of Pipeline;Finished: SUCCESS"
         Stream<Arguments> baseArgs = Stream.of(
                 Arguments.of(
-                        100,
                         null,
+                        100,
                         4,
                         false,
                         List.of(
@@ -153,47 +154,35 @@ public class BuildLogExtensionTest {
                                 "[Pipeline] End of Pipeline",
                                 "Finished: SUCCESS")),
                 Arguments.of(
-                        100,
                         1L,
+                        100,
                         3,
                         false,
                         List.of("[Pipeline] Start of Pipeline", "[Pipeline] End of Pipeline", "Finished: SUCCESS")),
                 Arguments.of(
-                        3,
                         null,
+                        3,
                         3,
                         true,
                         List.of("Started", "[Pipeline] Start of Pipeline", "[Pipeline] End of Pipeline")),
-                Arguments.of(100, -1L, 1, false, List.of("Finished: SUCCESS")),
+                Arguments.of(-1L, 100, 1, false, List.of("Finished: SUCCESS")),
                 Arguments.of(
-                        3,
                         -4L,
+                        3,
                         3,
                         false,
                         List.of("Started", "[Pipeline] Start of Pipeline", "[Pipeline] End of Pipeline")),
-                Arguments.of(3, -2L, 2, false, List.of("[Pipeline] End of Pipeline", "Finished: SUCCESS")),
+                Arguments.of(-2L, 3, 2, false, List.of("[Pipeline] End of Pipeline", "Finished: SUCCESS")),
                 Arguments.of(
+                        -3L,
                         100,
-                        -5L,
-                        4,
+                        3,
                         false,
-                        List.of(
-                                "Started",
-                                "[Pipeline] Start of Pipeline",
-                                "[Pipeline] End of Pipeline",
-                                "Finished: SUCCESS")),
-                Arguments.of(2, -2L, 2, true, List.of("[Pipeline] End of Pipeline", "Finished: SUCCESS")),
-                Arguments.of(
-                        -10,
-                        -1L,
-                        4,
-                        false,
-                        List.of(
-                                "Started",
-                                "[Pipeline] Start of Pipeline",
-                                "[Pipeline] End of Pipeline",
-                                "Finished: SUCCESS")),
-                Arguments.of(-2, -1L, 2, true, List.of("[Pipeline] End of Pipeline", "Finished: SUCCESS")));
+                        List.of("[Pipeline] Start of Pipeline", "[Pipeline] End of Pipeline", "Finished: SUCCESS")),
+                Arguments.of(-2L, 2, 2, true, List.of("[Pipeline] End of Pipeline", "Finished: SUCCESS")),
+                Arguments.of(-1L, 10, 1, false, List.of("Finished: SUCCESS")),
+                Arguments.of(-1L, -2, 2, true, List.of("[Pipeline] End of Pipeline", "Finished: SUCCESS")),
+                Arguments.of(2L, -2, 2, true, List.of("Started", "[Pipeline] Start of Pipeline")));
 
         // 扩展成 2 倍：每组参数 + 两个不同的 McpClientProvider
         return TestUtils.appendMcpClientArgs(baseArgs);
