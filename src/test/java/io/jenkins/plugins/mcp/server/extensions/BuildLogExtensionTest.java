@@ -181,7 +181,7 @@ public class BuildLogExtensionTest {
                         List.of("[Pipeline] Start of Pipeline", "[Pipeline] End of Pipeline", "Finished: SUCCESS")),
                 Arguments.of(-2L, 2, 2, true, List.of("[Pipeline] End of Pipeline", "Finished: SUCCESS")),
                 Arguments.of(-1L, 10, 1, false, List.of("Finished: SUCCESS")),
-                Arguments.of(-1L, -2, 2, true, List.of("[Pipeline] End of Pipeline", "Finished: SUCCESS")),
+                Arguments.of(-1L, -2, 2, true, List.of("[Pipeline] Start of Pipeline", "[Pipeline] End of Pipeline")),
                 Arguments.of(2L, -2, 2, true, List.of("Started", "[Pipeline] Start of Pipeline")));
 
         // 扩展成 2 倍：每组参数 + 两个不同的 McpClientProvider

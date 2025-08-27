@@ -29,26 +29,20 @@ package io.jenkins.plugins.mcp.server.extensions;
 import static io.jenkins.plugins.mcp.server.extensions.util.JenkinsUtil.getBuildByNumberOrLast;
 
 import hudson.Extension;
-import hudson.console.ConsoleNote;
 import hudson.console.PlainTextConsoleOutputStream;
 import hudson.model.Run;
 import io.jenkins.plugins.mcp.server.McpServerExtension;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
 import java.io.ByteArrayOutputStream;
-import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Deque;
 import java.util.List;
-import java.util.Optional;
 import jenkins.util.SystemProperties;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.io.input.ReversedLinesFileReader;
 
 @Extension
 @Slf4j
@@ -96,72 +90,67 @@ public class BuildLogsExtension implements McpServerExtension {
     }
 
     private BuildLogResponse getLogLines(Run<?, ?> run, long skip, int limit) throws Exception {
-
+        // first need number of lines
+        long skipInit = skip;
+        int limitInit = limit;
+        int linesNumber;
+        long start = System.currentTimeMillis();
+        try (ByteArrayOutputStream os = new ByteArrayOutputStream();
+                LinesNumberOutputStream out = new LinesNumberOutputStream(os)) {
+            run.writeWholeLogTo(out);
+            linesNumber = out.lines;
+            log.debug("counted {} lines in {} ms", linesNumber, System.currentTimeMillis() - start);
+        }
+        // now we can make the maths to skip, limit and start from for the capture read
         int maxLimit = SystemProperties.getInteger(BuildLogsExtension.class.getName() + ".limit.max", 10000);
         boolean negativeLimit = limit < 0;
         limit = Math.min(Math.abs(limit), maxLimit);
         if (negativeLimit) {
             limit = -limit;
         }
-        if (skip < 0) {
-            // TODO can get gz file?
-            File logFile = run.getLogFile();
-            boolean removedElement = false;
-            try (ReversedLinesFileReader input =
-                    ReversedLinesFileReader.builder().setFile(logFile).get()) {
-                // we need this one if limit is positive
-                Optional<LimitedQueue<String>> linesBucket =
-                        limit > 0 ? Optional.of(new LimitedQueue<>(limit)) : Optional.empty();
-                int current = -1;
-                // here we advance the pointer so we may keep track of the line as it needs to be returned
-                String currentLine = input.readLine();
-                while (currentLine != null) {
-                    if (linesBucket.isPresent()) {
-                        removedElement = linesBucket.get().add(currentLine);
-                    }
-                    if (current <= skip) {
-                        break;
-                    }
-                    currentLine = input.readLine();
-                    current--;
-                }
-                if (currentLine == null
-                        && (linesBucket.isEmpty() || linesBucket.get().isEmpty())) {
-                    // no more lines and nothing to return last time to avoid NPE
-                    return new BuildLogResponse(false, Collections.emptyList());
-                }
-                List<String> lines = limit > 0
-                        ? new ArrayList<>(linesBucket.get().deque.stream().toList())
-                        : new ArrayList<>(input.readLines(Math.abs(limit) - 1));
-                // could be more simple to test if more line to populate hasMoreContent but if already reading too much
-                // the call throw NPE (and catch NPE for this would be ugly)
-                // so we try one line more and test number of lines returned
-                // boolean hasMoreContent = input.readLine() != null;
-                boolean hasMoreContent = limit > 0 ? removedElement : lines.size() > limit;
-                Collections.reverse(lines);
-                if (limit < 0) {
-                    lines.add(currentLine);
-                }
-                lines = ConsoleNote.removeNotes(lines);
-                return new BuildLogResponse(hasMoreContent, lines);
-            }
 
-        } else {
-            // special for skip > 0 and limit < 0, we simply recalculate the skip and positive the limit
-            if (skip > 0 && limit < 0) {
-                skip = Math.max(0, skip - Math.abs(limit));
-                limit = Math.abs(limit);
-            }
+        // special for skip > 0 and limit < 0, we simply recalculate the skip and positive the limit
+        if (skip > 0 && limit < 0) {
+            skip = Math.max(0, skip - Math.abs(limit));
+            limit = Math.abs(limit);
+        } else if (skip < 0 && limit > 0) {
+            // recalculate skip from the end
+            skip = Math.max(0, linesNumber + skip);
+        } else if (skip < 0 && limit < 0) {
+            // recalculate skip from the end and make limit positive
+            skip = Math.max(0, linesNumber + skip - Math.abs(limit));
+            limit = Math.abs(limit);
+        }
 
-            // more simple run.getLogText().writeLogTo(0, new SkipLogOutputStream(System.out, skip, limit));
-            try (ByteArrayOutputStream os = new ByteArrayOutputStream();
-                    SkipLogOutputStream out = new SkipLogOutputStream(os, skip, limit)) {
-                run.writeWholeLogTo(out);
-                // is the right charset here?
-                return new BuildLogResponse(
-                        out.hasMoreContent,
-                        os.toString(StandardCharsets.UTF_8).lines().toList());
-            }
+        log.debug(
+                "call with skip {}, limit {} for linesNumber {} with read with skip{}, limit {}",
+                skipInit,
+                limitInit,
+                linesNumber,
+                skip,
+                limit);
+
+        // more simple run.getLogText().writeLogTo(0, new SkipLogOutputStream(System.out, skip, limit));
+        try (ByteArrayOutputStream os = new ByteArrayOutputStream();
+                SkipLogOutputStream out = new SkipLogOutputStream(os, skip, limit)) {
+            run.writeWholeLogTo(out);
+            // is the right charset here?
+            return new BuildLogResponse(
+                    out.hasMoreContent,
+                    os.toString(StandardCharsets.UTF_8).lines().toList());
+        }
+    }
+
+    private static class LinesNumberOutputStream extends PlainTextConsoleOutputStream {
+        private int lines;
+
+        public LinesNumberOutputStream(OutputStream out) throws IOException {
+            super(out);
+        }
+
+        @Override
+        protected void eol(byte[] in, int sz) throws IOException {
+            lines++;
         }
     }
 
