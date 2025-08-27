@@ -133,7 +133,6 @@ public class BuildLogsExtension implements McpServerExtension {
                 skip,
                 limit);
 
-        // more simple run.getLogText().writeLogTo(0, new SkipLogOutputStream(System.out, skip, limit));
         try (ByteArrayOutputStream os = new ByteArrayOutputStream();
                 SkipLogOutputStream out = new SkipLogOutputStream(os, skip, limit)) {
             run.writeWholeLogTo(out);
