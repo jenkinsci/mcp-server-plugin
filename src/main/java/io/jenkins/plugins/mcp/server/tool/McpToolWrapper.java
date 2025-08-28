@@ -61,11 +61,13 @@ import java.util.Map;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.exception.ExceptionUtils;
+import org.slf4j.Logger;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
 
 public class McpToolWrapper {
+    private static Logger LOGGER = org.slf4j.LoggerFactory.getLogger(McpToolWrapper.class);
     private static final SchemaGenerator SUBTYPE_SCHEMA_GENERATOR;
     private static final boolean PROPERTY_REQUIRED_BY_DEFAULT = true;
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
@@ -232,14 +234,19 @@ public class McpToolWrapper {
     }
 
     McpSchema.CallToolResult callRequest(McpSyncServerExchange exchange, McpSchema.CallToolRequest request) {
-
-        //        request.progressToken()
         var args = request.arguments();
         var oldUser = User.current();
         try {
             var user = tryGetUser(exchange, request);
             if (user != null) {
                 ACL.as(user);
+            }
+            if (LOGGER.isTraceEnabled()) {
+                LOGGER.trace(
+                        "Tool call: {} as user '{}', arguments: {}",
+                        request.name(),
+                        user == null ? "" : user.getId(),
+                        request.arguments());
             }
 
             var methodArgs = Arrays.stream(method.getParameters())

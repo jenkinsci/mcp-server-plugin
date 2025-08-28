@@ -90,6 +90,12 @@ public class BuildLogsExtension implements McpServerExtension {
     }
 
     private BuildLogResponse getLogLines(Run<?, ?> run, long skip, int limit) throws Exception {
+        log.trace(
+                "getLogLines for run {}/{} called with skip {}, limit {}",
+                run.getParent().getName(),
+                run.getDisplayName(),
+                skip,
+                limit);
         int maxLimit = SystemProperties.getInteger(BuildLogsExtension.class.getName() + ".limit.max", 10000);
         boolean negativeLimit = limit < 0;
         if (Math.abs(limit) > maxLimit) {
@@ -105,6 +111,7 @@ public class BuildLogsExtension implements McpServerExtension {
         int limitInit = limit;
         int linesNumber;
         long start = System.currentTimeMillis();
+        log.trace("counting lines for run {}", run.getDisplayName());
         try (ByteArrayOutputStream os = new ByteArrayOutputStream();
                 LinesNumberOutputStream out = new LinesNumberOutputStream(os)) {
             run.writeWholeLogTo(out);
@@ -125,17 +132,18 @@ public class BuildLogsExtension implements McpServerExtension {
             limit = Math.abs(limit);
         }
 
-        log.debug(
-                "call with skip {}, limit {} for linesNumber {} with read with skip{}, limit {}",
-                skipInit,
-                limitInit,
-                linesNumber,
-                skip,
-                limit);
-
+        start = System.currentTimeMillis();
         try (ByteArrayOutputStream os = new ByteArrayOutputStream();
                 SkipLogOutputStream out = new SkipLogOutputStream(os, skip, limit)) {
             run.writeWholeLogTo(out);
+            log.debug(
+                    "call with skip {}, limit {} for linesNumber {} with read with skip {}, limit {}, time to extract: {} ms",
+                    skipInit,
+                    limitInit,
+                    linesNumber,
+                    skip,
+                    limit,
+                    System.currentTimeMillis() - start);
             // is the right charset here?
             return new BuildLogResponse(
                     out.hasMoreContent,
