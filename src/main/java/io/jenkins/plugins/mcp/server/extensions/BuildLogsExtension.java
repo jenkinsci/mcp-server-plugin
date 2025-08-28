@@ -116,7 +116,9 @@ public class BuildLogsExtension implements McpServerExtension {
                 LinesNumberOutputStream out = new LinesNumberOutputStream(os)) {
             run.writeWholeLogTo(out);
             linesNumber = out.lines;
-            log.debug("counted {} lines in {} ms", linesNumber, System.currentTimeMillis() - start);
+            if (log.isDebugEnabled()) {
+                log.debug("counted {} lines in {} ms", linesNumber, System.currentTimeMillis() - start);
+            }
         }
         // now we can make the maths to skip, limit and start from for the capture read
         // special for skip > 0 and limit < 0, we simply recalculate the skip and positive the limit
@@ -136,14 +138,16 @@ public class BuildLogsExtension implements McpServerExtension {
         try (ByteArrayOutputStream os = new ByteArrayOutputStream();
                 SkipLogOutputStream out = new SkipLogOutputStream(os, skip, limit)) {
             run.writeWholeLogTo(out);
-            log.debug(
-                    "call with skip {}, limit {} for linesNumber {} with read with skip {}, limit {}, time to extract: {} ms",
-                    skipInit,
-                    limitInit,
-                    linesNumber,
-                    skip,
-                    limit,
-                    System.currentTimeMillis() - start);
+            if (log.isDebugEnabled()) {
+                log.debug(
+                        "call with skip {}, limit {} for linesNumber {} with read with skip {}, limit {}, time to extract: {} ms",
+                        skipInit,
+                        limitInit,
+                        linesNumber,
+                        skip,
+                        limit,
+                        System.currentTimeMillis() - start);
+            }
             // is the right charset here?
             return new BuildLogResponse(
                     out.hasMoreContent,
