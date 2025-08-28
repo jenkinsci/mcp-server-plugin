@@ -60,14 +60,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
-import org.slf4j.Logger;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
 
+@Slf4j
 public class McpToolWrapper {
-    private static Logger LOGGER = org.slf4j.LoggerFactory.getLogger(McpToolWrapper.class);
+
     private static final SchemaGenerator SUBTYPE_SCHEMA_GENERATOR;
     private static final boolean PROPERTY_REQUIRED_BY_DEFAULT = true;
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
@@ -241,8 +242,8 @@ public class McpToolWrapper {
             if (user != null) {
                 ACL.as(user);
             }
-            if (LOGGER.isTraceEnabled()) {
-                LOGGER.trace(
+            if (log.isTraceEnabled()) {
+                log.trace(
                         "Tool call: {} as user '{}', arguments: {}",
                         request.name(),
                         user == null ? "" : user.getId(),
