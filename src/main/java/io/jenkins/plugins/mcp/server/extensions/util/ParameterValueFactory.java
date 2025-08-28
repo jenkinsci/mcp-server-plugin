@@ -48,7 +48,7 @@ public final class ParameterValueFactory {
     /**
      * Creates a parameter value from a parameter definition and input value.
      * This method supports both core Jenkins parameter types and plugin-specific types.
-     * 
+     *
      * @param param the parameter definition
      * @param inputValue the input value from the user
      * @return the created parameter value, or null if creation fails
@@ -74,7 +74,10 @@ public final class ParameterValueFactory {
                 return createPluginParameterValue(param, inputValue);
             }
         } catch (Exception e) {
-            log.warn("Failed to create parameter value for {}: {}", param.getClass().getSimpleName(), e.getMessage());
+            log.warn(
+                    "Failed to create parameter value for {}: {}",
+                    param.getClass().getSimpleName(),
+                    e.getMessage());
             return null;
         }
     }
@@ -108,7 +111,11 @@ public final class ParameterValueFactory {
             if (param.getChoices().contains(value)) {
                 return param.createValue(value);
             } else {
-                log.warn("Invalid choice '{}' for parameter '{}'. Valid choices: {}", value, param.getName(), param.getChoices());
+                log.warn(
+                        "Invalid choice '{}' for parameter '{}'. Valid choices: {}",
+                        value,
+                        param.getName(),
+                        param.getChoices());
                 return param.getDefaultParameterValue();
             }
         }
@@ -141,7 +148,8 @@ public final class ParameterValueFactory {
     private static ParameterValue createFileParameterValue(FileParameterDefinition param, Object inputValue) {
         // File parameters require special handling and are not fully supported via MCP
         // For now, we'll log a warning and return null
-        log.warn("File parameter '{}' is not supported via MCP. File parameters require file uploads.", param.getName());
+        log.warn(
+                "File parameter '{}' is not supported via MCP. File parameters require file uploads.", param.getName());
         return null;
     }
 
@@ -201,9 +209,7 @@ public final class ParameterValueFactory {
                 if (inputValue instanceof List) {
                     try {
                         List<?> list = (List<?>) inputValue;
-                        String[] array = list.stream()
-                            .map(String::valueOf)
-                            .toArray(String[]::new);
+                        String[] array = list.stream().map(String::valueOf).toArray(String[]::new);
                         var method = param.getClass().getMethod("createValue", String[].class);
                         if (method != null) {
                             return (ParameterValue) method.invoke(param, (Object) array);
@@ -224,11 +230,16 @@ public final class ParameterValueFactory {
                 // Method doesn't exist
             }
 
-            log.warn("Could not create parameter value for plugin parameter type: {}", param.getClass().getName());
+            log.warn(
+                    "Could not create parameter value for plugin parameter type: {}",
+                    param.getClass().getName());
             return null;
 
         } catch (Exception e) {
-            log.warn("Failed to create plugin parameter value for {}: {}", param.getClass().getName(), e.getMessage());
+            log.warn(
+                    "Failed to create plugin parameter value for {}: {}",
+                    param.getClass().getName(),
+                    e.getMessage());
             return null;
         }
     }

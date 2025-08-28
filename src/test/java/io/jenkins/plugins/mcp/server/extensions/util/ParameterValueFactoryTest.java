@@ -26,8 +26,9 @@
 
 package io.jenkins.plugins.mcp.server.extensions.util;
 
-import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
+
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests for ParameterValueFactory utility class.
@@ -48,17 +49,18 @@ public class ParameterValueFactoryTest {
         // Test that the main method exists by checking method names
         var methods = ParameterValueFactory.class.getDeclaredMethods();
         boolean hasCreateMethod = false;
-        
+
         for (var method : methods) {
             if (method.getName().equals("createParameterValue")) {
                 hasCreateMethod = true;
                 // Check that it's static
-                assertTrue(java.lang.reflect.Modifier.isStatic(method.getModifiers()), 
-                    "createParameterValue method should be static");
+                assertTrue(
+                        java.lang.reflect.Modifier.isStatic(method.getModifiers()),
+                        "createParameterValue method should be static");
                 break;
             }
         }
-        
+
         assertTrue(hasCreateMethod, "Should have createParameterValue method");
     }
 
@@ -73,14 +75,14 @@ public class ParameterValueFactoryTest {
         // Test that utility methods exist
         var methods = ParameterValueFactory.class.getDeclaredMethods();
         boolean hasCreateMethod = false;
-        
+
         for (var method : methods) {
             if (method.getName().equals("createParameterValue")) {
                 hasCreateMethod = true;
                 break;
             }
         }
-        
+
         assertTrue(hasCreateMethod, "Should have createParameterValue method");
     }
 
@@ -89,10 +91,10 @@ public class ParameterValueFactoryTest {
         // Test basic class structure
         var constructors = ParameterValueFactory.class.getDeclaredConstructors();
         assertTrue(constructors.length > 0, "Should have constructors");
-        
+
         // Test that it's not abstract
         assertFalse(java.lang.reflect.Modifier.isAbstract(ParameterValueFactory.class.getModifiers()));
-        
+
         // Test that it's not an interface
         assertFalse(ParameterValueFactory.class.isInterface());
     }
@@ -115,9 +117,10 @@ public class ParameterValueFactoryTest {
         // Test that utility class has no instance fields
         var fields = ParameterValueFactory.class.getDeclaredFields();
         for (var field : fields) {
-            assertTrue(java.lang.reflect.Modifier.isStatic(field.getModifiers()) || 
-                      java.lang.reflect.Modifier.isFinal(field.getModifiers()),
-                "Utility class should only have static or final fields");
+            assertTrue(
+                    java.lang.reflect.Modifier.isStatic(field.getModifiers())
+                            || java.lang.reflect.Modifier.isFinal(field.getModifiers()),
+                    "Utility class should only have static or final fields");
         }
     }
 }
