@@ -237,6 +237,7 @@ public class McpToolWrapper {
     McpSchema.CallToolResult callRequest(McpSyncServerExchange exchange, McpSchema.CallToolRequest request) {
         var args = request.arguments();
         var oldUser = User.current();
+
         try {
             var user = tryGetUser(exchange, request);
             if (user != null) {
