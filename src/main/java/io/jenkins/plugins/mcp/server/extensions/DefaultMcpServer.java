@@ -233,7 +233,7 @@ public class DefaultMcpServer implements McpServerExtension {
         map.put("Buildable Queue Size", queue.countBuildableItems());
         map.put("Available executors (any label)", availableExecutors);
         // Tell me which clouds are defined as they can be used to provision ephemeral agents
-        if (Jenkins.get().hasAnyPermission(Jenkins.READ)) {
+        if (Jenkins.get().hasAnyPermission(Jenkins.SYSTEM_READ, Jenkins.ADMINISTER)) {
             map.put(
                     "Defined clouds that can provide agents (any label)",
                     jenkins.clouds.stream()
