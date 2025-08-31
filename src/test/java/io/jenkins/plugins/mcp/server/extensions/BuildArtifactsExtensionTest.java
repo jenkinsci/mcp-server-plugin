@@ -133,7 +133,7 @@ public class BuildArtifactsExtensionTest {
         // Create a job that produces a larger artifact
         WorkflowJob project = jenkins.createProject(WorkflowJob.class, "large-artifact-job");
         project.setDefinition(new CpsFlowDefinition(
-                "writeFile file: 'large.txt', text: 'A'.multiply(1000)\n" +
+                "writeFile file: 'large.txt', text: new String(new char[1000]).replace('\\0', 'A')\n" +
                 "archiveArtifacts artifacts: 'large.txt'", true));
         
         project.scheduleBuild2(0).get();

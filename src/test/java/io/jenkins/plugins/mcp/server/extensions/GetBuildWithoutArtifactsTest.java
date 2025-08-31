@@ -99,6 +99,7 @@ public class GetBuildWithoutArtifactsTest {
             assertThat(getBuildArtifactsResponse.content()).hasSize(1);
 
             assertThat(getBuildArtifactsResponse.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, getArtifactsTextContent -> {
+                ObjectMapper objectMapper = new ObjectMapper();
                 try {
                     JsonNode artifactsJsonNode = objectMapper.readTree(getArtifactsTextContent.text());
                 
