@@ -36,7 +36,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder;
 import io.jenkins.plugins.mcp.server.junit.McpClientTest;
 import io.modelcontextprotocol.spec.McpSchema;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jvnet.hudson.test.JenkinsRule;
@@ -71,12 +73,14 @@ public class BuildArtifactsExtensionTest {
                 ObjectMapper objectMapper = new ObjectMapper();
                 try {
                     JsonNode jsonNode = objectMapper.readTree(textContent.text());
-                    // The response contains a single artifact object, not an array
-                    assertThat(jsonNode.isObject()).isTrue();
+                    // After fix: the response contains a JSON array with a single artifact
+                    assertThat(jsonNode.isArray()).isTrue();
+                    assertThat(jsonNode.size()).isEqualTo(1);
 
-                    // Check that we have the test.txt artifact
-                    assertThat(jsonNode.get("relativePath").asText()).isEqualTo("test.txt");
-                    assertThat(jsonNode.get("fileName").asText()).isEqualTo("test.txt");
+                    // Check that we have the test.txt artifact in the array
+                    JsonNode artifactNode = jsonNode.get(0);
+                    assertThat(artifactNode.get("relativePath").asText()).isEqualTo("test.txt");
+                    assertThat(artifactNode.get("fileName").asText()).isEqualTo("test.txt");
                 } catch (JsonProcessingException e) {
                     throw new RuntimeException(e);
                 }
@@ -183,8 +187,70 @@ public class BuildArtifactsExtensionTest {
 
             var response = client.callTool(callToolRequest);
             assertThat(response.isError()).isFalse();
-            // When job doesn't exist, getBuildArtifacts returns empty list, which results in no content
-            assertThat(response.content()).hasSize(0);
+            // After fix: even empty results return a single content item with an empty JSON array
+            assertThat(response.content()).hasSize(1);
+            assertThat(response.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                ObjectMapper objectMapper = new ObjectMapper();
+                try {
+                    JsonNode jsonNode = objectMapper.readTree(textContent.text());
+                    assertThat(jsonNode.isArray()).isTrue();
+                    assertThat(jsonNode.size()).isEqualTo(0); // Empty array for non-existent job
+                } catch (JsonProcessingException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+        }
+    }
+
+    @McpClientTest
+    void testGetBuildArtifactsMultiple(JenkinsMcpClientBuilder jenkinsMcpClientBuilder, JenkinsRule jenkins)
+            throws Exception {
+        // Create a job that produces multiple artifacts
+        WorkflowJob project = jenkins.createProject(WorkflowJob.class, "multi-artifact-job");
+        project.setDefinition(new CpsFlowDefinition(
+                "node {\n" + "    writeFile file: 'artifact1.txt', text: 'Content 1'\n"
+                        + "    writeFile file: 'artifact2.txt', text: 'Content 2'\n"
+                        + "    archiveArtifacts artifacts: '*.txt'\n"
+                        + "}",
+                true));
+
+        project.scheduleBuild2(0).get();
+        await().atMost(10, SECONDS).until(() -> project.getLastBuild() != null);
+        await().atMost(10, SECONDS).until(() -> project.getLastBuild().isBuilding() == false);
+
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+            var callToolRequest = McpSchema.CallToolRequest.builder()
+                    .name("getBuildArtifacts")
+                    .arguments(Map.of("jobFullName", "multi-artifact-job"))
+                    .build();
+
+            var response = client.callTool(callToolRequest);
+            assertThat(response.isError()).isFalse();
+            // After fix: getBuildArtifacts should return a single content item containing a JSON array
+            assertThat(response.content()).hasSize(1);
+
+            assertThat(response.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                ObjectMapper objectMapper = new ObjectMapper();
+                try {
+                    // Validate that the response is a proper JSON array
+                    JsonNode jsonNode = objectMapper.readTree(textContent.text());
+                    assertThat(jsonNode.isArray()).isTrue();
+                    assertThat(jsonNode.size()).isEqualTo(2); // Should have 2 artifacts
+
+                    // Verify that both artifacts are present in the array
+                    Set<String> foundArtifacts = new HashSet<>();
+                    for (JsonNode artifactNode : jsonNode) {
+                        assertThat(artifactNode.isObject()).isTrue();
+                        assertThat(artifactNode.has("relativePath")).isTrue();
+                        assertThat(artifactNode.has("fileName")).isTrue();
+                        String relativePath = artifactNode.get("relativePath").asText();
+                        foundArtifacts.add(relativePath);
+                    }
+                    assertThat(foundArtifacts).containsExactlyInAnyOrder("artifact1.txt", "artifact2.txt");
+                } catch (JsonProcessingException e) {
+                    throw new RuntimeException(e);
+                }
+            });
         }
     }
 }

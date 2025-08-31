@@ -100,28 +100,34 @@ public class GetBuildWithoutArtifactsTest {
 
             var getBuildArtifactsResponse = client.callTool(getBuildArtifactsRequest);
             assertThat(getBuildArtifactsResponse.isError()).isFalse();
+            // After fix: getBuildArtifacts should return a single content item containing a JSON array
+            assertThat(getBuildArtifactsResponse.content()).hasSize(1);
+
+            // Verify that artifacts are present in getBuildArtifacts response as a JSON array
             assertThat(getBuildArtifactsResponse.content())
-                    .hasSize(2); // Two artifacts: artifact1.txt and artifact2.txt
+                    .first()
+                    .isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                        ObjectMapper objectMapper = new ObjectMapper();
+                        try {
+                            // Validate that the response is a proper JSON array
+                            JsonNode jsonNode = objectMapper.readTree(textContent.text());
+                            assertThat(jsonNode.isArray()).isTrue();
+                            assertThat(jsonNode.size()).isEqualTo(2); // Two artifacts: artifact1.txt and artifact2.txt
 
-            // Verify that artifacts are present in getBuildArtifacts response
-            // Each artifact is returned as a separate content item
-            ObjectMapper objectMapper = new ObjectMapper();
-            Set<String> foundArtifacts = new HashSet<>();
-
-            for (var content : getBuildArtifactsResponse.content()) {
-                assertThat(content).isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
-                    try {
-                        JsonNode artifactNode = objectMapper.readTree(textContent.text());
-                        assertThat(artifactNode.isObject()).isTrue();
-                        String relativePath = artifactNode.get("relativePath").asText();
-                        foundArtifacts.add(relativePath);
-                    } catch (JsonProcessingException e) {
-                        throw new RuntimeException(e);
-                    }
-                });
-            }
-
-            assertThat(foundArtifacts).containsExactlyInAnyOrder("artifact1.txt", "artifact2.txt");
+                            // Verify that both artifacts are present in the array
+                            Set<String> foundArtifacts = new HashSet<>();
+                            for (JsonNode artifactNode : jsonNode) {
+                                assertThat(artifactNode.isObject()).isTrue();
+                                assertThat(artifactNode.has("relativePath")).isTrue();
+                                String relativePath =
+                                        artifactNode.get("relativePath").asText();
+                                foundArtifacts.add(relativePath);
+                            }
+                            assertThat(foundArtifacts).containsExactlyInAnyOrder("artifact1.txt", "artifact2.txt");
+                        } catch (JsonProcessingException e) {
+                            throw new RuntimeException(e);
+                        }
+                    });
         }
     }
 
