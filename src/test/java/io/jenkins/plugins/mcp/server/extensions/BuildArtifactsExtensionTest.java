@@ -26,42 +26,38 @@
 
 package io.jenkins.plugins.mcp.server.extensions;
 
+import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
-import static java.util.concurrent.TimeUnit.SECONDS;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import hudson.model.Run;
 import io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder;
 import io.jenkins.plugins.mcp.server.junit.McpClientTest;
-import io.jenkins.plugins.mcp.server.junit.TestUtils;
 import io.modelcontextprotocol.spec.McpSchema;
-import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
-import org.junit.jupiter.api.Test;
 import org.jvnet.hudson.test.JenkinsRule;
 
-@McpClientTest
 public class BuildArtifactsExtensionTest {
 
-    @Test
+    @McpClientTest
     void testGetBuildArtifacts(JenkinsMcpClientBuilder jenkinsMcpClientBuilder, JenkinsRule jenkins) throws Exception {
         // Create a job that produces artifacts
         WorkflowJob project = jenkins.createProject(WorkflowJob.class, "artifact-job");
         project.setDefinition(new CpsFlowDefinition(
-                "writeFile file: 'test.txt', text: 'Hello World'\n" +
-                "archiveArtifacts artifacts: 'test.txt'", true));
-        
+                "node {\n" + "    writeFile file: 'test.txt', text: 'Hello World'\n"
+                        + "    archiveArtifacts artifacts: 'test.txt'\n"
+                        + "}",
+                true));
+
         project.scheduleBuild2(0).get();
         await().atMost(10, SECONDS).until(() -> project.getLastBuild() != null);
         await().atMost(10, SECONDS).until(() -> project.getLastBuild().isBuilding() == false);
 
-        try (var client = jenkinsMcpClientBuilder.build()) {
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
             var callToolRequest = McpSchema.CallToolRequest.builder()
                     .name("getBuildArtifacts")
                     .arguments(Map.of("jobFullName", "artifact-job"))
@@ -75,13 +71,12 @@ public class BuildArtifactsExtensionTest {
                 ObjectMapper objectMapper = new ObjectMapper();
                 try {
                     JsonNode jsonNode = objectMapper.readTree(textContent.text());
-                assertThat(jsonNode.isArray()).isTrue();
-                assertThat(jsonNode.size()).isGreaterThan(0);
-                
+                    // The response contains a single artifact object, not an array
+                    assertThat(jsonNode.isObject()).isTrue();
+
                     // Check that we have the test.txt artifact
-                    JsonNode firstArtifact = jsonNode.get(0);
-                    assertThat(firstArtifact.get("relativePath").asText()).isEqualTo("test.txt");
-                    assertThat(firstArtifact.get("fileName").asText()).isEqualTo("test.txt");
+                    assertThat(jsonNode.get("relativePath").asText()).isEqualTo("test.txt");
+                    assertThat(jsonNode.get("fileName").asText()).isEqualTo("test.txt");
                 } catch (JsonProcessingException e) {
                     throw new RuntimeException(e);
                 }
@@ -89,25 +84,26 @@ public class BuildArtifactsExtensionTest {
         }
     }
 
-    @Test
+    @McpClientTest
     void testGetBuildArtifact(JenkinsMcpClientBuilder jenkinsMcpClientBuilder, JenkinsRule jenkins) throws Exception {
         // Create a job that produces artifacts
         WorkflowJob project = jenkins.createProject(WorkflowJob.class, "artifact-content-job");
         project.setDefinition(new CpsFlowDefinition(
-                "writeFile file: 'content.txt', text: 'This is test content for artifact reading'\n" +
-                "archiveArtifacts artifacts: 'content.txt'", true));
-        
+                "node {\n" + "    writeFile file: 'content.txt', text: 'This is test content for artifact reading'\n"
+                        + "    archiveArtifacts artifacts: 'content.txt'\n"
+                        + "}",
+                true));
+
         project.scheduleBuild2(0).get();
         await().atMost(10, SECONDS).until(() -> project.getLastBuild() != null);
         await().atMost(10, SECONDS).until(() -> project.getLastBuild().isBuilding() == false);
 
-        try (var client = jenkinsMcpClientBuilder.build()) {
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
             var callToolRequest = McpSchema.CallToolRequest.builder()
                     .name("getBuildArtifact")
                     .arguments(Map.of(
                             "jobFullName", "artifact-content-job",
-                            "artifactPath", "content.txt"
-                    ))
+                            "artifactPath", "content.txt"))
                     .build();
 
             var response = client.callTool(callToolRequest);
@@ -128,28 +124,34 @@ public class BuildArtifactsExtensionTest {
         }
     }
 
-    @Test
-    void testGetBuildArtifactWithPagination(JenkinsMcpClientBuilder jenkinsMcpClientBuilder, JenkinsRule jenkins) throws Exception {
+    @McpClientTest
+    void testGetBuildArtifactWithPagination(JenkinsMcpClientBuilder jenkinsMcpClientBuilder, JenkinsRule jenkins)
+            throws Exception {
         // Create a job that produces a larger artifact
         WorkflowJob project = jenkins.createProject(WorkflowJob.class, "large-artifact-job");
         project.setDefinition(new CpsFlowDefinition(
-                "writeFile file: 'large.txt', text: new String(new char[1000]).replace('\\0', 'A')\n" +
-                "archiveArtifacts artifacts: 'large.txt'", true));
-        
+                "node {\n" + "    writeFile file: 'large.txt', text: new String(new char[1000]).replace('\\0', 'A')\n"
+                        + "    archiveArtifacts artifacts: 'large.txt'\n"
+                        + "}",
+                true));
+
         project.scheduleBuild2(0).get();
         await().atMost(10, SECONDS).until(() -> project.getLastBuild() != null);
         await().atMost(10, SECONDS).until(() -> project.getLastBuild().isBuilding() == false);
 
-        try (var client = jenkinsMcpClientBuilder.build()) {
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
             // Read first 100 bytes
             var callToolRequest = McpSchema.CallToolRequest.builder()
                     .name("getBuildArtifact")
                     .arguments(Map.of(
-                            "jobFullName", "large-artifact-job",
-                            "artifactPath", "large.txt",
-                            "offset", 0,
-                            "limit", 100
-                    ))
+                            "jobFullName",
+                            "large-artifact-job",
+                            "artifactPath",
+                            "large.txt",
+                            "offset",
+                            0,
+                            "limit",
+                            100))
                     .build();
 
             var response = client.callTool(callToolRequest);
@@ -170,9 +172,10 @@ public class BuildArtifactsExtensionTest {
         }
     }
 
-    @Test
-    void testGetBuildArtifactsEmptyForNonExistentJob(JenkinsMcpClientBuilder jenkinsMcpClientBuilder, JenkinsRule jenkins) throws Exception {
-        try (var client = jenkinsMcpClientBuilder.build()) {
+    @McpClientTest
+    void testGetBuildArtifactsEmptyForNonExistentJob(
+            JenkinsMcpClientBuilder jenkinsMcpClientBuilder, JenkinsRule jenkins) throws Exception {
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
             var callToolRequest = McpSchema.CallToolRequest.builder()
                     .name("getBuildArtifacts")
                     .arguments(Map.of("jobFullName", "non-existent-job"))
@@ -180,18 +183,8 @@ public class BuildArtifactsExtensionTest {
 
             var response = client.callTool(callToolRequest);
             assertThat(response.isError()).isFalse();
-            assertThat(response.content()).hasSize(1);
-
-            assertThat(response.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
-                ObjectMapper objectMapper = new ObjectMapper();
-                try {
-                    JsonNode jsonNode = objectMapper.readTree(textContent.text());
-                    assertThat(jsonNode.isArray()).isTrue();
-                    assertThat(jsonNode.size()).isEqualTo(0);
-                } catch (JsonProcessingException e) {
-                    throw new RuntimeException(e);
-                }
-            });
+            // When job doesn't exist, getBuildArtifacts returns empty list, which results in no content
+            assertThat(response.content()).hasSize(0);
         }
     }
 }

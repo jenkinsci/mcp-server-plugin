@@ -67,7 +67,9 @@ public class EndPointTest {
                             "getJobScm",
                             "getBuildScm",
                             "getBuildChangeSets",
-                            "getStatus");
+                            "getStatus",
+                            "getBuildArtifacts",
+                            "getBuildArtifact");
 
             var sayHelloTool = tools.tools().stream()
                     .filter(tool -> "sayHello".equals(tool.name()))

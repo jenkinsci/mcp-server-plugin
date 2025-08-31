@@ -45,6 +45,12 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class BuildArtifactsExtension implements McpServerExtension {
 
+    /*
+     * Suppression Rationale:
+     * - "rawtypes": Jenkins' Run.Artifact is a raw type in Jenkins' legacy API
+     * - "unchecked": Run.getArtifacts() returns raw List requiring unchecked conversion
+     */
+    @SuppressWarnings({"rawtypes", "unchecked"})
     @Tool(description = "Get the artifacts for a specific build or the last build of a Jenkins job")
     public List<Run.Artifact> getBuildArtifacts(
             @ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
@@ -71,22 +77,24 @@ public class BuildArtifactsExtension implements McpServerExtension {
             @ToolParam(description = "Relative path of the artifact from the artifacts root") String artifactPath,
             @Nullable
                     @ToolParam(
-                            description = "The byte offset to start reading from (optional, if not provided, starts from the beginning)",
+                            description =
+                                    "The byte offset to start reading from (optional, if not provided, starts from the beginning)",
                             required = false)
                     Long offset,
             @Nullable
                     @ToolParam(
-                            description = "The maximum number of bytes to read (optional, if not provided, reads up to 64KB)",
+                            description =
+                                    "The maximum number of bytes to read (optional, if not provided, reads up to 64KB)",
                             required = false)
                     Integer limit) {
-        
+
         if (offset == null || offset < 0) {
             offset = 0L;
         }
         if (limit == null || limit <= 0) {
             limit = 65536; // 64KB default
         }
-        
+
         // Cap the limit to prevent excessive memory usage
         final int maxLimit = 1048576; // 1MB max
         if (limit > maxLimit) {
@@ -96,20 +104,31 @@ public class BuildArtifactsExtension implements McpServerExtension {
 
         final long offsetF = offset;
         final int limitF = limit;
-        
+
         return getBuildByNumberOrLast(jobFullName, buildNumber)
                 .map(build -> {
                     try {
                         return getArtifactContent(build, artifactPath, offsetF, limitF);
                     } catch (Exception e) {
-                        log.error("Error reading artifact {} for job {} build {}", artifactPath, jobFullName, buildNumber, e);
+                        log.error(
+                                "Error reading artifact {} for job {} build {}",
+                                artifactPath,
+                                jobFullName,
+                                buildNumber,
+                                e);
                         return new BuildArtifactResponse(false, 0L, "Error reading artifact: " + e.getMessage());
                     }
                 })
                 .orElse(new BuildArtifactResponse(false, 0L, "Build not found"));
     }
 
-    private BuildArtifactResponse getArtifactContent(Run<?, ?> run, String artifactPath, long offset, int limit) throws IOException {
+    /*
+     * Suppression Rationale:
+     * - "rawtypes": Jenkins' Run and Run.Artifact use raw types in legacy API
+     */
+    @SuppressWarnings("rawtypes")
+    private BuildArtifactResponse getArtifactContent(Run run, String artifactPath, long offset, int limit)
+            throws IOException {
         log.trace(
                 "getArtifactContent for run {}/{} called with artifact {}, offset {}, limit {}",
                 run.getParent().getName(),
@@ -119,11 +138,15 @@ public class BuildArtifactsExtension implements McpServerExtension {
                 limit);
 
         // Find the artifact
-        Run.Artifact artifact = run.getArtifacts().stream()
-                .filter(a -> a.relativePath.equals(artifactPath))
-                .findFirst()
-                .orElse(null);
-        
+        Run.Artifact artifact = null;
+        for (Object a : run.getArtifacts()) {
+            Run.Artifact runArtifact = (Run.Artifact) a;
+            if (runArtifact.relativePath.equals(artifactPath)) {
+                artifact = runArtifact;
+                break;
+            }
+        }
+
         if (artifact == null) {
             return new BuildArtifactResponse(false, 0L, "Artifact not found: " + artifactPath);
         }
@@ -150,42 +173,20 @@ public class BuildArtifactsExtension implements McpServerExtension {
             // Read up to limit bytes
             byte[] buffer = new byte[limit];
             int bytesRead = is.read(buffer);
-            
+
             if (bytesRead <= 0) {
                 return new BuildArtifactResponse(false, fileSize, "");
             }
 
             // Convert to string (assuming text content)
             String content = new String(buffer, 0, bytesRead, StandardCharsets.UTF_8);
-            
+
             // Check if there's more content
             boolean hasMoreContent = (offset + bytesRead) < fileSize;
-            
+
             return new BuildArtifactResponse(hasMoreContent, fileSize, content);
         }
     }
 
-    public static class BuildArtifactResponse {
-        private final boolean hasMoreContent;
-        private final long totalSize;
-        private final String content;
-
-        public BuildArtifactResponse(boolean hasMoreContent, long totalSize, String content) {
-            this.hasMoreContent = hasMoreContent;
-            this.totalSize = totalSize;
-            this.content = content;
-        }
-
-        public boolean hasMoreContent() {
-            return hasMoreContent;
-        }
-
-        public long totalSize() {
-            return totalSize;
-        }
-
-        public String content() {
-            return content;
-        }
-    }
+    public record BuildArtifactResponse(boolean hasMoreContent, long totalSize, String content) {}
 }

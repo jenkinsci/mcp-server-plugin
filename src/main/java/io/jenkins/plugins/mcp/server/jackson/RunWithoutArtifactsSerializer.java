@@ -32,36 +32,43 @@ import com.fasterxml.jackson.databind.SerializerProvider;
 import hudson.model.Run;
 import java.io.IOException;
 import java.io.StringWriter;
-import java.util.regex.Pattern;
+import org.kohsuke.stapler.export.DataWriter;
+import org.kohsuke.stapler.export.ExportConfig;
 import org.kohsuke.stapler.export.Flavor;
 import org.kohsuke.stapler.export.Model;
 import org.kohsuke.stapler.export.ModelBuilder;
+import org.kohsuke.stapler.export.TreePruner;
 
 /**
  * Custom serializer for Run objects that excludes the artifacts field to reduce payload size.
  * This is used by the getBuild tool to provide build information without the potentially large artifacts array.
  * Use the getBuildArtifacts tool to retrieve artifacts separately.
+ *
+ * This implementation uses Jenkins' TreePruner to filter out the artifacts field during serialization,
+ * which is more efficient and robust than post-processing approaches. The pruner ensures that artifacts
+ * are never serialized in the first place, saving both memory and processing time.
  */
 public class RunWithoutArtifactsSerializer extends JsonSerializer<Run> {
     private static final ModelBuilder MODEL_BUILDER = new ModelBuilder();
-    private static final Pattern ARTIFACTS_PATTERN = Pattern.compile("\"artifacts\"\\s*:\\s*\\[.*?\\]\\s*,?", Pattern.DOTALL);
+
+    // TreePruner that excludes only the "artifacts" field
+    private static final TreePruner ARTIFACTS_PRUNER = new TreePruner() {
+        @Override
+        public TreePruner accept(Object node, org.kohsuke.stapler.export.Property prop) {
+            return "artifacts".equals(prop.name) ? null : TreePruner.DEFAULT;
+        }
+    };
 
     @Override
     public void serialize(Run value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
         StringWriter sw = new StringWriter();
-        org.kohsuke.stapler.export.DataWriter dw = Flavor.JSON.createDataWriter(value, sw);
-        Model p = MODEL_BUILDER.get(value.getClass());
+        ExportConfig config = new ExportConfig().withFlavor(Flavor.JSON);
+        DataWriter dw = Flavor.JSON.createDataWriter(value, sw, config);
+        Model model = MODEL_BUILDER.get(value.getClass());
 
-        // Use the standard writeTo method
-        p.writeTo(value, dw);
+        // Use TreePruner to exclude only the artifacts field during serialization
+        model.writeTo(value, ARTIFACTS_PRUNER, dw);
 
-        // Post-process the JSON to remove the artifacts field
-        String json = sw.toString();
-        String filteredJson = ARTIFACTS_PATTERN.matcher(json).replaceAll("");
-
-        // Clean up any trailing commas that might be left
-        filteredJson = filteredJson.replaceAll(",\\s*}", "}");
-
-        gen.writeRawValue(filteredJson);
+        gen.writeRawValue(sw.toString());
     }
 }

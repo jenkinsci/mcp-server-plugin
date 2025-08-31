@@ -44,9 +44,9 @@ public class BuildArtifactsExtensionCompileTest {
 
     @Test
     void testBuildArtifactResponseRecord() {
-        BuildArtifactsExtension.BuildArtifactResponse response = 
-            new BuildArtifactsExtension.BuildArtifactResponse(false, 100L, "test content");
-        
+        BuildArtifactsExtension.BuildArtifactResponse response =
+                new BuildArtifactsExtension.BuildArtifactResponse(false, 100L, "test content");
+
         assertNotNull(response);
         assert !response.hasMoreContent();
         assert response.totalSize() == 100L;
