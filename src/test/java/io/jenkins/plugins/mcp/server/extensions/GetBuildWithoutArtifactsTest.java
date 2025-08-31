@@ -70,24 +70,23 @@ public class GetBuildWithoutArtifactsTest {
             assertThat(getBuildResponse.isError()).isFalse();
             assertThat(getBuildResponse.content()).hasSize(1);
 
-            var getBuildTextContent = TestUtils.getTextContent(getBuildResponse);
-            assertThat(getBuildTextContent).isNotNull();
-
-            ObjectMapper objectMapper = new ObjectMapper();
-            try {
-                JsonNode buildJsonNode = objectMapper.readTree(getBuildTextContent.text());
+            assertThat(getBuildResponse.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, getBuildTextContent -> {
+                ObjectMapper objectMapper = new ObjectMapper();
+                try {
+                    JsonNode buildJsonNode = objectMapper.readTree(getBuildTextContent.text());
                 
                 // Verify that artifacts field is NOT present in getBuild response
                 assertThat(buildJsonNode.has("artifacts")).isFalse();
                 
-                // Verify that other build information is still present
-                assertThat(buildJsonNode.has("number")).isTrue();
-                assertThat(buildJsonNode.has("result")).isTrue();
-                assertThat(buildJsonNode.has("displayName")).isTrue();
-                
-            } catch (JsonProcessingException e) {
-                throw new RuntimeException(e);
-            }
+                    // Verify that other build information is still present
+                    assertThat(buildJsonNode.has("number")).isTrue();
+                    assertThat(buildJsonNode.has("result")).isTrue();
+                    assertThat(buildJsonNode.has("displayName")).isTrue();
+
+                } catch (JsonProcessingException e) {
+                    throw new RuntimeException(e);
+                }
+            });
 
             // Test getBuildArtifacts - should include artifacts
             var getBuildArtifactsRequest = McpSchema.CallToolRequest.builder()
@@ -99,11 +98,9 @@ public class GetBuildWithoutArtifactsTest {
             assertThat(getBuildArtifactsResponse.isError()).isFalse();
             assertThat(getBuildArtifactsResponse.content()).hasSize(1);
 
-            var getArtifactsTextContent = TestUtils.getTextContent(getBuildArtifactsResponse);
-            assertThat(getArtifactsTextContent).isNotNull();
-
-            try {
-                JsonNode artifactsJsonNode = objectMapper.readTree(getArtifactsTextContent.text());
+            assertThat(getBuildArtifactsResponse.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, getArtifactsTextContent -> {
+                try {
+                    JsonNode artifactsJsonNode = objectMapper.readTree(getArtifactsTextContent.text());
                 
                 // Verify that artifacts are present in getBuildArtifacts response
                 assertThat(artifactsJsonNode.isArray()).isTrue();
@@ -122,12 +119,13 @@ public class GetBuildWithoutArtifactsTest {
                     }
                 }
                 
-                assertThat(foundArtifact1).isTrue();
-                assertThat(foundArtifact2).isTrue();
-                
-            } catch (JsonProcessingException e) {
-                throw new RuntimeException(e);
-            }
+                    assertThat(foundArtifact1).isTrue();
+                    assertThat(foundArtifact2).isTrue();
+
+                } catch (JsonProcessingException e) {
+                    throw new RuntimeException(e);
+                }
+            });
         }
     }
 
@@ -151,24 +149,23 @@ public class GetBuildWithoutArtifactsTest {
             assertThat(getBuildResponse.isError()).isFalse();
             assertThat(getBuildResponse.content()).hasSize(1);
 
-            var getBuildTextContent = TestUtils.getTextContent(getBuildResponse);
-            assertThat(getBuildTextContent).isNotNull();
-
-            ObjectMapper objectMapper = new ObjectMapper();
-            try {
-                JsonNode buildJsonNode = objectMapper.readTree(getBuildTextContent.text());
+            assertThat(getBuildResponse.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, getBuildTextContent -> {
+                ObjectMapper objectMapper = new ObjectMapper();
+                try {
+                    JsonNode buildJsonNode = objectMapper.readTree(getBuildTextContent.text());
                 
                 // Verify that artifacts field is NOT present
                 assertThat(buildJsonNode.has("artifacts")).isFalse();
                 
-                // Verify that other build information is still present
-                assertThat(buildJsonNode.has("number")).isTrue();
-                assertThat(buildJsonNode.has("result")).isTrue();
-                assertThat(buildJsonNode.has("displayName")).isTrue();
-                
-            } catch (JsonProcessingException e) {
-                throw new RuntimeException(e);
-            }
+                    // Verify that other build information is still present
+                    assertThat(buildJsonNode.has("number")).isTrue();
+                    assertThat(buildJsonNode.has("result")).isTrue();
+                    assertThat(buildJsonNode.has("displayName")).isTrue();
+
+                } catch (JsonProcessingException e) {
+                    throw new RuntimeException(e);
+                }
+            });
         }
     }
 }

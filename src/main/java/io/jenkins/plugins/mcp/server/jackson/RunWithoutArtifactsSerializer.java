@@ -44,12 +44,12 @@ import org.kohsuke.stapler.export.ModelBuilder;
  */
 public class RunWithoutArtifactsSerializer extends JsonSerializer<Run> {
     private static final ModelBuilder MODEL_BUILDER = new ModelBuilder();
-    private static final Pattern ARTIFACTS_PATTERN = Pattern.compile("\"artifacts\"\\s*:\\s*\\[[^\\]]*\\]\\s*,?");
+    private static final Pattern ARTIFACTS_PATTERN = Pattern.compile("\"artifacts\"\\s*:\\s*\\[.*?\\]\\s*,?", Pattern.DOTALL);
 
     @Override
     public void serialize(Run value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
         StringWriter sw = new StringWriter();
-        var dw = Flavor.JSON.createDataWriter(value, sw);
+        org.kohsuke.stapler.export.DataWriter dw = Flavor.JSON.createDataWriter(value, sw);
         Model p = MODEL_BUILDER.get(value.getClass());
 
         // Use the standard writeTo method

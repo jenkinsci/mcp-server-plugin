@@ -71,22 +71,21 @@ public class BuildArtifactsExtensionTest {
             assertThat(response.isError()).isFalse();
             assertThat(response.content()).hasSize(1);
 
-            var textContent = TestUtils.getTextContent(response);
-            assertThat(textContent).isNotNull();
-
-            ObjectMapper objectMapper = new ObjectMapper();
-            try {
-                JsonNode jsonNode = objectMapper.readTree(textContent.text());
+            assertThat(response.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                ObjectMapper objectMapper = new ObjectMapper();
+                try {
+                    JsonNode jsonNode = objectMapper.readTree(textContent.text());
                 assertThat(jsonNode.isArray()).isTrue();
                 assertThat(jsonNode.size()).isGreaterThan(0);
                 
-                // Check that we have the test.txt artifact
-                JsonNode firstArtifact = jsonNode.get(0);
-                assertThat(firstArtifact.get("relativePath").asText()).isEqualTo("test.txt");
-                assertThat(firstArtifact.get("fileName").asText()).isEqualTo("test.txt");
-            } catch (JsonProcessingException e) {
-                throw new RuntimeException(e);
-            }
+                    // Check that we have the test.txt artifact
+                    JsonNode firstArtifact = jsonNode.get(0);
+                    assertThat(firstArtifact.get("relativePath").asText()).isEqualTo("test.txt");
+                    assertThat(firstArtifact.get("fileName").asText()).isEqualTo("test.txt");
+                } catch (JsonProcessingException e) {
+                    throw new RuntimeException(e);
+                }
+            });
         }
     }
 
@@ -115,18 +114,17 @@ public class BuildArtifactsExtensionTest {
             assertThat(response.isError()).isFalse();
             assertThat(response.content()).hasSize(1);
 
-            var textContent = TestUtils.getTextContent(response);
-            assertThat(textContent).isNotNull();
-
-            ObjectMapper objectMapper = new ObjectMapper();
-            try {
-                JsonNode jsonNode = objectMapper.readTree(textContent.text());
-                assertThat(jsonNode.get("content").asText()).contains("This is test content for artifact reading");
-                assertThat(jsonNode.get("hasMoreContent").asBoolean()).isFalse();
-                assertThat(jsonNode.get("totalSize").asLong()).isGreaterThan(0);
-            } catch (JsonProcessingException e) {
-                throw new RuntimeException(e);
-            }
+            assertThat(response.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                ObjectMapper objectMapper = new ObjectMapper();
+                try {
+                    JsonNode jsonNode = objectMapper.readTree(textContent.text());
+                    assertThat(jsonNode.get("content").asText()).contains("This is test content for artifact reading");
+                    assertThat(jsonNode.get("hasMoreContent").asBoolean()).isFalse();
+                    assertThat(jsonNode.get("totalSize").asLong()).isGreaterThan(0);
+                } catch (JsonProcessingException e) {
+                    throw new RuntimeException(e);
+                }
+            });
         }
     }
 
@@ -158,18 +156,17 @@ public class BuildArtifactsExtensionTest {
             assertThat(response.isError()).isFalse();
             assertThat(response.content()).hasSize(1);
 
-            var textContent = TestUtils.getTextContent(response);
-            assertThat(textContent).isNotNull();
-
-            ObjectMapper objectMapper = new ObjectMapper();
-            try {
-                JsonNode jsonNode = objectMapper.readTree(textContent.text());
-                assertThat(jsonNode.get("content").asText()).hasSize(100);
-                assertThat(jsonNode.get("hasMoreContent").asBoolean()).isTrue();
-                assertThat(jsonNode.get("totalSize").asLong()).isEqualTo(1000);
-            } catch (JsonProcessingException e) {
-                throw new RuntimeException(e);
-            }
+            assertThat(response.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                ObjectMapper objectMapper = new ObjectMapper();
+                try {
+                    JsonNode jsonNode = objectMapper.readTree(textContent.text());
+                    assertThat(jsonNode.get("content").asText()).hasSize(100);
+                    assertThat(jsonNode.get("hasMoreContent").asBoolean()).isTrue();
+                    assertThat(jsonNode.get("totalSize").asLong()).isEqualTo(1000);
+                } catch (JsonProcessingException e) {
+                    throw new RuntimeException(e);
+                }
+            });
         }
     }
 
@@ -185,17 +182,16 @@ public class BuildArtifactsExtensionTest {
             assertThat(response.isError()).isFalse();
             assertThat(response.content()).hasSize(1);
 
-            var textContent = TestUtils.getTextContent(response);
-            assertThat(textContent).isNotNull();
-
-            ObjectMapper objectMapper = new ObjectMapper();
-            try {
-                JsonNode jsonNode = objectMapper.readTree(textContent.text());
-                assertThat(jsonNode.isArray()).isTrue();
-                assertThat(jsonNode.size()).isEqualTo(0);
-            } catch (JsonProcessingException e) {
-                throw new RuntimeException(e);
-            }
+            assertThat(response.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                ObjectMapper objectMapper = new ObjectMapper();
+                try {
+                    JsonNode jsonNode = objectMapper.readTree(textContent.text());
+                    assertThat(jsonNode.isArray()).isTrue();
+                    assertThat(jsonNode.size()).isEqualTo(0);
+                } catch (JsonProcessingException e) {
+                    throw new RuntimeException(e);
+                }
+            });
         }
     }
 }

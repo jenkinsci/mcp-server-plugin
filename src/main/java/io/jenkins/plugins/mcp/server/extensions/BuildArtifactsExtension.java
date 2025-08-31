@@ -165,5 +165,27 @@ public class BuildArtifactsExtension implements McpServerExtension {
         }
     }
 
-    public record BuildArtifactResponse(boolean hasMoreContent, long totalSize, String content) {}
+    public static class BuildArtifactResponse {
+        private final boolean hasMoreContent;
+        private final long totalSize;
+        private final String content;
+
+        public BuildArtifactResponse(boolean hasMoreContent, long totalSize, String content) {
+            this.hasMoreContent = hasMoreContent;
+            this.totalSize = totalSize;
+            this.content = content;
+        }
+
+        public boolean hasMoreContent() {
+            return hasMoreContent;
+        }
+
+        public long totalSize() {
+            return totalSize;
+        }
+
+        public String content() {
+            return content;
+        }
+    }
 }
