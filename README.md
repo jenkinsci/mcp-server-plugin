@@ -35,6 +35,19 @@ The following system properties can be used to configure the MCP Server plugin:
 
 - hard limit on max number of log lines to return with `io.jenkins.plugins.mcp.server.extensions.BuildLogsExtension.limit.max=10000` (default 10000)
 
+#### Origin header validation
+
+The MCP specification mark as `MUST` validate the `Origin` header of incoming requests. 
+By default, the MCP Server plugin does not enforce this validation to facilitate usage by AI Agent not providing the header.
+You can enable different levels of validation, if the header is available with the request you can enforce his validation using 
+the system property `io.jenkins.plugins.mcp.server.Endpoint.requireOriginMatch=true`
+When enforcing the validation, the header value must match the configured Jenkins root url.
+
+If receiving the header is mandatory the system property `io.jenkins.plugins.mcp.server.Endpoint.requireOriginHeader=true` 
+will make it mandatory as well.
+
+
+
 ## Usage
 
 ### Connecting to the MCP Server
