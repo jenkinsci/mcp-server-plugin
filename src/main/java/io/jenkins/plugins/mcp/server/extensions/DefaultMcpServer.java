@@ -244,7 +244,7 @@ public class DefaultMcpServer implements McpServerExtension {
 
         // Explicit root URL health check
         if (jenkins.getRootUrl() == null || jenkins.getRootUrl().isEmpty()) {
-            map.put("Root URL Status", "ERROR: Jenkins root URL is not configured.");
+            map.put("Root URL Status", "ERROR: Jenkins root URL is not configured. Please configure the Jenkins URL under \"Manage Jenkins → Configure System → Jenkins Location\" so tools like getJobs can work properly.\n ");
         } else {
             map.put("Root URL Status", "OK");
         }
