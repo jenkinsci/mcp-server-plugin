@@ -205,7 +205,7 @@ public class DefaultMcpServer implements McpServerExtension {
     @Tool(
             description =
                     "Checks the health and readiness status of a Jenkins instance, including whether it's in quiet"
-                            + " mode, has active administrative monitors, current queue size, and available executor capacity."
+                            + " mode, has active administrative monitors, current queue size, root URL Status, and available executor capacity."
                             + " This tool provides a comprehensive overview of the controller's operational state to determine if"
                             + " it's stable and ready to build. Use this tool to assess Jenkins instance health rather than"
                             + " simple up/down status.")
@@ -241,6 +241,15 @@ public class DefaultMcpServer implements McpServerExtension {
                 jenkins.getActiveAdministrativeMonitors().stream()
                         .map(AdministrativeMonitor::getDisplayName)
                         .toList());
+
+        // Explicit root URL health check
+        if (jenkins.getRootUrl() == null || jenkins.getRootUrl().isEmpty()) {
+            map.put(
+                    "Root URL Status",
+                    "ERROR: Jenkins root URL is not configured. Please configure the Jenkins URL under \"Manage Jenkins → Configure System → Jenkins Location\" so tools like getJobs can work properly.\n ");
+        } else {
+            map.put("Root URL Status", "OK");
+        }
         return map;
     }
 }
