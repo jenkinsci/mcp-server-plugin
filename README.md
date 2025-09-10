@@ -143,6 +143,7 @@ The plugin provides the following built-in tools for interacting with Jenkins:
 
 #### Management Information
 - `whoAmI`: Get information about the current user.
+- `getStatus`: Checks the health and readiness status of a Jenkins instance. Use this tool to assess Jenkins instance health rather than simple up/down status.
 
 
 
