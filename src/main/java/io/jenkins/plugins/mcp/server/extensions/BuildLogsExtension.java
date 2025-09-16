@@ -29,12 +29,19 @@ package io.jenkins.plugins.mcp.server.extensions;
 import static io.jenkins.plugins.mcp.server.extensions.util.JenkinsUtil.getBuildByNumberOrLast;
 
 import hudson.Extension;
+import hudson.console.PlainTextConsoleOutputStream;
+import hudson.model.Run;
 import io.jenkins.plugins.mcp.server.McpServerExtension;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
-import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.List;
+import jenkins.util.SystemProperties;
 import lombok.extern.slf4j.Slf4j;
 
 @Extension
@@ -53,12 +60,12 @@ public class BuildLogsExtension implements McpServerExtension {
                     Integer buildNumber,
             @ToolParam(
                             description =
-                                    "The skip (optional, if not provided, returns the first line). Negative values function as 'from the end', with -1 meaning starting with the last line",
+                                    "The skip (optional, if not provided, returns from the first line). Negative values function as 'from the end', with -1 meaning starting with the last line",
                             required = false)
                     Long skip,
             @ToolParam(
                             description =
-                                    "The number of lines to return (optional, if not provided, returns 100 lines)",
+                                    "The number of lines to return (optional, if not provided, returns 100 lines), positive values return lines from the start, negative values return lines from the end",
                             required = false)
                     Integer limit) {
         if (limit == null || limit == 0) {
@@ -72,16 +79,9 @@ public class BuildLogsExtension implements McpServerExtension {
         final long skipF = skip;
         return getBuildByNumberOrLast(jobFullName, buildNumber)
                 .map(build -> {
-                    try (BufferedReader reader = new BufferedReader(build.getLogReader())) {
-                        List<String> allLines = reader.lines().toList();
-                        long actualOffset = skipF;
-                        if (skipF < 0) actualOffset = Math.max(0, allLines.size() + skipF);
-                        int endIndex = (int) Math.min(actualOffset + limitF, allLines.size());
-                        var lines = allLines.subList((int) actualOffset, endIndex);
-                        boolean hasMoreContent = endIndex < allLines.size();
-                        return new BuildLogResponse(hasMoreContent, lines);
-
-                    } catch (IOException e) {
+                    try {
+                        return getLogLines(build, skipF, limitF);
+                    } catch (Exception e) {
                         log.error("Error reading log for job {} build {}", jobFullName, buildNumber, e);
                         return null;
                     }
@@ -89,5 +89,147 @@ public class BuildLogsExtension implements McpServerExtension {
                 .orElse(null);
     }
 
+    private BuildLogResponse getLogLines(Run<?, ?> run, long skip, int limit) throws Exception {
+        log.trace(
+                "getLogLines for run {}/{} called with skip {}, limit {}",
+                run.getParent().getName(),
+                run.getDisplayName(),
+                skip,
+                limit);
+        int maxLimit = SystemProperties.getInteger(BuildLogsExtension.class.getName() + ".limit.max", 10000);
+        boolean negativeLimit = limit < 0;
+        if (Math.abs(limit) > maxLimit) {
+            log.warn("Limit {} is too large, using the default max limit {}", limit, maxLimit);
+        }
+        limit = Math.min(Math.abs(limit), maxLimit);
+        if (negativeLimit) {
+            limit = -limit;
+        }
+
+        // first need number of lines
+        long skipInit = skip;
+        int limitInit = limit;
+        int linesNumber;
+        long start = System.currentTimeMillis();
+        log.trace("counting lines for run {}", run.getDisplayName());
+        try (ByteArrayOutputStream os = new ByteArrayOutputStream();
+                LinesNumberOutputStream out = new LinesNumberOutputStream(os)) {
+            run.writeWholeLogTo(out);
+            linesNumber = out.lines;
+            if (log.isDebugEnabled()) {
+                log.debug("counted {} lines in {} ms", linesNumber, System.currentTimeMillis() - start);
+            }
+        }
+        // now we can make the maths to skip, limit and start from for the capture read
+        // special for skip > 0 and limit < 0, we simply recalculate the skip and positive the limit
+        if (skip > 0 && limit < 0) {
+            skip = Math.max(0, skip - Math.abs(limit));
+            limit = Math.abs(limit);
+        } else if (skip < 0 && limit > 0) {
+            // recalculate skip from the end
+            skip = Math.max(0, linesNumber + skip);
+        } else if (skip < 0 && limit < 0) {
+            // recalculate skip from the end and make limit positive
+            skip = Math.max(0, linesNumber + skip - Math.abs(limit));
+            limit = Math.abs(limit);
+        }
+
+        start = System.currentTimeMillis();
+        try (ByteArrayOutputStream os = new ByteArrayOutputStream();
+                SkipLogOutputStream out = new SkipLogOutputStream(os, skip, limit)) {
+            run.writeWholeLogTo(out);
+            if (log.isDebugEnabled()) {
+                log.debug(
+                        "call with skip {}, limit {} for linesNumber {} with read with skip {}, limit {}, time to extract: {} ms",
+                        skipInit,
+                        limitInit,
+                        linesNumber,
+                        skip,
+                        limit,
+                        System.currentTimeMillis() - start);
+            }
+            // is the right charset here?
+            return new BuildLogResponse(
+                    out.hasMoreContent,
+                    os.toString(StandardCharsets.UTF_8).lines().toList());
+        }
+    }
+
+    private static class LinesNumberOutputStream extends PlainTextConsoleOutputStream {
+        private int lines;
+
+        public LinesNumberOutputStream(OutputStream out) throws IOException {
+            super(out);
+        }
+
+        @Override
+        protected void eol(byte[] in, int sz) throws IOException {
+            lines++;
+        }
+    }
+
+    private static class SkipLogOutputStream extends PlainTextConsoleOutputStream {
+        private final long skip;
+        private final int limit;
+        private long current;
+        private boolean hasMoreContent;
+
+        public SkipLogOutputStream(OutputStream out, long skip, int limit) throws IOException {
+            super(out);
+            this.skip = skip;
+            this.limit = limit;
+        }
+
+        @Override
+        protected void eol(byte[] in, int sz) throws IOException {
+            if (this.current >= this.skip && this.limit > (current - skip)) {
+                super.eol(in, sz);
+            } else {
+                // skip the line but update hasMoreContent
+                if (this.current - skip >= this.limit) {
+                    hasMoreContent = true;
+                }
+            }
+            current++;
+        }
+    }
+
     public record BuildLogResponse(boolean hasMoreContent, List<String> lines) {}
+
+    private static class LimitedQueue<E> {
+        private final int maxSize;
+        private final Deque<E> deque;
+
+        public LimitedQueue(int maxSize) {
+            this.maxSize = maxSize;
+            this.deque = new ArrayDeque<>(maxSize);
+        }
+
+        public boolean add(E e) {
+            boolean removed = false;
+            if (deque.size() == maxSize) {
+                removed = true;
+                deque.removeFirst();
+            }
+            deque.addLast(e);
+            return removed;
+        }
+
+        public E remove() {
+            return deque.removeFirst();
+        }
+
+        public int size() {
+            return deque.size();
+        }
+
+        public boolean isEmpty() {
+            return deque.isEmpty();
+        }
+
+        @Override
+        public String toString() {
+            return deque.toString();
+        }
+    }
 }

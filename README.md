@@ -29,6 +29,12 @@ This MCP Server is based on the MCP Java SDK version 0.11.0, which implements th
 
 The MCP Server plugin automatically sets up necessary endpoints and tools upon installation, requiring no additional configuration.
 
+#### System properties
+
+The following system properties can be used to configure the MCP Server plugin:
+
+- hard limit on max number of log lines to return with `io.jenkins.plugins.mcp.server.extensions.BuildLogsExtension.limit.max=10000` (default 10000)
+
 ## Usage
 
 ### Connecting to the MCP Server
@@ -139,6 +145,7 @@ The plugin provides the following built-in tools for interacting with Jenkins:
 
 #### Management Information
 - `whoAmI`: Get information about the current user.
+- `getStatus`: Checks the health and readiness status of a Jenkins instance. Use this tool to assess Jenkins instance health rather than simple up/down status.
 
 
 

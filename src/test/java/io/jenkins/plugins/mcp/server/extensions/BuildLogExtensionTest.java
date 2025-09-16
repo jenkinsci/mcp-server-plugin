@@ -26,7 +26,9 @@
 
 package io.jenkins.plugins.mcp.server.extensions;
 
+import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -36,10 +38,12 @@ import io.jenkins.plugins.mcp.server.junit.McpClientTest;
 import io.jenkins.plugins.mcp.server.junit.TestUtils;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
+import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -53,16 +57,18 @@ public class BuildLogExtensionTest {
     @ParameterizedTest
     @MethodSource("buildLogTestParameters")
     void testMcpToolCallGetBuildLog(
-            Integer limit,
             Long skip,
+            Integer limit,
             Integer expectedContentSize,
             boolean hasMoreContent,
+            List<String> expectedLines,
             JenkinsMcpClientBuilder jenkinsMcpClientBuilder,
             JenkinsRule jenkins)
             throws Exception {
         WorkflowJob project = jenkins.createProject(WorkflowJob.class, "demo-job");
         project.setDefinition(new CpsFlowDefinition("", true));
         project.scheduleBuild2(0).get();
+        await().atMost(10, SECONDS).until(() -> project.getLastBuild() != null);
 
         try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
             Map<String, Object> params = new HashMap<>();
@@ -96,6 +102,10 @@ public class BuildLogExtensionTest {
                     for (JsonNode lineNode : linesArray) {
                         assertThat(lineNode.asText().trim()).isNotEmpty();
                     }
+                    if (!expectedLines.isEmpty()) {
+                        List lines = objectMapper.convertValue(linesArray, List.class);
+                        assertThat(lines).isEqualTo(expectedLines);
+                    }
                 });
             });
         }
@@ -106,7 +116,8 @@ public class BuildLogExtensionTest {
             throws Exception {
         WorkflowJob project = jenkins.createProject(WorkflowJob.class, "demo-job");
         project.setDefinition(new CpsFlowDefinition("", true));
-        var build = project.scheduleBuild2(0).get();
+        project.scheduleBuild2(0).get();
+        await().atMost(10, SECONDS).until(() -> project.getLastBuild() != null);
 
         try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
             Map<String, Object> params = new HashMap<>();
@@ -128,12 +139,50 @@ public class BuildLogExtensionTest {
     }
 
     static Stream<Arguments> buildLogTestParameters() {
+        WorkflowRun workflowRun;
+        // all lines Started;[Pipeline] Start of Pipeline;[Pipeline] End of Pipeline;Finished: SUCCESS
+        // "Started;[Pipeline] Start of Pipeline;[Pipeline] End of Pipeline;Finished: SUCCESS"
         Stream<Arguments> baseArgs = Stream.of(
-                Arguments.of(100, null, 4, false),
-                Arguments.of(100, 1L, 3, false),
-                Arguments.of(3, null, 3, true),
-                Arguments.of(100, -1L, 1, false),
-                Arguments.of(3, -4L, 3, true));
+                Arguments.of(
+                        null,
+                        100,
+                        4,
+                        false,
+                        List.of(
+                                "Started",
+                                "[Pipeline] Start of Pipeline",
+                                "[Pipeline] End of Pipeline",
+                                "Finished: SUCCESS")),
+                Arguments.of(
+                        1L,
+                        100,
+                        3,
+                        false,
+                        List.of("[Pipeline] Start of Pipeline", "[Pipeline] End of Pipeline", "Finished: SUCCESS")),
+                Arguments.of(
+                        null,
+                        3,
+                        3,
+                        true,
+                        List.of("Started", "[Pipeline] Start of Pipeline", "[Pipeline] End of Pipeline")),
+                Arguments.of(-1L, 100, 1, false, List.of("Finished: SUCCESS")),
+                Arguments.of(
+                        -4L,
+                        3,
+                        3,
+                        false,
+                        List.of("Started", "[Pipeline] Start of Pipeline", "[Pipeline] End of Pipeline")),
+                Arguments.of(-2L, 3, 2, false, List.of("[Pipeline] End of Pipeline", "Finished: SUCCESS")),
+                Arguments.of(
+                        -3L,
+                        100,
+                        3,
+                        false,
+                        List.of("[Pipeline] Start of Pipeline", "[Pipeline] End of Pipeline", "Finished: SUCCESS")),
+                Arguments.of(-2L, 2, 2, true, List.of("[Pipeline] End of Pipeline", "Finished: SUCCESS")),
+                Arguments.of(-1L, 10, 1, false, List.of("Finished: SUCCESS")),
+                Arguments.of(-1L, -2, 2, true, List.of("[Pipeline] Start of Pipeline", "[Pipeline] End of Pipeline")),
+                Arguments.of(2L, -2, 2, true, List.of("Started", "[Pipeline] Start of Pipeline")));
 
         // 扩展成 2 倍：每组参数 + 两个不同的 McpClientProvider
         return TestUtils.appendMcpClientArgs(baseArgs);
