@@ -104,7 +104,7 @@ public class Endpoint extends CrumbExclusion implements RootAction {
      * setting the system property {@code io.jenkins.plugins.mcp.server.Endpoint.requireOriginMatch=false}.
      * The header will be validated only if present.
      */
-    private static final boolean REQUIRE_ORIGIN_MATCH =
+    public static boolean REQUIRE_ORIGIN_MATCH =
             SystemProperties.getBoolean(Endpoint.class.getName() + ".requireOriginMatch", true);
 
     /**
