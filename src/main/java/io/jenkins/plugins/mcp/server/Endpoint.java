@@ -95,7 +95,7 @@ public class Endpoint extends CrumbExclusion implements RootAction {
      * Whether to require the Origin header in requests. Default is false, can be overridden by setting the system
      * property {@code io.jenkins.plugins.mcp.server.Endpoint.requireOriginHeader=true}.
      */
-    private static final boolean REQUIRE_ORIGIN_HEADER =
+    public static boolean REQUIRE_ORIGIN_HEADER =
             SystemProperties.getBoolean(Endpoint.class.getName() + ".requireOriginHeader", false);
 
     /**
