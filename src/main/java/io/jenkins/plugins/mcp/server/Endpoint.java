@@ -28,6 +28,7 @@ package io.jenkins.plugins.mcp.server;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import edu.umd.cs.findbugs.annotations.NonNull;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.Extension;
 import hudson.model.RootAction;
 import hudson.model.User;
@@ -89,12 +90,14 @@ public class Endpoint extends CrumbExclusion implements RootAction {
      * Default is 0 seconds (so disabled per default), can be overridden by setting the system property
      * it's not static final on purpose to allow dynamic configuration via script console.
      */
-    private int keepAliveInterval = SystemProperties.getInteger(Endpoint.class.getName() + ".keepAliveInterval", 0);
+    private static int keepAliveInterval =
+            SystemProperties.getInteger(Endpoint.class.getName() + ".keepAliveInterval", 0);
 
     /**
      * Whether to require the Origin header in requests. Default is false, can be overridden by setting the system
      * property {@code io.jenkins.plugins.mcp.server.Endpoint.requireOriginHeader=true}.
      */
+    @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "Accessible via System Groovy Scripts")
     public static boolean REQUIRE_ORIGIN_HEADER =
             SystemProperties.getBoolean(Endpoint.class.getName() + ".requireOriginHeader", false);
 
@@ -104,6 +107,7 @@ public class Endpoint extends CrumbExclusion implements RootAction {
      * setting the system property {@code io.jenkins.plugins.mcp.server.Endpoint.requireOriginMatch=false}.
      * The header will be validated only if present.
      */
+    @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "Accessible via System Groovy Scripts")
     public static boolean REQUIRE_ORIGIN_MATCH =
             SystemProperties.getBoolean(Endpoint.class.getName() + ".requireOriginMatch", true);
 
