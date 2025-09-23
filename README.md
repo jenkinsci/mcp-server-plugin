@@ -50,6 +50,53 @@ The MCP Server Plugin requires the same credentials as the Jenkins instance it's
 
 1. **Jenkins API Token**: Generate an API token from your Jenkins user account.
 2. **Basic Authentication**: Use the API token in the HTTP Basic Authentication header.
+
+#### Generate a personal access token
+To generate a personal access token:
+
+- Sign in to Jenkins.
+- Select your user icon in the upper-right corner, and then select `Security`.
+- Select `Add new token`.
+- Enter a name to distinguish the token, and then select `Generate`.
+- Copy the token and store it in a secure location for later use.
+
+> [!WARNING] 
+> Once you leave the page, you cannot view or copy the token again.
+
+- Select `Done` to add the token.
+- Select `Save` to save your changes.
+
+#### Encode credentials for HTTP basic authentication
+
+Use basic HTTP authentication with the MCP agent by encoding it with the personal access token.
+
+To encode credentials on Linux, macOS, or Windows:
+
+Open a terminal and run the following command, replacing `<username>` and `<token>` with your actual username and the personal access token you generated in Jenkins
+
+- Linux or macOS
+```bash
+echo -n "<username>:<token>" | base64
+```
+- Windows (PowerShell)
+```powershell
+[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("<username>:<token>"))
+```
+
+if successful, the Base64-encoded credential is output, similar to the following:
+
+```bash
+dXNlcm5hbWU6dG9rZW4=
+```
+
+Store the encoded credential in a secure location for later use.
+
+> [!NOTE] 
+> Base64 encoding is not encryption.
+> Anyone with access to the encoded string can decode it and obtain your credentials.
+> Always protect the encoded credentials as if they are the original username and token.
+
+### Example Client Configurations
 #### Cline Configuration 
 ```json
 {
@@ -86,6 +133,22 @@ Copilot doesn't work well with the Streamable transport as of now, and I'm still
   }
 }
 ```
+Streamable example:
+```json
+{
+  "servers": {
+    "jenkins": {
+      "type": "http",
+      "url": "http://jenkins-host/mcp-server/mcp",
+      "requestInit": {
+        "headers": {
+          "Authorization": "Basic <user:token base64>"
+        }
+      }
+    }
+  }
+}
+```
 #### Windsurf Configuration
 ```json
 {
@@ -106,6 +169,20 @@ Copilot doesn't work well with the Streamable transport as of now, and I'm still
 }
 ```
 
+#### Claude
+```bash
+claude mcp add http://jenkins-host/mcp-server/mcp --transport http --header "Authorization: Basic <user:token base64>"
+```
+
+#### Goose
+- Click *“Add custom extension”*
+- Give it a meaningful name
+- In the type Dropdown, select *“Streamable HTTP”*
+- Enter the endpoint URL. This should be something like `http://jenkins-host/mcp-server/mcp`
+- Scroll to *“Request Headers”*
+- In the empty field, type `Authorization` as the name. Then in the Value field, type `“Basic <user:token base64>”`
+- Click *"Add"*
+- Click *“Add Extension”*
 
 ### Available Tools
 
