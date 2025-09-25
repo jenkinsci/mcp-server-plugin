@@ -49,7 +49,9 @@ public class JobScmExtension implements McpServerExtension {
         return gitPlugin != null && gitPlugin.isActive();
     }
 
-    @Tool(description = "Retrieves scm configurations of a Jenkins job")
+    @Tool(
+            description = "Retrieves scm configurations of a Jenkins job",
+            annotations = @Tool.Annotations(destructiveHint = false))
     public List getJobScm(
             @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName) {
         var job = Jenkins.get().getItemByFullName(jobFullName, Job.class);
@@ -68,7 +70,9 @@ public class JobScmExtension implements McpServerExtension {
         return List.of();
     }
 
-    @Tool(description = "Retrieves scm configurations of a Jenkins build")
+    @Tool(
+            description = "Retrieves scm configurations of a Jenkins build",
+            annotations = @Tool.Annotations(destructiveHint = false))
     public List getBuildScm(
             @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
             @Nullable
@@ -86,7 +90,9 @@ public class JobScmExtension implements McpServerExtension {
                 .orElse(List.of());
     }
 
-    @Tool(description = "Retrieves change log sets of a Jenkins build")
+    @Tool(
+            description = "Retrieves change log sets of a Jenkins build",
+            annotations = @Tool.Annotations(destructiveHint = false))
     public List getBuildChangeSets(
             @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
             @Nullable

@@ -63,7 +63,9 @@ public class DefaultMcpServer implements McpServerExtension {
 
     public static final String FULL_NAME = "fullName";
 
-    @Tool(description = "Get a specific build or the last build of a Jenkins job")
+    @Tool(
+            description = "Get a specific build or the last build of a Jenkins job",
+            annotations = @Tool.Annotations(destructiveHint = false))
     public Run getBuild(
             @ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
             @Nullable
@@ -74,13 +76,13 @@ public class DefaultMcpServer implements McpServerExtension {
         return getBuildByNumberOrLast(jobFullName, buildNumber).orElse(null);
     }
 
-    @Tool(description = "Get a Jenkins job by its full path")
+    @Tool(description = "Get a Jenkins job by its full path", annotations = @Tool.Annotations(destructiveHint = false))
     public Job getJob(
             @ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName) {
         return Jenkins.get().getItemByFullName(jobFullName, Job.class);
     }
 
-    @Tool(description = "Trigger a build for a Jenkins job")
+    @Tool(description = "Trigger a build for a Jenkins job") // keep the default value for destructive (true)
     public boolean triggerBuild(
             @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
             @ToolParam(description = "Build parameters (optional, e.g., {key1=value1,key2=value2})", required = false)
@@ -118,7 +120,8 @@ public class DefaultMcpServer implements McpServerExtension {
 
     @Tool(
             description =
-                    "Get a paginated list of Jenkins jobs, sorted by name. Returns up to 'limit' jobs starting from the 'skip' index. If no jobs are available in the requested range, returns an empty list.")
+                    "Get a paginated list of Jenkins jobs, sorted by name. Returns up to 'limit' jobs starting from the 'skip' index. If no jobs are available in the requested range, returns an empty list.",
+            annotations = @Tool.Annotations(destructiveHint = false))
     public List<Job> getJobs(
             @ToolParam(
                             description =
@@ -161,7 +164,7 @@ public class DefaultMcpServer implements McpServerExtension {
         }
     }
 
-    @Tool(description = "Update build display name and/or description")
+    @Tool(description = "Update build display name and/or description") // keep the default value for destructive (true)
     @SneakyThrows
     public boolean updateBuild(
             @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
@@ -192,7 +195,8 @@ public class DefaultMcpServer implements McpServerExtension {
 
     @Tool(
             description =
-                    "Get information about the currently authenticated user, including their full name or 'anonymous' if not authenticated")
+                    "Get information about the currently authenticated user, including their full name or 'anonymous' if not authenticated",
+            annotations = @Tool.Annotations(destructiveHint = false))
     @SneakyThrows
     public Map<String, String> whoAmI() {
         return Optional.ofNullable(User.current())
@@ -206,7 +210,8 @@ public class DefaultMcpServer implements McpServerExtension {
                             + " mode, has active administrative monitors, current queue size, root URL Status, and available executor capacity."
                             + " This tool provides a comprehensive overview of the controller's operational state to determine if"
                             + " it's stable and ready to build. Use this tool to assess Jenkins instance health rather than"
-                            + " simple up/down status.")
+                            + " simple up/down status.",
+            annotations = @Tool.Annotations(destructiveHint = false))
     public Map<String, Object> getStatus() {
         var map = new HashMap<String, Object>();
         var jenkins = Jenkins.get();

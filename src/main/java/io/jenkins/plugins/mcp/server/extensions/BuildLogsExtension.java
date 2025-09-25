@@ -51,7 +51,8 @@ public class BuildLogsExtension implements McpServerExtension {
     @Tool(
             description =
                     "Retrieves some log lines with pagination for a specific build or the last build of a Jenkins job,"
-                            + " as well as a boolean value indicating whether there is more content to retrieve")
+                            + " as well as a boolean value indicating whether there is more content to retrieve",
+            annotations = @Tool.Annotations(destructiveHint = false))
     public BuildLogResponse getBuildLog(
             @ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
             @ToolParam(
