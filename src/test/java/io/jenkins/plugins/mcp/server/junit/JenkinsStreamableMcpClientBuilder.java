@@ -50,7 +50,7 @@ public class JenkinsStreamableMcpClientBuilder extends JenkinsMcpClientBuilder.A
         var transport = builder.build();
 
         var client = McpClient.sync(transport)
-                .requestTimeout(Duration.ofSeconds(500))
+                .requestTimeout(Duration.ofSeconds(requestTimeoutSeconds))
                 .capabilities(McpSchema.ClientCapabilities.builder().build())
                 .build();
         client.initialize();
