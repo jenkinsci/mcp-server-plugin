@@ -29,6 +29,7 @@ package io.jenkins.plugins.mcp.server.extensions;
 import static io.jenkins.plugins.mcp.server.extensions.util.JenkinsUtil.getBuildByNumberOrLast;
 
 import hudson.Extension;
+import hudson.model.Item;
 import hudson.model.Job;
 import io.jenkins.plugins.mcp.server.McpServerExtension;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
@@ -56,16 +57,18 @@ public class JobScmExtension implements McpServerExtension {
             @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName) {
         var job = Jenkins.get().getItemByFullName(jobFullName, Job.class);
         if (job instanceof SCMTriggerItem scmItem) {
-            return scmItem.getSCMs().stream()
-                    .map(scm -> {
-                        Object result = null;
-                        if (scm.getType().equals("hudson.plugins.git.GitSCM")) {
-                            result = GitScmUtil.extractGitScmInfo(scm);
-                        }
-                        return result;
-                    })
-                    .filter(Objects::nonNull)
-                    .toList();
+            if (job.hasPermission(Item.EXTENDED_READ)) {
+                return scmItem.getSCMs().stream()
+                        .map(scm -> {
+                            Object result = null;
+                            if (scm.getType().equals("hudson.plugins.git.GitSCM")) {
+                                result = GitScmUtil.extractGitScmInfo(scm);
+                            }
+                            return result;
+                        })
+                        .filter(Objects::nonNull)
+                        .toList();
+            }
         }
         return List.of();
     }

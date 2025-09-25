@@ -90,6 +90,7 @@ public class DefaultMcpServer implements McpServerExtension {
         var job = Jenkins.get().getItemByFullName(jobFullName, ParameterizedJobMixIn.ParameterizedJob.class);
 
         if (job != null) {
+            job.checkPermission(Item.BUILD);
             if (job.isParameterized() && job instanceof Job j) {
                 ParametersDefinitionProperty parametersDefinition =
                         (ParametersDefinitionProperty) j.getProperty(ParametersDefinitionProperty.class);
@@ -232,12 +233,14 @@ public class DefaultMcpServer implements McpServerExtension {
         map.put("Buildable Queue Size", queue.countBuildableItems());
         map.put("Available executors (any label)", availableExecutors);
         // Tell me which clouds are defined as they can be used to provision ephemeral agents
-        map.put(
-                "Defined clouds that can provide agents (any label)",
-                jenkins.clouds.stream()
-                        .filter(cloud -> cloud.canProvision(new Cloud.CloudState(null, 1)))
-                        .map(Cloud::getDisplayName)
-                        .toList());
+        if (Jenkins.get().hasAnyPermission(Jenkins.SYSTEM_READ)) {
+            map.put(
+                    "Defined clouds that can provide agents (any label)",
+                    jenkins.clouds.stream()
+                            .filter(cloud -> cloud.canProvision(new Cloud.CloudState(null, 1)))
+                            .map(Cloud::getDisplayName)
+                            .toList());
+        }
         // getActiveAdministrativeMonitors is already protected, so no need to check the user
         map.put(
                 "Active administrative monitors",
