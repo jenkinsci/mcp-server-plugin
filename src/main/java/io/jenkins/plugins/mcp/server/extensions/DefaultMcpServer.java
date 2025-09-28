@@ -32,6 +32,8 @@ import static io.jenkins.plugins.mcp.server.extensions.util.ParameterValueFactor
 import hudson.Extension;
 import hudson.model.AbstractItem;
 import hudson.model.AdministrativeMonitor;
+import hudson.model.Cause;
+import hudson.model.CauseAction;
 import hudson.model.Computer;
 import hudson.model.Item;
 import hudson.model.ItemGroup;
@@ -91,6 +93,8 @@ public class DefaultMcpServer implements McpServerExtension {
 
         if (job != null) {
             job.checkPermission(Item.BUILD);
+            Cause.UserIdCause userIdCause = new Cause.UserIdCause();
+            CauseAction action = new CauseAction(userIdCause);
             if (job.isParameterized() && job instanceof Job j) {
                 ParametersDefinitionProperty parametersDefinition =
                         (ParametersDefinitionProperty) j.getProperty(ParametersDefinitionProperty.class);
@@ -105,14 +109,13 @@ public class DefaultMcpServer implements McpServerExtension {
                         })
                         .filter(Objects::nonNull)
                         .toList();
-
                 if (!parameterValues.isEmpty()) {
-                    job.scheduleBuild2(0, new ParametersAction(parameterValues));
+                    job.scheduleBuild2(0, new ParametersAction(parameterValues), action);
                 } else {
-                    job.scheduleBuild2(0);
+                    job.scheduleBuild2(0, action);
                 }
             } else {
-                job.scheduleBuild2(0);
+                job.scheduleBuild2(0, action);
             }
             return true;
         }
