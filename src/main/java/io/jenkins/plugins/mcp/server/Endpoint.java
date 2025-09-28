@@ -35,9 +35,12 @@ import hudson.model.User;
 import hudson.security.csrf.CrumbExclusion;
 import hudson.util.PluginServletFilter;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
-import io.jenkins.plugins.mcp.server.servlet.UserContextHttpRequest;
 import io.jenkins.plugins.mcp.server.tool.McpToolWrapper;
+import io.modelcontextprotocol.common.McpTransportContext;
+import io.modelcontextprotocol.json.jackson.JacksonMcpJsonMapper;
+import io.modelcontextprotocol.json.schema.jackson.DefaultJsonSchemaValidator;
 import io.modelcontextprotocol.server.McpServerFeatures;
+import io.modelcontextprotocol.server.McpTransportContextExtractor;
 import io.modelcontextprotocol.server.transport.HttpServletSseServerTransportProvider;
 import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema;
@@ -46,13 +49,16 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.ServletRequest;
 import jakarta.servlet.ServletResponse;
+import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import jenkins.model.Jenkins;
 import jenkins.util.SystemProperties;
 import lombok.extern.slf4j.Slf4j;
@@ -84,6 +90,7 @@ public class Endpoint extends CrumbExclusion implements RootAction {
 
     public static final String MCP_SERVER_MESSAGE = MCP_SERVER + MESSAGE_ENDPOINT;
     public static final String USER_ID = Endpoint.class.getName() + ".userId";
+    private static final String MCP_CONTEXT_KEY = Endpoint.class.getName() + ".mcpContext";
 
     /**
      * The interval in seconds for sending keep-alive messages to the client.
@@ -138,7 +145,7 @@ public class Endpoint extends CrumbExclusion implements RootAction {
         String requestedResource = getRequestedResourcePath(request);
         if (requestedResource.startsWith("/" + MCP_SERVER_MESSAGE)
                 && request.getMethod().equalsIgnoreCase("POST")) {
-            handleMessage(request, response);
+            handleMessage(request, response, httpServletSseServerTransportProvider);
             return true; // Do not allow this request on to Stapler
         }
         if (requestedResource.startsWith("/" + MCP_SERVER_SSE)
@@ -147,7 +154,7 @@ public class Endpoint extends CrumbExclusion implements RootAction {
             return true;
         }
         if (isStreamableRequest(request)) {
-            handleMcpRequest(request, response);
+            handleMessage(request, response, httpServletStreamableServerTransportProvider);
             return true;
         }
         return false;
@@ -190,14 +197,17 @@ public class Endpoint extends CrumbExclusion implements RootAction {
             rootUrl = "";
         }
         httpServletSseServerTransportProvider = HttpServletSseServerTransportProvider.builder()
-                .sseEndpoint(SSE_ENDPOINT)
+                .jsonMapper(new JacksonMcpJsonMapper(objectMapper))
                 .baseUrl(rootUrl)
+                .sseEndpoint(SSE_ENDPOINT)
                 .messageEndpoint(MCP_SERVER_MESSAGE)
-                .objectMapper(objectMapper)
+                .contextExtractor(createExtractor())
                 .keepAliveInterval(keepAliveInterval > 0 ? Duration.ofSeconds(keepAliveInterval) : null)
                 .build();
 
         io.modelcontextprotocol.server.McpServer.sync(httpServletSseServerTransportProvider)
+                .jsonMapper(new JacksonMcpJsonMapper(objectMapper))
+                .jsonSchemaValidator(new DefaultJsonSchemaValidator(objectMapper))
                 .capabilities(serverCapabilities)
                 .tools(allTools)
                 .prompts(prompts)
@@ -205,19 +215,15 @@ public class Endpoint extends CrumbExclusion implements RootAction {
                 .build();
 
         httpServletStreamableServerTransportProvider = HttpServletStreamableServerTransportProvider.builder()
-                .objectMapper(objectMapper)
+                .jsonMapper(new JacksonMcpJsonMapper(objectMapper))
                 .mcpEndpoint(STREAMABLE_ENDPOINT)
-                .contextExtractor((serverRequest, context) -> {
-                    var userId = serverRequest.getAttribute(USER_ID);
-                    if (userId != null) {
-                        context.put(USER_ID, userId);
-                    }
-                    return context;
-                })
+                .contextExtractor(createExtractor())
                 .keepAliveInterval(keepAliveInterval > 0 ? Duration.ofSeconds(keepAliveInterval) : null)
                 .build();
 
         io.modelcontextprotocol.server.McpServer.sync(httpServletStreamableServerTransportProvider)
+                .jsonMapper(new JacksonMcpJsonMapper(objectMapper))
+                .jsonSchemaValidator(new DefaultJsonSchemaValidator(objectMapper))
                 .capabilities(serverCapabilities)
                 .tools(allTools)
                 .prompts(prompts)
@@ -231,11 +237,15 @@ public class Endpoint extends CrumbExclusion implements RootAction {
             if (isSSERequest(servletRequest)) {
                 handleSSE(servletRequest, servletResponse);
             } else if (isStreamableRequest(servletRequest)) {
-                handleMcpRequest(servletRequest, servletResponse);
+                handleMessage(servletRequest, servletResponse, httpServletStreamableServerTransportProvider);
             } else {
                 filterChain.doFilter(servletRequest, servletResponse);
             }
         });
+    }
+
+    private static McpTransportContextExtractor<HttpServletRequest> createExtractor() {
+        return (httpServletRequest) -> (McpTransportContext) httpServletRequest.getAttribute(MCP_CONTEXT_KEY);
     }
 
     private boolean validateOriginHeader(ServletRequest request, ServletResponse response) {
@@ -378,21 +388,22 @@ public class Endpoint extends CrumbExclusion implements RootAction {
         httpServletSseServerTransportProvider.service(request, response);
     }
 
-    protected void handleMessage(HttpServletRequest request, HttpServletResponse response)
+    private void handleMessage(ServletRequest request, ServletResponse response, HttpServlet httpServlet)
             throws IOException, ServletException {
-        httpServletSseServerTransportProvider.service(new UserContextHttpRequest(objectMapper, request), response);
+        prepareMcpContext(request);
+        httpServlet.service(request, response);
     }
 
-    private void handleMcpRequest(ServletRequest request, ServletResponse response)
-            throws IOException, ServletException {
+    private static void prepareMcpContext(ServletRequest request) {
+        Map<String, Object> contextMap = new HashMap<>();
         var currentUser = User.current();
         String userId = null;
         if (currentUser != null) {
             userId = currentUser.getId();
         }
         if (userId != null) {
-            request.setAttribute(USER_ID, userId);
+            contextMap.put(USER_ID, userId);
         }
-        httpServletStreamableServerTransportProvider.service(request, response);
+        request.setAttribute(MCP_CONTEXT_KEY, McpTransportContext.create(contextMap));
     }
 }

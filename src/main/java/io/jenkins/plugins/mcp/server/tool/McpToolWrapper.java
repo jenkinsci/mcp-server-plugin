@@ -46,6 +46,7 @@ import hudson.security.ACL;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
 import io.jenkins.plugins.mcp.server.jackson.JenkinsExportedBeanModule;
+import io.modelcontextprotocol.json.jackson.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.server.McpSyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema;
@@ -324,7 +325,7 @@ public class McpToolWrapper {
                         .description(getToolDescription())
                         .meta(_meta().get())
                         .annotations(toolAnnotations().get())
-                        .inputSchema(generateForMethodInput())
+                        .inputSchema(new JacksonMcpJsonMapper(objectMapper), generateForMethodInput())
                         .build())
                 .callHandler(this::callRequest)
                 .build();

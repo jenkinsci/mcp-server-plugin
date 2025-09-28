@@ -17,7 +17,7 @@ The MCP (Model Context Protocol) Server Plugin for Jenkins implements the server
 
 ## MCP SDK Version
 
-This MCP Server is based on the MCP Java SDK version 0.11.0, which implements the MCP specification version 2025-03-26.
+This MCP Server is based on the MCP Java SDK version 0.13.1, which implements the MCP specification version 2025-06-18.
 
 ## Getting Started
 
