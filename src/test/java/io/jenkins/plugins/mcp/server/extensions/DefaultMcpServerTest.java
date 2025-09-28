@@ -59,6 +59,8 @@ import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
 @WithJenkins
 class DefaultMcpServerTest {
+    static final int MIN_1 = 60 * 1000;
+
     public static Stream<Arguments> whoAmITestParameters() {
         Stream<Arguments> baseArgs = Stream.of(Arguments.of(true, "admin"), Arguments.of(false, "anonymous"));
         return TestUtils.appendMcpClientArgs(baseArgs);
@@ -150,6 +152,7 @@ class DefaultMcpServerTest {
                 assertThat(project.getLastBuild()).isNull();
             }
         }
+        jenkins.waitUntilNoActivityUpTo(MIN_1);
     }
 
     @McpClientTest
@@ -190,6 +193,7 @@ class DefaultMcpServerTest {
                         () -> assertThat(project.getLastBuild().getResult()).isEqualTo(Result.SUCCESS));
         assertThat(project.getLastBuild().getNumber()).isEqualTo(nextNumber);
         assertThat(project.getLastBuild().getLog()).contains(List.of("string_value", "false", "option2"));
+        jenkins.waitUntilNoActivityUpTo(MIN_1);
     }
 
     @McpClientTest
@@ -230,6 +234,7 @@ class DefaultMcpServerTest {
                         () -> assertThat(project.getLastBuild().getResult()).isEqualTo(Result.SUCCESS));
         assertThat(project.getLastBuild().getNumber()).isEqualTo(nextNumber);
         assertThat(project.getLastBuild().getLog()).contains(List.of("default1", "false", "option2"));
+        jenkins.waitUntilNoActivityUpTo(MIN_1);
     }
 
     @McpClientTest
@@ -318,6 +323,7 @@ class DefaultMcpServerTest {
                         });
             }
         }
+        jenkins.waitUntilNoActivityUpTo(MIN_1);
     }
 
     @ParameterizedTest
