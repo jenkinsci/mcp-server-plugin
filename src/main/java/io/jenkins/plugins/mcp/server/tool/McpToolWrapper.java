@@ -240,7 +240,7 @@ public class McpToolWrapper {
         var oldUser = User.current();
 
         try {
-            var user = tryGetUser(exchange, request);
+            var user = tryGetUser(exchange);
             if (user != null) {
                 ACL.as(user);
             }
@@ -279,17 +279,13 @@ public class McpToolWrapper {
         }
     }
 
-    private static User tryGetUser(McpSyncServerExchange exchange, McpSchema.CallToolRequest request) {
+    private static User tryGetUser(McpSyncServerExchange exchange) {
         String userId = null;
         var context = exchange.transportContext();
         if (context != null) {
             userId = (String) context.get(USER_ID);
         }
-        if (userId == null && request.meta() != null) {
-            userId = (String) request.meta().get(USER_ID);
-        }
-        var user = User.get(userId, false, Map.of());
-        return user;
+        return User.get(userId, false, Map.of());
     }
 
     private Supplier<Map<String, Object>> _meta() {
