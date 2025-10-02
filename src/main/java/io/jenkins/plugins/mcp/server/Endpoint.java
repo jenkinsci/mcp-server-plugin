@@ -139,9 +139,6 @@ public class Endpoint extends CrumbExclusion implements RootAction {
     @Override
     public boolean process(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws IOException, ServletException {
-        if (!validateOriginHeader(request, response)) {
-            return true;
-        }
         String requestedResource = getRequestedResourcePath(request);
         if (requestedResource.startsWith("/" + MCP_SERVER_MESSAGE)
                 && request.getMethod().equalsIgnoreCase("POST")) {
@@ -230,10 +227,6 @@ public class Endpoint extends CrumbExclusion implements RootAction {
                 .resources(resources)
                 .build();
         PluginServletFilter.addFilter((Filter) (servletRequest, servletResponse, filterChain) -> {
-            boolean continueRequest = validateOriginHeader(servletRequest, servletResponse);
-            if (!continueRequest) {
-                return;
-            }
             if (isSSERequest(servletRequest)) {
                 handleSSE(servletRequest, servletResponse);
             } else if (isStreamableRequest(servletRequest)) {
@@ -248,7 +241,7 @@ public class Endpoint extends CrumbExclusion implements RootAction {
         return (httpServletRequest) -> (McpTransportContext) httpServletRequest.getAttribute(MCP_CONTEXT_KEY);
     }
 
-    private boolean validateOriginHeader(ServletRequest request, ServletResponse response) {
+    private boolean validOriginHeader(ServletRequest request, ServletResponse response) {
         String originHeaderValue = ((HttpServletRequest) request).getHeader("Origin");
         if (REQUIRE_ORIGIN_HEADER && StringUtils.isEmpty(originHeaderValue)) {
             try {
@@ -390,6 +383,9 @@ public class Endpoint extends CrumbExclusion implements RootAction {
 
     private void handleMessage(ServletRequest request, ServletResponse response, HttpServlet httpServlet)
             throws IOException, ServletException {
+        if (!validOriginHeader(request, response)) {
+            return;
+        }
         prepareMcpContext(request);
         httpServlet.service(request, response);
     }
