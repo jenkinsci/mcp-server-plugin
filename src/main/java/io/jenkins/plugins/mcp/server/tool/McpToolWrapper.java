@@ -222,13 +222,9 @@ public class McpToolWrapper {
         try {
 
             var resultBuilder = McpSchema.CallToolResult.builder().isError(false);
-            if (result instanceof List listResult) {
-                for (var item : listResult) {
-                    resultBuilder.addTextContent(toJson(item));
-                }
-            } else {
-                resultBuilder.addTextContent(toJson(result));
-            }
+            // Serialize all results the same way - this fixes the JSON concatenation issue
+            // for top-level lists while maintaining proper JSON structure
+            resultBuilder.addTextContent(toJson(result));
             return resultBuilder.build();
         } catch (IOException e) {
             throw new RuntimeException(e);
