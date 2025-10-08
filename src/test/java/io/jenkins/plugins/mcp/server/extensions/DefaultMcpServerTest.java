@@ -49,8 +49,6 @@ import java.util.Map;
 import java.util.stream.Stream;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
-import org.junit.jupiter.api.condition.DisabledOnOs;
-import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -112,7 +110,7 @@ class DefaultMcpServerTest {
 
     @ParameterizedTest
     @MethodSource("triggerSecurityTestParameters")
-    @DisabledOnOs(OS.WINDOWS)
+    // @DisabledOnOs(OS.WINDOWS)
     void testMcpToolCallTriggerBuild(
             Boolean enableSecurity,
             Boolean runAsAdmin,
@@ -125,6 +123,7 @@ class DefaultMcpServerTest {
         }
         WorkflowJob project = jenkins.createProject(WorkflowJob.class, "demo-job");
         project.setDefinition(new CpsFlowDefinition("", true));
+        var nextNumber = project.getNextBuildNumber();
         try (var client = jenkinsMcpClientBuilder
                 .jenkins(jenkins)
                 .requestCustomizer(request -> {
@@ -149,7 +148,15 @@ class DefaultMcpServerTest {
                 assertThat(textContent.text()).contains(Boolean.toString(expectedBuildRunned));
             });
             if (!expectedBuildRunned) {
+                jenkins.waitUntilNoActivityUpTo(MIN_1);
                 assertThat(project.getLastBuild()).isNull();
+            } else {
+                await().atMost(10, SECONDS)
+                        .untilAsserted(() -> assertThat(project.getLastBuild()).isNotNull());
+                await().atMost(10, SECONDS)
+                        .untilAsserted(() ->
+                                assertThat(project.getLastBuild().getResult()).isEqualTo(Result.SUCCESS));
+                assertThat(project.getLastBuild().getNumber()).isEqualTo(nextNumber);
             }
         }
         jenkins.waitUntilNoActivityUpTo(MIN_1);
