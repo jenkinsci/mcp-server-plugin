@@ -49,8 +49,6 @@ import java.util.Map;
 import java.util.stream.Stream;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
-import org.junit.jupiter.api.condition.DisabledOnOs;
-import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -112,7 +110,7 @@ class DefaultMcpServerTest {
 
     @ParameterizedTest
     @MethodSource("triggerSecurityTestParameters")
-    //@DisabledOnOs(OS.WINDOWS)
+    // @DisabledOnOs(OS.WINDOWS)
     void testMcpToolCallTriggerBuild(
             Boolean enableSecurity,
             Boolean runAsAdmin,
