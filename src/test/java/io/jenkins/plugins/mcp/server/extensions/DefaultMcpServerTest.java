@@ -125,6 +125,7 @@ class DefaultMcpServerTest {
         }
         WorkflowJob project = jenkins.createProject(WorkflowJob.class, "demo-job");
         project.setDefinition(new CpsFlowDefinition("", true));
+        var nextNumber = project.getNextBuildNumber();
         try (var client = jenkinsMcpClientBuilder
                 .jenkins(jenkins)
                 .requestCustomizer(request -> {
@@ -149,7 +150,15 @@ class DefaultMcpServerTest {
                 assertThat(textContent.text()).contains(Boolean.toString(expectedBuildRunned));
             });
             if (!expectedBuildRunned) {
+                jenkins.waitUntilNoActivityUpTo(MIN_1);
                 assertThat(project.getLastBuild()).isNull();
+            } else {
+                await().atMost(10, SECONDS)
+                        .untilAsserted(() -> assertThat(project.getLastBuild()).isNotNull());
+                await().atMost(10, SECONDS)
+                        .untilAsserted(() ->
+                                assertThat(project.getLastBuild().getResult()).isEqualTo(Result.SUCCESS));
+                assertThat(project.getLastBuild().getNumber()).isEqualTo(nextNumber);
             }
         }
         jenkins.waitUntilNoActivityUpTo(MIN_1);
