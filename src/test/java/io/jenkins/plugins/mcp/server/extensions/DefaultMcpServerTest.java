@@ -112,7 +112,7 @@ class DefaultMcpServerTest {
 
     @ParameterizedTest
     @MethodSource("triggerSecurityTestParameters")
-    @DisabledOnOs(OS.WINDOWS)
+    //@DisabledOnOs(OS.WINDOWS)
     void testMcpToolCallTriggerBuild(
             Boolean enableSecurity,
             Boolean runAsAdmin,
