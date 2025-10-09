@@ -55,7 +55,9 @@ public final class ParameterValueFactory {
      */
     public static ParameterValue createParameterValue(ParameterDefinition param, Object inputValue) {
         try {
-            if (param instanceof StringParameterDefinition) {
+            if (isGitParameterDefinition(param)) {
+                return createGitParameterValue(param, inputValue);
+            } else if (param instanceof StringParameterDefinition) {
                 return createStringParameterValue((StringParameterDefinition) param, inputValue);
             } else if (param instanceof BooleanParameterDefinition) {
                 return createBooleanParameterValue((BooleanParameterDefinition) param, inputValue);
@@ -151,6 +153,34 @@ public final class ParameterValueFactory {
         log.warn(
                 "File parameter '{}' is not supported via MCP. File parameters require file uploads.", param.getName());
         return null;
+    }
+
+    private static boolean isGitParameterDefinition(ParameterDefinition param) {
+        return param.getClass()
+                .getName()
+                .equals("net.uaznia.lukanus.hudson.plugins.gitparameter.GitParameterDefinition");
+    }
+
+    private static ParameterValue createGitParameterValue(ParameterDefinition param, Object inputValue) {
+        try {
+            if (inputValue == null) {
+                return param.getDefaultParameterValue();
+            }
+
+            var method = param.getClass().getMethod("createValue", hudson.cli.CLICommand.class, String.class);
+            try {
+                return (ParameterValue) method.invoke(param, null, String.valueOf(inputValue));
+            } catch (java.lang.reflect.InvocationTargetException e) {
+                var cause = e.getTargetException();
+                log.warn("Git parameter '{}' rejected value '{}': {}", param.getName(), inputValue, cause.getMessage());
+                return param.getDefaultParameterValue();
+            }
+        } catch (NoSuchMethodException e) {
+            log.warn("Git parameter '{}' missing CLI createValue method; falling back to default", param.getName());
+        } catch (Exception e) {
+            log.warn("Failed to create Git parameter value for '{}': {}", param.getName(), e.getMessage());
+        }
+        return param.getDefaultParameterValue();
     }
 
     /**
