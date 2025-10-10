@@ -156,9 +156,14 @@ public final class ParameterValueFactory {
     }
 
     private static boolean isGitParameterDefinition(ParameterDefinition param) {
-        return param.getClass()
-                .getName()
-                .equals("net.uaznia.lukanus.hudson.plugins.gitparameter.GitParameterDefinition");
+        Class<?> current = param.getClass();
+        while (current != null) {
+            if (current.getName().equals("net.uaznia.lukanus.hudson.plugins.gitparameter.GitParameterDefinition")) {
+                return true;
+            }
+            current = current.getSuperclass();
+        }
+        return false;
     }
 
     private static ParameterValue createGitParameterValue(ParameterDefinition param, Object inputValue) {
