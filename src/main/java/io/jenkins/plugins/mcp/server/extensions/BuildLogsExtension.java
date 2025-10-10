@@ -39,8 +39,11 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import jenkins.util.SystemProperties;
 import lombok.extern.slf4j.Slf4j;
 
@@ -90,6 +93,149 @@ public class BuildLogsExtension implements McpServerExtension {
                 .orElse(null);
     }
 
+    @Tool(
+            description =
+                    "Search for log lines matching a pattern in a specific build or the last build of a Jenkins job. "
+                            + "Returns matching lines with their line numbers and context.",
+            annotations = @Tool.Annotations(destructiveHint = false))
+    public SearchLogResponse searchBuildLog(
+            @ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
+            @ToolParam(
+                            description = "The build number (optional, if not provided, searches the last build)",
+                            required = false)
+                    Integer buildNumber,
+            @ToolParam(description = "The search pattern (regex supported)") String pattern,
+            @ToolParam(
+                            description =
+                                    "Whether to use regex pattern matching (default: false, uses simple string contains)",
+                            required = false)
+                    Boolean useRegex,
+            @ToolParam(description = "Whether the search should be case-insensitive (default: false)", required = false)
+                    Boolean ignoreCase,
+            @ToolParam(
+                            description = "Maximum number of matches to return (optional, default: 100, max: 1000)",
+                            required = false)
+                    Integer maxMatches,
+            @ToolParam(
+                            description = "Number of context lines to show before and after each match (default: 0)",
+                            required = false)
+                    Integer contextLines) {
+        if (pattern == null || pattern.isEmpty()) {
+            throw new IllegalArgumentException("Search pattern cannot be null or empty");
+        }
+        if (useRegex == null) {
+            useRegex = false;
+        }
+        if (ignoreCase == null) {
+            ignoreCase = false;
+        }
+        if (maxMatches == null) {
+            maxMatches = 100;
+        }
+        if (contextLines == null) {
+            contextLines = 0;
+        }
+
+        // Enforce limits
+        maxMatches = Math.min(maxMatches, 1000);
+        contextLines = Math.min(Math.max(contextLines, 0), 10);
+
+        final boolean useRegexF = useRegex;
+        final boolean ignoreCaseF = ignoreCase;
+        final int maxMatchesF = maxMatches;
+        final int contextLinesF = contextLines;
+
+        return getBuildByNumberOrLast(jobFullName, buildNumber)
+                .map(build -> {
+                    try {
+                        return searchLogLines(build, pattern, useRegexF, ignoreCaseF, maxMatchesF, contextLinesF);
+                    } catch (Exception e) {
+                        log.error("Error searching log for job {} build {}", jobFullName, buildNumber, e);
+                        return null;
+                    }
+                })
+                .orElse(null);
+    }
+
+    private SearchLogResponse searchLogLines(
+            Run<?, ?> run, String pattern, boolean useRegex, boolean ignoreCase, int maxMatches, int contextLines)
+            throws Exception {
+        log.trace(
+                "searchLogLines for run {}/{} called with pattern '{}', useRegex={}, ignoreCase={}",
+                run.getParent().getName(),
+                run.getDisplayName(),
+                pattern,
+                useRegex,
+                ignoreCase);
+
+        Pattern searchPattern = null;
+        if (useRegex) {
+            int flags = ignoreCase ? Pattern.CASE_INSENSITIVE : 0;
+            searchPattern = Pattern.compile(pattern, flags);
+        }
+
+        List<String> allLines = new ArrayList<>();
+        try (ByteArrayOutputStream os = new ByteArrayOutputStream()) {
+            run.writeWholeLogTo(new PlainTextConsoleOutputStream(os));
+            String logContent = os.toString(StandardCharsets.UTF_8);
+            allLines = logContent.lines().toList();
+        }
+
+        List<SearchMatch> matches = new ArrayList<>();
+        String searchPattern2 = ignoreCase ? pattern.toLowerCase() : pattern;
+
+        for (int i = 0; i < allLines.size() && matches.size() < maxMatches; i++) {
+            String line = allLines.get(i);
+            boolean matched = false;
+
+            if (useRegex && searchPattern != null) {
+                Matcher matcher = searchPattern.matcher(line);
+                matched = matcher.find();
+            } else {
+                String lineToSearch = ignoreCase ? line.toLowerCase() : line;
+                matched = lineToSearch.contains(searchPattern2);
+            }
+
+            if (matched) {
+                // Calculate context range
+                int startLine = Math.max(0, i - contextLines);
+                int endLine = Math.min(allLines.size() - 1, i + contextLines);
+
+                List<String> contextLinesList = new ArrayList<>();
+                for (int j = startLine; j <= endLine; j++) {
+                    contextLinesList.add(allLines.get(j));
+                }
+
+                matches.add(new SearchMatch(i + 1, line, contextLinesList, startLine + 1, endLine + 1));
+            }
+        }
+
+        boolean hasMoreMatches = false;
+        // Check if there are more matches beyond maxMatches
+        if (matches.size() >= maxMatches) {
+            for (int i = matches.size(); i < allLines.size(); i++) {
+                String line = allLines.get(i);
+                boolean matched = false;
+
+                if (useRegex && searchPattern != null) {
+                    Matcher matcher = searchPattern.matcher(line);
+                    matched = matcher.find();
+                } else {
+                    String lineToSearch = ignoreCase ? line.toLowerCase() : line;
+                    matched = lineToSearch.contains(searchPattern2);
+                }
+
+                if (matched) {
+                    hasMoreMatches = true;
+                    break;
+                }
+            }
+        }
+
+        return new SearchLogResponse(
+                pattern, useRegex, ignoreCase, matches.size(), hasMoreMatches, allLines.size(), matches);
+    }
+
     private BuildLogResponse getLogLines(Run<?, ?> run, long skip, int limit) throws Exception {
         log.trace(
                 "getLogLines for run {}/{} called with skip {}, limit {}",
@@ -126,6 +272,11 @@ public class BuildLogsExtension implements McpServerExtension {
         if (skip > 0 && limit < 0) {
             skip = Math.max(0, skip - Math.abs(limit));
             limit = Math.abs(limit);
+        } else if (skip == 0 && negativeLimit) {
+            // skip == 0 and limit < 0: return the last -limit lines
+            // limit is negative here, so linesNumber + limit = linesNumber - abs(limit)
+            skip = Math.max(0, linesNumber + limit);
+            limit = Math.abs(limit);
         } else if (skip < 0 && limit > 0) {
             // recalculate skip from the end
             skip = Math.max(0, linesNumber + skip);
@@ -134,6 +285,10 @@ public class BuildLogsExtension implements McpServerExtension {
             skip = Math.max(0, linesNumber + skip - Math.abs(limit));
             limit = Math.abs(limit);
         }
+
+        // Calculate actual start and end lines (1-based for user display)
+        long actualStartLine = skip + 1;
+        long actualEndLine = Math.min(skip + limit, linesNumber);
 
         start = System.currentTimeMillis();
         try (ByteArrayOutputStream os = new ByteArrayOutputStream();
@@ -152,7 +307,10 @@ public class BuildLogsExtension implements McpServerExtension {
             // is the right charset here?
             return new BuildLogResponse(
                     out.hasMoreContent,
-                    os.toString(StandardCharsets.UTF_8).lines().toList());
+                    os.toString(StandardCharsets.UTF_8).lines().toList(),
+                    linesNumber,
+                    actualStartLine,
+                    actualEndLine);
         }
     }
 
@@ -195,7 +353,24 @@ public class BuildLogsExtension implements McpServerExtension {
         }
     }
 
-    public record BuildLogResponse(boolean hasMoreContent, List<String> lines) {}
+    public record BuildLogResponse(
+            boolean hasMoreContent, List<String> lines, int totalLines, long startLine, long endLine) {}
+
+    public record SearchLogResponse(
+            String pattern,
+            boolean useRegex,
+            boolean ignoreCase,
+            int matchCount,
+            boolean hasMoreMatches,
+            int totalLines,
+            List<SearchMatch> matches) {}
+
+    public record SearchMatch(
+            long lineNumber,
+            String matchedLine,
+            List<String> contextLines,
+            long contextStartLine,
+            long contextEndLine) {}
 
     private static class LimitedQueue<E> {
         private final int maxSize;
