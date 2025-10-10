@@ -174,7 +174,7 @@ public class BuildLogsExtension implements McpServerExtension {
             searchPattern = Pattern.compile(pattern, flags);
         }
 
-        List<String> allLines = new ArrayList<>();
+        List<String> allLines;
         try (ByteArrayOutputStream os = new ByteArrayOutputStream()) {
             run.writeWholeLogTo(new PlainTextConsoleOutputStream(os));
             String logContent = os.toString(StandardCharsets.UTF_8);
