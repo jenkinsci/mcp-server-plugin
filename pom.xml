@@ -225,6 +225,13 @@
       <scope>test</scope>
     </dependency>
     <dependency>
+      <groupId>org.jenkins-ci.tools</groupId>
+      <artifactId>git-parameter</artifactId>
+      <version>0.11.0</version>
+      <type>jar</type>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
       <groupId>org.jenkinsci.plugins</groupId>
       <artifactId>pipeline-model-definition</artifactId>
       <scope>test</scope>
