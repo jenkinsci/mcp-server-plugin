@@ -97,6 +97,11 @@ public class BuildLogExtensionTest {
                     assertThat(jsonNode.has("hasMoreContent")).isTrue();
                     assertThat(hasMoreContent).matches(expected -> expected == hasMoreContent);
 
+                    // Verify new fields exist
+                    assertThat(jsonNode.has("totalLines")).isTrue();
+                    assertThat(jsonNode.has("startLine")).isTrue();
+                    assertThat(jsonNode.has("endLine")).isTrue();
+
                     JsonNode linesArray = jsonNode.get("lines");
                     assertThat(linesArray.size()).isEqualTo(expectedContentSize);
                     for (JsonNode lineNode : linesArray) {
@@ -182,9 +187,94 @@ public class BuildLogExtensionTest {
                 Arguments.of(-2L, 2, 2, true, List.of("[Pipeline] End of Pipeline", "Finished: SUCCESS")),
                 Arguments.of(-1L, 10, 1, false, List.of("Finished: SUCCESS")),
                 Arguments.of(-1L, -2, 2, true, List.of("[Pipeline] Start of Pipeline", "[Pipeline] End of Pipeline")),
-                Arguments.of(2L, -2, 2, true, List.of("Started", "[Pipeline] Start of Pipeline")));
+                Arguments.of(2L, -2, 2, true, List.of("Started", "[Pipeline] Start of Pipeline")),
+                // Test skip=0, limit<0: should return last -limit lines
+                Arguments.of(0L, -2, 2, true, List.of("[Pipeline] End of Pipeline", "Finished: SUCCESS")),
+                Arguments.of(0L, -1, 1, true, List.of("Finished: SUCCESS")));
 
         // 扩展成 2 倍：每组参数 + 两个不同的 McpClientProvider
         return TestUtils.appendMcpClientArgs(baseArgs);
+    }
+
+    @McpClientTest
+    void testSearchBuildLog(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder) throws Exception {
+        WorkflowJob project = jenkins.createProject(WorkflowJob.class, "search-test-job");
+        // Create a job with predictable log output
+        project.setDefinition(new CpsFlowDefinition(
+                "echo 'Starting build'\n"
+                        + "echo 'Building project'\n"
+                        + "echo 'ERROR: Something went wrong'\n"
+                        + "echo 'WARNING: Check configuration'\n"
+                        + "echo 'Build completed'",
+                true));
+        project.scheduleBuild2(0).get();
+        await().atMost(10, SECONDS).until(() -> project.getLastBuild() != null);
+
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+            // Test simple string search
+            Map<String, Object> params = new HashMap<>();
+            params.put("jobFullName", project.getFullName());
+            params.put("pattern", "ERROR");
+            McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("searchBuildLog", params);
+
+            var response = client.callTool(request);
+            assertThat(response.isError()).isFalse();
+            assertThat(response.content()).hasSize(1);
+
+            response.content().forEach(content -> {
+                assertThat(content.type()).isEqualTo("text");
+                assertThat(content).isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                    JsonNode jsonNode;
+                    try {
+                        jsonNode = objectMapper.readTree(textContent.text());
+                    } catch (JsonProcessingException e) {
+                        throw new RuntimeException(e);
+                    }
+
+                    assertThat(jsonNode.has("pattern")).isTrue();
+                    assertThat(jsonNode.get("pattern").asText()).isEqualTo("ERROR");
+                    assertThat(jsonNode.has("matchCount")).isTrue();
+                    assertThat(jsonNode.get("matchCount").asInt()).isGreaterThan(0);
+                    assertThat(jsonNode.has("matches")).isTrue();
+                });
+            });
+        }
+    }
+
+    @McpClientTest
+    void testSearchBuildLogWithRegex(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
+            throws Exception {
+        WorkflowJob project = jenkins.createProject(WorkflowJob.class, "regex-test-job");
+        project.setDefinition(
+                new CpsFlowDefinition("echo 'Error 123'\n" + "echo 'Error 456'\n" + "echo 'Success'", true));
+        project.scheduleBuild2(0).get();
+        await().atMost(10, SECONDS).until(() -> project.getLastBuild() != null);
+
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+            Map<String, Object> params = new HashMap<>();
+            params.put("jobFullName", project.getFullName());
+            params.put("pattern", "Error \\d+");
+            params.put("useRegex", true);
+            McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("searchBuildLog", params);
+
+            var response = client.callTool(request);
+            assertThat(response.isError()).isFalse();
+            assertThat(response.content()).hasSize(1);
+
+            response.content().forEach(content -> {
+                assertThat(content.type()).isEqualTo("text");
+                assertThat(content).isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                    JsonNode jsonNode;
+                    try {
+                        jsonNode = objectMapper.readTree(textContent.text());
+                    } catch (JsonProcessingException e) {
+                        throw new RuntimeException(e);
+                    }
+
+                    assertThat(jsonNode.get("useRegex").asBoolean()).isTrue();
+                    assertThat(jsonNode.get("matchCount").asInt()).isGreaterThanOrEqualTo(2);
+                });
+            });
+        }
     }
 }
