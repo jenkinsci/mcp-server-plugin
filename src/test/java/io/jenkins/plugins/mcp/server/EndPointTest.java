@@ -37,6 +37,8 @@ import io.jenkins.plugins.mcp.server.junit.McpClientTest;
 import io.modelcontextprotocol.spec.McpSchema;
 import jakarta.servlet.http.HttpServletResponse;
 import java.net.URL;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Map;
 import org.htmlunit.HttpMethod;
 import org.htmlunit.WebRequest;
@@ -46,36 +48,39 @@ import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
 @WithJenkins
 public class EndPointTest {
-    @McpClientTest
-    void testMcpToolCallSimpleJson(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder) {
-
+    void testListTools(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder) {
         try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
-
             client.getServerCapabilities();
             var tools = client.listTools();
-            assertThat(tools.tools())
-                    .extracting(McpSchema.Tool::name)
-                    .containsOnly(
-                            "whoAmI",
-                            "sayHello",
-                            "testInt",
-                            "testWithError",
-                            "getBuildLog",
-                            "searchBuildLog",
-                            "triggerBuild",
-                            "updateBuild",
-                            "getJobs",
-                            "getBuild",
-                            "getJob",
-                            "getJobScm",
-                            "getBuildScm",
-                            "findJobsWithScmUrl",
-                            "getBuildChangeSets",
-                            "getStatus",
-                            "getTestResults",
-                            "getFlakyFailures",
-                            "getQueueItem");
 
+            var expectedFromPlugin = Arrays.asList(
+                    "whoAmI",
+                    "getBuildLog",
+                    "searchBuildLog",
+                    "triggerBuild",
+                    "updateBuild",
+                    "getJobs",
+                    "getBuild",
+                    "getJob",
+                    "getJobScm",
+                    "getBuildScm",
+                    "findJobsWithScmUrl",
+                    "getBuildChangeSets",
+                    "getStatus",
+                    "getTestResults",
+                    "getFlakyFailures",
+                    "getQueueItem");
+            var expected = new ArrayList<>();
+            expected.addAll(expectedFromPlugin);
+            expected.addAll(SampleMcpServer.getAllToolNames());
+            assertThat(tools.tools()).extracting(McpSchema.Tool::name).containsOnly(expected.toArray(new String[] {}));
+        }
+    }
+
+    @McpClientTest
+    void testSampleTool(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder) {
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+            var tools = client.listTools();
             var sayHelloTool = tools.tools().stream()
                     .filter(tool -> "sayHello".equals(tool.name()))
                     .findFirst();

@@ -26,6 +26,7 @@
 
 package io.jenkins.plugins.mcp.server.junit;
 
+import io.modelcontextprotocol.spec.McpSchema;
 import java.util.Arrays;
 import java.util.stream.Stream;
 import org.junit.jupiter.params.provider.Arguments;
@@ -41,5 +42,12 @@ public class TestUtils {
         Object[] combined = Arrays.copyOf(original, original.length + 1);
         combined[original.length] = extra;
         return combined;
+    }
+
+    public static McpSchema.Tool findToolByName(McpSchema.ListToolsResult listToolsResult, String name) {
+        return listToolsResult.tools().stream()
+                .filter(tool -> name.equals(tool.name()))
+                .findFirst()
+                .orElse(null);
     }
 }

@@ -48,6 +48,11 @@ public @interface Tool {
     String description() default "";
 
     /**
+     * If true, the tool's output will be treated as a structured object and serialized into the `structuredContent` field.
+     */
+    boolean structuredOutput() default false;
+
+    /**
      * To add some _meta content to the tool.
      */
     Meta[] metas() default @Meta;
