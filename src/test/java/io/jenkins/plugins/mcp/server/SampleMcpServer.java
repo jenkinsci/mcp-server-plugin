@@ -29,6 +29,11 @@ package io.jenkins.plugins.mcp.server;
 import hudson.Extension;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
+import jakarta.annotation.Nullable;
+import java.lang.reflect.Method;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 
 @Extension
@@ -59,4 +64,69 @@ public class SampleMcpServer implements McpServerExtension {
     public int testWithError() {
         throw new IllegalArgumentException("Error occurred during execution");
     }
+
+    public static List<String> getAllToolNames() {
+        return Arrays.stream(SampleMcpServer.class.getDeclaredMethods())
+                .filter(method -> method.isAnnotationPresent(Tool.class))
+                .map(Method::getName)
+                .toList();
+    }
+
+    @Tool(structuredOutput = true)
+    public int intWithStructuredOutput() {
+        return 1;
+    }
+
+    @Tool(structuredOutput = true)
+    public Map mapWithStructuredOutput() {
+        return Map.of("key1", "value1");
+    }
+
+    @Tool(structuredOutput = true)
+    public Map mapAsNullWithStructuredOutput() {
+        return null;
+    }
+
+    @Tool(structuredOutput = true)
+    public Collection<String> collectionWithStructuredOutput() {
+        return List.of("item1", "item2");
+    }
+
+    @Tool(structuredOutput = true)
+    public Collection<String> collectionAsNullWithStructuredOutput() {
+        return null;
+    }
+
+    @Tool(structuredOutput = true)
+    public Object genericObjectWithStructuredOutput() {
+        return new CustomObject("John Doe", 30);
+    }
+
+    @Tool(structuredOutput = true)
+    public CustomObject customObjectWithStructuredOutput() {
+        return new CustomObject("John Doe", 30);
+    }
+
+    @Tool(structuredOutput = true)
+    public ParentObject nestedObjectWithStructuredOutput() {
+        return new ParentObject("John Doe", 30, new ChildObject("Child", 20));
+    }
+
+    @Tool(structuredOutput = true)
+    public ParentObject nestedObjectChildNullWithStructuredOutput() {
+        return new ParentObject("John Doe", 30, null);
+    }
+
+    @Tool(structuredOutput = true)
+    public SelfNestedObject selfNestedObjectWithStructuredOutput() {
+        return new SelfNestedObject("item1", new SelfNestedObject("item2", null));
+    }
+
+    public record CustomObject(String name, int age) {}
+
+    public record ChildObject(String name, int age) {}
+
+    public record ParentObject(String name, int age, ChildObject child) {}
+
+    public record SelfNestedObject(String name, @Nullable SelfNestedObject ref) {}
 }

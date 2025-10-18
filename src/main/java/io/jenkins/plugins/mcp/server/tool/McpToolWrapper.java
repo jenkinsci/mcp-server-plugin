@@ -65,6 +65,7 @@ import java.util.Map;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import jenkins.model.Jenkins;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.springframework.lang.Nullable;
@@ -86,17 +87,17 @@ public class McpToolWrapper {
         com.github.victools.jsonschema.generator.Module jacksonModule =
                 new JacksonModule(JacksonOption.RESPECT_JSONPROPERTY_REQUIRED);
         com.github.victools.jsonschema.generator.Module openApiModule = new Swagger2Module();
-
         SchemaGeneratorConfigBuilder schemaGeneratorConfigBuilder = new SchemaGeneratorConfigBuilder(
                         SchemaVersion.DRAFT_2020_12, OptionPreset.PLAIN_JSON)
                 .with(jacksonModule)
                 .with(openApiModule)
                 .with(Option.EXTRA_OPEN_API_FORMAT_VALUES)
-                .with(Option.PLAIN_DEFINITION_KEYS);
+                .with(Option.PLAIN_DEFINITION_KEYS)
+                .with(Option.MAP_VALUES_AS_ADDITIONAL_PROPERTIES)
+                .with(Option.NULLABLE_FIELDS_BY_DEFAULT)
+                .without(Option.SCHEMA_VERSION_INDICATOR);
 
-        SchemaGeneratorConfig subtypeSchemaGeneratorConfig = schemaGeneratorConfigBuilder
-                .without(Option.SCHEMA_VERSION_INDICATOR)
-                .build();
+        SchemaGeneratorConfig subtypeSchemaGeneratorConfig = schemaGeneratorConfigBuilder.build();
         SUBTYPE_SCHEMA_GENERATOR = new SchemaGenerator(subtypeSchemaGeneratorConfig);
     }
 
@@ -211,6 +212,11 @@ public class McpToolWrapper {
         return StringUtils.hasText(tool.name()) ? tool.name() : method.getName();
     }
 
+    boolean isStructuredOutput() {
+        var tool = method.getAnnotation(Tool.class);
+        return tool != null && tool.structuredOutput();
+    }
+
     String getToolDescription() {
         Assert.notNull(method, "method cannot be null");
         var tool = method.getAnnotation(Tool.class);
@@ -226,6 +232,7 @@ public class McpToolWrapper {
 
         if (result == null) {
             builder.message(ToolResponse.NO_DATA_MSG);
+
         } else {
             if (result instanceof Collection collection) {
                 if (collection.isEmpty()) {
@@ -243,10 +250,12 @@ public class McpToolWrapper {
                 builder.message(ToolResponse.DATA_MSG).result(result);
             }
         }
-        return McpSchema.CallToolResult.builder()
-                .isError(false)
-                .addTextContent(toJson(builder.build()))
-                .build();
+        McpSchema.CallToolResult.Builder resultBuilder =
+                McpSchema.CallToolResult.builder().isError(false).addTextContent(toJson(builder.build()));
+        if (isStructuredOutput()) {
+            resultBuilder.structuredContent(result);
+        }
+        return resultBuilder.build();
     }
 
     McpSchema.CallToolResult callRequest(McpSyncServerExchange exchange, McpSchema.CallToolRequest request) {
@@ -344,15 +353,26 @@ public class McpToolWrapper {
     }
 
     public McpServerFeatures.SyncToolSpecification asSyncToolSpecification() {
+        McpSchema.Tool.Builder mcpSchemaToolBuilder = McpSchema.Tool.builder()
+                .name(getToolName())
+                .description(getToolDescription())
+                .meta(_meta().get())
+                .annotations(toolAnnotations().get())
+                .inputSchema(new JacksonMcpJsonMapper(objectMapper), generateForMethodInput());
+        if (isStructuredOutput()) {
+            mcpSchemaToolBuilder.outputSchema(new JacksonMcpJsonMapper(objectMapper), generateForOutput());
+        }
         return McpServerFeatures.SyncToolSpecification.builder()
-                .tool(McpSchema.Tool.builder()
-                        .name(getToolName())
-                        .description(getToolDescription())
-                        .meta(_meta().get())
-                        .annotations(toolAnnotations().get())
-                        .inputSchema(new JacksonMcpJsonMapper(objectMapper), generateForMethodInput())
-                        .build())
+                .tool(mcpSchemaToolBuilder.build())
                 .callHandler(this::callRequest)
                 .build();
+    }
+
+    @SneakyThrows
+    String generateForOutput() {
+
+        var type = this.method.getGenericReturnType();
+        var schema = SUBTYPE_SCHEMA_GENERATOR.generateSchema(type);
+        return schema.toPrettyString();
     }
 }
