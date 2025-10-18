@@ -29,22 +29,25 @@ package io.jenkins.plugins.mcp.server.extensions;
 import static io.jenkins.plugins.mcp.server.extensions.util.JenkinsUtil.getBuildByNumberOrLast;
 
 import hudson.Extension;
+import hudson.console.LineTransformationOutputStream;
 import hudson.console.PlainTextConsoleOutputStream;
 import hudson.model.Run;
 import io.jenkins.plugins.mcp.server.McpServerExtension;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
+import io.jenkins.plugins.mcp.server.extensions.util.SlidingWindow;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Deque;
+import java.util.Iterator;
 import java.util.List;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import jenkins.util.SystemProperties;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 
 @Extension
@@ -168,72 +171,18 @@ public class BuildLogsExtension implements McpServerExtension {
                 useRegex,
                 ignoreCase);
 
-        Pattern searchPattern = null;
-        if (useRegex) {
-            int flags = ignoreCase ? Pattern.CASE_INSENSITIVE : 0;
-            searchPattern = Pattern.compile(pattern, flags);
+        try (SearchingOutputStream sos =
+                new SearchingOutputStream(pattern, useRegex, ignoreCase, maxMatches, contextLines)) {
+            run.writeWholeLogTo(new PlainTextConsoleOutputStream(sos));
+            return new SearchLogResponse(
+                    pattern,
+                    useRegex,
+                    ignoreCase,
+                    sos.getMatches().size(),
+                    sos.hasMoreMatches,
+                    sos.lineNumber,
+                    sos.getMatches());
         }
-
-        List<String> allLines;
-        try (ByteArrayOutputStream os = new ByteArrayOutputStream()) {
-            run.writeWholeLogTo(new PlainTextConsoleOutputStream(os));
-            String logContent = os.toString(StandardCharsets.UTF_8);
-            allLines = logContent.lines().toList();
-        }
-
-        List<SearchMatch> matches = new ArrayList<>();
-        String searchPattern2 = ignoreCase ? pattern.toLowerCase() : pattern;
-
-        for (int i = 0; i < allLines.size() && matches.size() < maxMatches; i++) {
-            String line = allLines.get(i);
-            boolean matched = false;
-
-            if (useRegex && searchPattern != null) {
-                Matcher matcher = searchPattern.matcher(line);
-                matched = matcher.find();
-            } else {
-                String lineToSearch = ignoreCase ? line.toLowerCase() : line;
-                matched = lineToSearch.contains(searchPattern2);
-            }
-
-            if (matched) {
-                // Calculate context range
-                int startLine = Math.max(0, i - contextLines);
-                int endLine = Math.min(allLines.size() - 1, i + contextLines);
-
-                List<String> contextLinesList = new ArrayList<>();
-                for (int j = startLine; j <= endLine; j++) {
-                    contextLinesList.add(allLines.get(j));
-                }
-
-                matches.add(new SearchMatch(i + 1, line, contextLinesList, startLine + 1, endLine + 1));
-            }
-        }
-
-        boolean hasMoreMatches = false;
-        // Check if there are more matches beyond maxMatches
-        if (matches.size() >= maxMatches) {
-            for (int i = matches.size(); i < allLines.size(); i++) {
-                String line = allLines.get(i);
-                boolean matched = false;
-
-                if (useRegex && searchPattern != null) {
-                    Matcher matcher = searchPattern.matcher(line);
-                    matched = matcher.find();
-                } else {
-                    String lineToSearch = ignoreCase ? line.toLowerCase() : line;
-                    matched = lineToSearch.contains(searchPattern2);
-                }
-
-                if (matched) {
-                    hasMoreMatches = true;
-                    break;
-                }
-            }
-        }
-
-        return new SearchLogResponse(
-                pattern, useRegex, ignoreCase, matches.size(), hasMoreMatches, allLines.size(), matches);
     }
 
     private BuildLogResponse getLogLines(Run<?, ?> run, long skip, int limit) throws Exception {
@@ -314,6 +263,96 @@ public class BuildLogsExtension implements McpServerExtension {
         }
     }
 
+    static class SearchingOutputStream extends LineTransformationOutputStream {
+        private final String pattern;
+        private final boolean useRegex;
+        private final boolean ignoreCase;
+        private final int maxMatches;
+        private final long contextLines;
+        private final SlidingWindow<String> slidingWindow;
+        private final List<SearchMatch> openMatches = new ArrayList<>();
+        private final List<SearchMatch> closedMatches = new ArrayList<>();
+        private boolean hasMoreMatches = false;
+        private long lineNumber = 0;
+        private Pattern compiledPattern;
+
+        public SearchingOutputStream(
+                String pattern, boolean useRegex, boolean ignoreCase, int maxMatches, int contextLines)
+                throws IOException {
+            this.pattern = pattern;
+            this.useRegex = useRegex;
+            this.ignoreCase = ignoreCase;
+            this.maxMatches = maxMatches;
+            this.contextLines = contextLines;
+            this.slidingWindow = new SlidingWindow<>(contextLines);
+
+            if (useRegex) {
+                int flags = ignoreCase ? Pattern.CASE_INSENSITIVE : 0;
+                this.compiledPattern = Pattern.compile(pattern, flags);
+            }
+        }
+
+        @Override
+        protected void eol(byte[] b, int len) {
+            lineNumber++;
+            String line = new String(b, 0, len, StandardCharsets.UTF_8).trim();
+
+            boolean matched = matchLine(line);
+            if (matched && (openMatches.size() + closedMatches.size() < maxMatches)) {
+                addNewMatch(line);
+            } else if (!hasMoreMatches && (openMatches.size() + closedMatches.size() >= maxMatches)) {
+                hasMoreMatches = matched;
+            }
+
+            updateOpenMatches(line);
+            slidingWindow.add(line);
+        }
+
+        private boolean matchLine(String line) {
+            if (useRegex) {
+                return compiledPattern.matcher(line).find();
+            } else {
+                return ignoreCase ? line.toLowerCase().contains(pattern.toLowerCase()) : line.contains(pattern);
+            }
+        }
+
+        private void addNewMatch(String matchedLine) {
+            List<String> contextLines = new ArrayList<>(slidingWindow.size());
+            contextLines.addAll(slidingWindow.getRecords());
+            long contextStartLine = lineNumber - contextLines.size();
+            openMatches.add(new SearchMatch(lineNumber, matchedLine, contextLines, contextStartLine, lineNumber));
+        }
+
+        private void updateOpenMatches(String line) {
+            Iterator<SearchMatch> iterator = openMatches.iterator();
+            while (iterator.hasNext()) {
+                SearchMatch match = iterator.next();
+
+                match.addContextLine(line);
+                match.setContextEndLine(lineNumber);
+
+                if (lineNumber >= match.matchedLineNumber + contextLines) {
+                    closedMatches.add(match);
+                    iterator.remove();
+                }
+            }
+        }
+
+        public List<SearchMatch> getMatches() {
+            List<SearchMatch> allMatches = new ArrayList<>(closedMatches);
+            allMatches.addAll(openMatches);
+            return allMatches;
+        }
+
+        public boolean hasMoreMatches() {
+            return hasMoreMatches;
+        }
+
+        public long getTotalLines() {
+            return lineNumber;
+        }
+    }
+
     private static class LinesNumberOutputStream extends PlainTextConsoleOutputStream {
         private int lines;
 
@@ -362,50 +401,32 @@ public class BuildLogsExtension implements McpServerExtension {
             boolean ignoreCase,
             int matchCount,
             boolean hasMoreMatches,
-            int totalLines,
+            long totalLines,
             List<SearchMatch> matches) {}
 
-    public record SearchMatch(
-            long lineNumber,
-            String matchedLine,
-            List<String> contextLines,
-            long contextStartLine,
-            long contextEndLine) {}
+    @Getter
+    @RequiredArgsConstructor
+    public static class SearchMatch {
+        private final long matchedLineNumber;
+        private final String matchedLine;
+        private final List<String> contextLines;
+        private final long contextStartLine;
 
-    private static class LimitedQueue<E> {
-        private final int maxSize;
-        private final Deque<E> deque;
+        @Setter
+        private long contextEndLine;
 
-        public LimitedQueue(int maxSize) {
-            this.maxSize = maxSize;
-            this.deque = new ArrayDeque<>(maxSize);
+        public SearchMatch(
+                long matchedLineNumber,
+                String matchedLine,
+                List<String> contextLines,
+                long contextStartLine,
+                long contextEndLine) {
+            this(matchedLineNumber, matchedLine, new ArrayList<>(contextLines), contextStartLine);
+            this.contextEndLine = contextEndLine;
         }
 
-        public boolean add(E e) {
-            boolean removed = false;
-            if (deque.size() == maxSize) {
-                removed = true;
-                deque.removeFirst();
-            }
-            deque.addLast(e);
-            return removed;
-        }
-
-        public E remove() {
-            return deque.removeFirst();
-        }
-
-        public int size() {
-            return deque.size();
-        }
-
-        public boolean isEmpty() {
-            return deque.isEmpty();
-        }
-
-        @Override
-        public String toString() {
-            return deque.toString();
+        public void addContextLine(String line) {
+            this.contextLines.add(line);
         }
     }
 }
