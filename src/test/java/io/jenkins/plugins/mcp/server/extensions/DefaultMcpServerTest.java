@@ -32,6 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import hudson.model.BooleanParameterDefinition;
 import hudson.model.ChoiceParameterDefinition;
@@ -292,7 +293,7 @@ class DefaultMcpServerTest {
 
                 var response = client.callTool(request);
                 assertThat(response.isError()).isFalse();
-                assertThat(response.content()).hasSize(10);
+                assertThat(response.content()).hasSize(1);
                 assertThat(response.content().get(0).type()).isEqualTo("text");
                 assertThat(response.content())
                         .first()
@@ -301,8 +302,25 @@ class DefaultMcpServerTest {
 
                             ObjectMapper objectMapper = new ObjectMapper();
                             try {
-                                var contentMap = objectMapper.readValue(textContent.text(), Map.class);
-                                assertThat(contentMap).containsEntry("name", "sub-demo-job0");
+                                // Validate that the response is a proper JSON array
+                                JsonNode jsonNode = objectMapper.readTree(textContent.text());
+                                assertThat(jsonNode.isArray()).isTrue();
+                                assertThat(jsonNode.size())
+                                        .isEqualTo(10); // Should have 10 jobs in the folder (limit=10)
+
+                                // Verify that sub-demo-job0 is present in the array
+                                boolean foundDemoJob0 = false;
+                                for (JsonNode jobNode : jsonNode) {
+                                    assertThat(jobNode.isObject()).isTrue();
+                                    assertThat(jobNode.has("name")).isTrue();
+                                    assertThat(jobNode.has("_class")).isTrue();
+
+                                    if ("sub-demo-job0"
+                                            .equals(jobNode.get("name").asText())) {
+                                        foundDemoJob0 = true;
+                                    }
+                                }
+                                assertThat(foundDemoJob0).isTrue();
                             } catch (JsonProcessingException e) {
                                 throw new RuntimeException(e);
                             }
@@ -313,7 +331,8 @@ class DefaultMcpServerTest {
 
                 var response = client.callTool(request);
                 assertThat(response.isError()).isFalse();
-                assertThat(response.content()).hasSize(3);
+                // After fix: getJobs should return a single content item containing a JSON array
+                assertThat(response.content()).hasSize(1);
                 assertThat(response.content().get(0).type()).isEqualTo("text");
                 assertThat(response.content())
                         .first()
@@ -322,8 +341,24 @@ class DefaultMcpServerTest {
 
                             ObjectMapper objectMapper = new ObjectMapper();
                             try {
-                                var contentMap = objectMapper.readValue(textContent.text(), Map.class);
-                                assertThat(contentMap).containsEntry("name", "demo-job0");
+                                // Validate that the response is a proper JSON array
+                                JsonNode jsonNode = objectMapper.readTree(textContent.text());
+                                assertThat(jsonNode.isArray()).isTrue();
+                                assertThat(jsonNode.size())
+                                        .isEqualTo(3); // Should have 3 jobs at root level (2 demo-jobs + 1 folder)
+
+                                // Validate that each array element is a proper job object
+                                boolean foundDemoJob0 = false;
+                                for (JsonNode jobNode : jsonNode) {
+                                    assertThat(jobNode.isObject()).isTrue();
+                                    assertThat(jobNode.has("name")).isTrue();
+                                    assertThat(jobNode.has("_class")).isTrue();
+
+                                    if ("demo-job0".equals(jobNode.get("name").asText())) {
+                                        foundDemoJob0 = true;
+                                    }
+                                }
+                                assertThat(foundDemoJob0).isTrue();
                             } catch (JsonProcessingException e) {
                                 throw new RuntimeException(e);
                             }
