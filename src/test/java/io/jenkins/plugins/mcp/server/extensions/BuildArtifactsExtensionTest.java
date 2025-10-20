@@ -253,4 +253,211 @@ public class BuildArtifactsExtensionTest {
             });
         }
     }
+
+    @McpClientTest
+    void testGetBuildArtifactNotFound(JenkinsMcpClientBuilder jenkinsMcpClientBuilder, JenkinsRule jenkins)
+            throws Exception {
+        // Create a job with an artifact
+        WorkflowJob project = jenkins.createProject(WorkflowJob.class, "artifact-not-found-job");
+        project.setDefinition(new CpsFlowDefinition(
+                "node {\n" + "    writeFile file: 'exists.txt', text: 'Content'\n"
+                        + "    archiveArtifacts artifacts: 'exists.txt'\n"
+                        + "}",
+                true));
+
+        project.scheduleBuild2(0).get();
+        await().atMost(10, SECONDS).until(() -> project.getLastBuild() != null);
+        await().atMost(10, SECONDS).until(() -> project.getLastBuild().isBuilding() == false);
+
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+            // Try to get a non-existent artifact
+            var callToolRequest = McpSchema.CallToolRequest.builder()
+                    .name("getBuildArtifact")
+                    .arguments(Map.of(
+                            "jobFullName", "artifact-not-found-job",
+                            "artifactPath", "does-not-exist.txt"))
+                    .build();
+
+            var response = client.callTool(callToolRequest);
+            assertThat(response.isError()).isFalse();
+            assertThat(response.content()).hasSize(1);
+
+            assertThat(response.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                ObjectMapper objectMapper = new ObjectMapper();
+                try {
+                    JsonNode jsonNode = objectMapper.readTree(textContent.text());
+                    assertThat(jsonNode.get("content").asText()).contains("Artifact not found");
+                    assertThat(jsonNode.get("hasMoreContent").asBoolean()).isFalse();
+                    assertThat(jsonNode.get("totalSize").asLong()).isEqualTo(0);
+                } catch (JsonProcessingException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+        }
+    }
+
+    @McpClientTest
+    void testGetBuildArtifactNonExistentBuild(JenkinsMcpClientBuilder jenkinsMcpClientBuilder, JenkinsRule jenkins)
+            throws Exception {
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+            var callToolRequest = McpSchema.CallToolRequest.builder()
+                    .name("getBuildArtifact")
+                    .arguments(Map.of(
+                            "jobFullName", "non-existent-job",
+                            "artifactPath", "some-artifact.txt"))
+                    .build();
+
+            var response = client.callTool(callToolRequest);
+            assertThat(response.isError()).isFalse();
+            assertThat(response.content()).hasSize(1);
+
+            assertThat(response.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                ObjectMapper objectMapper = new ObjectMapper();
+                try {
+                    JsonNode jsonNode = objectMapper.readTree(textContent.text());
+                    assertThat(jsonNode.get("content").asText()).contains("Build not found");
+                    assertThat(jsonNode.get("hasMoreContent").asBoolean()).isFalse();
+                    assertThat(jsonNode.get("totalSize").asLong()).isEqualTo(0);
+                } catch (JsonProcessingException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+        }
+    }
+
+    @McpClientTest
+    void testGetBuildArtifactWithOffsetBeyondFileSize(
+            JenkinsMcpClientBuilder jenkinsMcpClientBuilder, JenkinsRule jenkins) throws Exception {
+        // Create a job with a small artifact
+        WorkflowJob project = jenkins.createProject(WorkflowJob.class, "offset-beyond-job");
+        project.setDefinition(new CpsFlowDefinition(
+                "node {\n" + "    writeFile file: 'small.txt', text: 'Small'\n"
+                        + "    archiveArtifacts artifacts: 'small.txt'\n"
+                        + "}",
+                true));
+
+        project.scheduleBuild2(0).get();
+        await().atMost(10, SECONDS).until(() -> project.getLastBuild() != null);
+        await().atMost(10, SECONDS).until(() -> project.getLastBuild().isBuilding() == false);
+
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+            // Try to read with offset beyond file size
+            var callToolRequest = McpSchema.CallToolRequest.builder()
+                    .name("getBuildArtifact")
+                    .arguments(Map.of("jobFullName", "offset-beyond-job", "artifactPath", "small.txt", "offset", 10000))
+                    .build();
+
+            var response = client.callTool(callToolRequest);
+            assertThat(response.isError()).isFalse();
+            assertThat(response.content()).hasSize(1);
+
+            assertThat(response.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                ObjectMapper objectMapper = new ObjectMapper();
+                try {
+                    JsonNode jsonNode = objectMapper.readTree(textContent.text());
+                    assertThat(jsonNode.get("content").asText()).isEmpty();
+                    assertThat(jsonNode.get("hasMoreContent").asBoolean()).isFalse();
+                    assertThat(jsonNode.get("totalSize").asLong()).isGreaterThan(0);
+                } catch (JsonProcessingException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+        }
+    }
+
+    @McpClientTest
+    void testGetBuildArtifactWithExcessiveLimit(JenkinsMcpClientBuilder jenkinsMcpClientBuilder, JenkinsRule jenkins)
+            throws Exception {
+        // Create a job with an artifact
+        WorkflowJob project = jenkins.createProject(WorkflowJob.class, "excessive-limit-job");
+        project.setDefinition(new CpsFlowDefinition(
+                "node {\n" + "    writeFile file: 'test.txt', text: 'Test content'\n"
+                        + "    archiveArtifacts artifacts: 'test.txt'\n"
+                        + "}",
+                true));
+
+        project.scheduleBuild2(0).get();
+        await().atMost(10, SECONDS).until(() -> project.getLastBuild() != null);
+        await().atMost(10, SECONDS).until(() -> project.getLastBuild().isBuilding() == false);
+
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+            // Try to read with limit > 1MB (should be capped)
+            var callToolRequest = McpSchema.CallToolRequest.builder()
+                    .name("getBuildArtifact")
+                    .arguments(Map.of(
+                            "jobFullName",
+                            "excessive-limit-job",
+                            "artifactPath",
+                            "test.txt",
+                            "limit",
+                            2000000)) // 2MB, should be capped to 1MB
+                    .build();
+
+            var response = client.callTool(callToolRequest);
+            assertThat(response.isError()).isFalse();
+            assertThat(response.content()).hasSize(1);
+
+            assertThat(response.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                ObjectMapper objectMapper = new ObjectMapper();
+                try {
+                    JsonNode jsonNode = objectMapper.readTree(textContent.text());
+                    // Should still get the content, just with capped limit
+                    assertThat(jsonNode.get("content").asText()).contains("Test content");
+                    assertThat(jsonNode.get("hasMoreContent").asBoolean()).isFalse();
+                    assertThat(jsonNode.get("totalSize").asLong()).isGreaterThan(0);
+                } catch (JsonProcessingException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+        }
+    }
+
+    @McpClientTest
+    void testGetBuildArtifactWithNegativeOffsetAndLimit(
+            JenkinsMcpClientBuilder jenkinsMcpClientBuilder, JenkinsRule jenkins) throws Exception {
+        // Create a job with an artifact
+        WorkflowJob project = jenkins.createProject(WorkflowJob.class, "negative-params-job");
+        project.setDefinition(new CpsFlowDefinition(
+                "node {\n" + "    writeFile file: 'test.txt', text: 'Test content'\n"
+                        + "    archiveArtifacts artifacts: 'test.txt'\n"
+                        + "}",
+                true));
+
+        project.scheduleBuild2(0).get();
+        await().atMost(10, SECONDS).until(() -> project.getLastBuild() != null);
+        await().atMost(10, SECONDS).until(() -> project.getLastBuild().isBuilding() == false);
+
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+            // Try to read with negative offset and limit (should be normalized to 0 and default)
+            var callToolRequest = McpSchema.CallToolRequest.builder()
+                    .name("getBuildArtifact")
+                    .arguments(Map.of(
+                            "jobFullName",
+                            "negative-params-job",
+                            "artifactPath",
+                            "test.txt",
+                            "offset",
+                            -100,
+                            "limit",
+                            -50))
+                    .build();
+
+            var response = client.callTool(callToolRequest);
+            assertThat(response.isError()).isFalse();
+            assertThat(response.content()).hasSize(1);
+
+            assertThat(response.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                ObjectMapper objectMapper = new ObjectMapper();
+                try {
+                    JsonNode jsonNode = objectMapper.readTree(textContent.text());
+                    // Should still get the content with normalized parameters
+                    assertThat(jsonNode.get("content").asText()).contains("Test content");
+                    assertThat(jsonNode.get("hasMoreContent").asBoolean()).isFalse();
+                    assertThat(jsonNode.get("totalSize").asLong()).isGreaterThan(0);
+                } catch (JsonProcessingException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+        }
+    }
 }
