@@ -46,6 +46,7 @@ import hudson.security.ACL;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
 import io.jenkins.plugins.mcp.server.jackson.JenkinsExportedBeanModule;
+import io.modelcontextprotocol.json.jackson.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.server.McpSyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema;
@@ -233,8 +234,9 @@ public class McpToolWrapper {
     McpSchema.CallToolResult callRequest(McpSyncServerExchange exchange, McpSchema.CallToolRequest request) {
         var args = request.arguments();
         var oldUser = User.current();
+
         try {
-            var user = tryGetUser(exchange, request);
+            var user = tryGetUser(exchange);
             if (user != null) {
                 ACL.as(user);
             }
@@ -273,17 +275,13 @@ public class McpToolWrapper {
         }
     }
 
-    private static User tryGetUser(McpSyncServerExchange exchange, McpSchema.CallToolRequest request) {
+    private static User tryGetUser(McpSyncServerExchange exchange) {
         String userId = null;
         var context = exchange.transportContext();
         if (context != null) {
             userId = (String) context.get(USER_ID);
         }
-        if (userId == null && request.meta() != null) {
-            userId = (String) request.meta().get(USER_ID);
-        }
-        var user = User.get(userId, false, Map.of());
-        return user;
+        return User.get(userId, false, Map.of());
     }
 
     private Supplier<Map<String, Object>> _meta() {
@@ -319,7 +317,7 @@ public class McpToolWrapper {
                         .description(getToolDescription())
                         .meta(_meta().get())
                         .annotations(toolAnnotations().get())
-                        .inputSchema(generateForMethodInput())
+                        .inputSchema(new JacksonMcpJsonMapper(objectMapper), generateForMethodInput())
                         .build())
                 .callHandler(this::callRequest)
                 .build();

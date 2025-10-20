@@ -37,11 +37,14 @@ public interface JenkinsMcpClientBuilder {
 
     JenkinsMcpClientBuilder requestCustomizer(Consumer<HttpRequest.Builder> requestCustomizer);
 
+    JenkinsMcpClientBuilder requestTimeoutSeconds(int seconds);
+
     McpSyncClient build();
 
     abstract class AbstractJenkinsMcpClientBuilder implements JenkinsMcpClientBuilder {
         protected JenkinsRule jenkins;
         protected Consumer<HttpRequest.Builder> requestCustomizer;
+        protected int requestTimeoutSeconds = 300;
 
         @Override
         public JenkinsMcpClientBuilder jenkins(JenkinsRule jenkinsRule) {
@@ -52,6 +55,12 @@ public interface JenkinsMcpClientBuilder {
         @Override
         public JenkinsMcpClientBuilder requestCustomizer(Consumer<HttpRequest.Builder> requestCustomizer) {
             this.requestCustomizer = requestCustomizer;
+            return this;
+        }
+
+        @Override
+        public JenkinsMcpClientBuilder requestTimeoutSeconds(int seconds) {
+            this.requestTimeoutSeconds = seconds;
             return this;
         }
     }

@@ -27,15 +27,20 @@
 package io.jenkins.plugins.mcp.server;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import edu.umd.cs.findbugs.annotations.NonNull;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.Extension;
 import hudson.model.RootAction;
 import hudson.model.User;
 import hudson.security.csrf.CrumbExclusion;
 import hudson.util.PluginServletFilter;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
-import io.jenkins.plugins.mcp.server.servlet.UserContextHttpRequest;
 import io.jenkins.plugins.mcp.server.tool.McpToolWrapper;
+import io.modelcontextprotocol.common.McpTransportContext;
+import io.modelcontextprotocol.json.jackson.JacksonMcpJsonMapper;
+import io.modelcontextprotocol.json.schema.jackson.DefaultJsonSchemaValidator;
 import io.modelcontextprotocol.server.McpServerFeatures;
+import io.modelcontextprotocol.server.McpTransportContextExtractor;
 import io.modelcontextprotocol.server.transport.HttpServletSseServerTransportProvider;
 import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema;
@@ -44,14 +49,20 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.ServletRequest;
 import jakarta.servlet.ServletResponse;
+import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import jenkins.model.Jenkins;
 import jenkins.util.SystemProperties;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
 
@@ -60,6 +71,7 @@ import org.kohsuke.accmod.restrictions.NoExternalUse;
  */
 @Restricted(NoExternalUse.class)
 @Extension
+@Slf4j
 public class Endpoint extends CrumbExclusion implements RootAction {
 
     public static final String MCP_SERVER = "mcp-server";
@@ -78,13 +90,33 @@ public class Endpoint extends CrumbExclusion implements RootAction {
 
     public static final String MCP_SERVER_MESSAGE = MCP_SERVER + MESSAGE_ENDPOINT;
     public static final String USER_ID = Endpoint.class.getName() + ".userId";
+    private static final String MCP_CONTEXT_KEY = Endpoint.class.getName() + ".mcpContext";
 
     /**
      * The interval in seconds for sending keep-alive messages to the client.
      * Default is 0 seconds (so disabled per default), can be overridden by setting the system property
      * it's not static final on purpose to allow dynamic configuration via script console.
      */
-    private int keepAliveInterval = SystemProperties.getInteger(Endpoint.class.getName() + ".keepAliveInterval", 0);
+    private static int keepAliveInterval =
+            SystemProperties.getInteger(Endpoint.class.getName() + ".keepAliveInterval", 0);
+
+    /**
+     * Whether to require the Origin header in requests. Default is false, can be overridden by setting the system
+     * property {@code io.jenkins.plugins.mcp.server.Endpoint.requireOriginHeader=true}.
+     */
+    @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "Accessible via System Groovy Scripts")
+    public static boolean REQUIRE_ORIGIN_HEADER =
+            SystemProperties.getBoolean(Endpoint.class.getName() + ".requireOriginHeader", false);
+
+    /**
+     *
+     * Whether to require the Origin header to match the Jenkins root URL. Default is true, can be overridden by
+     * setting the system property {@code io.jenkins.plugins.mcp.server.Endpoint.requireOriginMatch=false}.
+     * The header will be validated only if present.
+     */
+    @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "Accessible via System Groovy Scripts")
+    public static boolean REQUIRE_ORIGIN_MATCH =
+            SystemProperties.getBoolean(Endpoint.class.getName() + ".requireOriginMatch", true);
 
     /**
      * JSON object mapper for serialization/deserialization
@@ -110,7 +142,7 @@ public class Endpoint extends CrumbExclusion implements RootAction {
         String requestedResource = getRequestedResourcePath(request);
         if (requestedResource.startsWith("/" + MCP_SERVER_MESSAGE)
                 && request.getMethod().equalsIgnoreCase("POST")) {
-            handleMessage(request, response);
+            handleMessage(request, response, httpServletSseServerTransportProvider);
             return true; // Do not allow this request on to Stapler
         }
         if (requestedResource.startsWith("/" + MCP_SERVER_SSE)
@@ -119,7 +151,7 @@ public class Endpoint extends CrumbExclusion implements RootAction {
             return true;
         }
         if (isStreamableRequest(request)) {
-            handleMcpRequest(request, response);
+            handleMessage(request, response, httpServletStreamableServerTransportProvider);
             return true;
         }
         return false;
@@ -162,14 +194,17 @@ public class Endpoint extends CrumbExclusion implements RootAction {
             rootUrl = "";
         }
         httpServletSseServerTransportProvider = HttpServletSseServerTransportProvider.builder()
-                .sseEndpoint(SSE_ENDPOINT)
+                .jsonMapper(new JacksonMcpJsonMapper(objectMapper))
                 .baseUrl(rootUrl)
+                .sseEndpoint(SSE_ENDPOINT)
                 .messageEndpoint(MCP_SERVER_MESSAGE)
-                .objectMapper(objectMapper)
+                .contextExtractor(createExtractor())
                 .keepAliveInterval(keepAliveInterval > 0 ? Duration.ofSeconds(keepAliveInterval) : null)
                 .build();
 
         io.modelcontextprotocol.server.McpServer.sync(httpServletSseServerTransportProvider)
+                .jsonMapper(new JacksonMcpJsonMapper(objectMapper))
+                .jsonSchemaValidator(new DefaultJsonSchemaValidator(objectMapper))
                 .capabilities(serverCapabilities)
                 .tools(allTools)
                 .prompts(prompts)
@@ -177,19 +212,15 @@ public class Endpoint extends CrumbExclusion implements RootAction {
                 .build();
 
         httpServletStreamableServerTransportProvider = HttpServletStreamableServerTransportProvider.builder()
-                .objectMapper(objectMapper)
+                .jsonMapper(new JacksonMcpJsonMapper(objectMapper))
                 .mcpEndpoint(STREAMABLE_ENDPOINT)
-                .contextExtractor((serverRequest, context) -> {
-                    var userId = serverRequest.getAttribute(USER_ID);
-                    if (userId != null) {
-                        context.put(USER_ID, userId);
-                    }
-                    return context;
-                })
+                .contextExtractor(createExtractor())
                 .keepAliveInterval(keepAliveInterval > 0 ? Duration.ofSeconds(keepAliveInterval) : null)
                 .build();
 
         io.modelcontextprotocol.server.McpServer.sync(httpServletStreamableServerTransportProvider)
+                .jsonMapper(new JacksonMcpJsonMapper(objectMapper))
+                .jsonSchemaValidator(new DefaultJsonSchemaValidator(objectMapper))
                 .capabilities(serverCapabilities)
                 .tools(allTools)
                 .prompts(prompts)
@@ -199,11 +230,117 @@ public class Endpoint extends CrumbExclusion implements RootAction {
             if (isSSERequest(servletRequest)) {
                 handleSSE(servletRequest, servletResponse);
             } else if (isStreamableRequest(servletRequest)) {
-                handleMcpRequest(servletRequest, servletResponse);
+                handleMessage(servletRequest, servletResponse, httpServletStreamableServerTransportProvider);
             } else {
                 filterChain.doFilter(servletRequest, servletResponse);
             }
         });
+    }
+
+    private static McpTransportContextExtractor<HttpServletRequest> createExtractor() {
+        return (httpServletRequest) -> (McpTransportContext) httpServletRequest.getAttribute(MCP_CONTEXT_KEY);
+    }
+
+    private boolean validOriginHeader(ServletRequest request, ServletResponse response) {
+        String originHeaderValue = ((HttpServletRequest) request).getHeader("Origin");
+        if (REQUIRE_ORIGIN_HEADER && StringUtils.isEmpty(originHeaderValue)) {
+            try {
+                ((HttpServletResponse) response).sendError(HttpServletResponse.SC_FORBIDDEN, "Missing Origin header");
+                return false;
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+        if (REQUIRE_ORIGIN_MATCH && !StringUtils.isEmpty(originHeaderValue)) {
+            var jenkinsRootUrl =
+                    jenkins.model.JenkinsLocationConfiguration.get().getUrl();
+            if (StringUtils.isEmpty(jenkinsRootUrl)) {
+                // If Jenkins root URL is not configured, we cannot validate the Origin header
+                return true;
+            }
+
+            String o = getRootUrlFromRequest((HttpServletRequest) request);
+            String removeSuffix1 = "/";
+            if (o.endsWith(removeSuffix1)) {
+                o = o.substring(0, o.length() - removeSuffix1.length());
+            }
+            String removeSuffix2 = ((HttpServletRequest) request).getContextPath();
+            if (o.endsWith(removeSuffix2)) {
+                o = o.substring(0, o.length() - removeSuffix2.length());
+            }
+            final String expectedOrigin = o;
+
+            if (!originHeaderValue.equals(expectedOrigin)) {
+                log.debug("Rejecting origin: {}; expected was from request: {}", originHeaderValue, expectedOrigin);
+                try {
+
+                    ((HttpServletResponse) response)
+                            .sendError(
+                                    HttpServletResponse.SC_FORBIDDEN,
+                                    "Unexpected request origin (check your reverse proxy settings)");
+                    return false;
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Horrible copy/paste from {@link Jenkins} but this method in Jenkins is so dependent of Stapler#currentRequest
+     * that it's not possible to call it from here.
+     */
+    private @NonNull String getRootUrlFromRequest(HttpServletRequest req) {
+
+        StringBuilder buf = new StringBuilder();
+        String scheme = getXForwardedHeader(req, "X-Forwarded-Proto", req.getScheme());
+        buf.append(scheme).append("://");
+        String host = getXForwardedHeader(req, "X-Forwarded-Host", req.getServerName());
+        int index = host.lastIndexOf(':');
+        int port = req.getServerPort();
+        if (index == -1) {
+            // Almost everyone else except Nginx put the host and port in separate headers
+            buf.append(host);
+        } else {
+            if (host.startsWith("[") && host.endsWith("]")) {
+                // support IPv6 address
+                buf.append(host);
+            } else {
+                // Nginx uses the same spec as for the Host header, i.e. hostname:port
+                buf.append(host, 0, index);
+                if (index + 1 < host.length()) {
+                    try {
+                        port = Integer.parseInt(host.substring(index + 1));
+                    } catch (NumberFormatException e) {
+                        // ignore
+                    }
+                }
+                // but if a user has configured Nginx with an X-Forwarded-Port, that will win out.
+            }
+        }
+        String forwardedPort = getXForwardedHeader(req, "X-Forwarded-Port", null);
+        if (forwardedPort != null) {
+            try {
+                port = Integer.parseInt(forwardedPort);
+            } catch (NumberFormatException e) {
+                // ignore
+            }
+        }
+        if (port != ("https".equals(scheme) ? 443 : 80)) {
+            buf.append(':').append(port);
+        }
+        buf.append(req.getContextPath()).append('/');
+        return buf.toString();
+    }
+
+    private static String getXForwardedHeader(HttpServletRequest req, String header, String defaultValue) {
+        String value = req.getHeader(header);
+        if (value != null) {
+            int index = value.indexOf(',');
+            return index == -1 ? value.trim() : value.substring(0, index).trim();
+        }
+        return defaultValue;
     }
 
     @Override
@@ -244,21 +381,25 @@ public class Endpoint extends CrumbExclusion implements RootAction {
         httpServletSseServerTransportProvider.service(request, response);
     }
 
-    protected void handleMessage(HttpServletRequest request, HttpServletResponse response)
+    private void handleMessage(ServletRequest request, ServletResponse response, HttpServlet httpServlet)
             throws IOException, ServletException {
-        httpServletSseServerTransportProvider.service(new UserContextHttpRequest(objectMapper, request), response);
+        if (!validOriginHeader(request, response)) {
+            return;
+        }
+        prepareMcpContext(request);
+        httpServlet.service(request, response);
     }
 
-    private void handleMcpRequest(ServletRequest request, ServletResponse response)
-            throws IOException, ServletException {
+    private static void prepareMcpContext(ServletRequest request) {
+        Map<String, Object> contextMap = new HashMap<>();
         var currentUser = User.current();
         String userId = null;
         if (currentUser != null) {
             userId = currentUser.getId();
         }
         if (userId != null) {
-            request.setAttribute(USER_ID, userId);
+            contextMap.put(USER_ID, userId);
         }
-        httpServletStreamableServerTransportProvider.service(request, response);
+        request.setAttribute(MCP_CONTEXT_KEY, McpTransportContext.create(contextMap));
     }
 }

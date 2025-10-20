@@ -59,6 +59,7 @@ public class EndPointTest {
                             "testInt",
                             "testWithError",
                             "getBuildLog",
+                            "searchBuildLog",
                             "triggerBuild",
                             "updateBuild",
                             "getJobs",
@@ -68,6 +69,7 @@ public class EndPointTest {
                             "getBuildScm",
                             "getBuildChangeSets",
                             "getStatus",
+                            "getTestResults",
                             "getBuildArtifacts",
                             "getBuildArtifact");
 

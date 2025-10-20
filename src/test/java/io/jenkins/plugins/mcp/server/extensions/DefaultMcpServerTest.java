@@ -58,6 +58,8 @@ import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
 @WithJenkins
 class DefaultMcpServerTest {
+    static final int MIN_1 = 60 * 1000;
+
     public static Stream<Arguments> whoAmITestParameters() {
         Stream<Arguments> baseArgs = Stream.of(Arguments.of(true, "admin"), Arguments.of(false, "anonymous"));
         return TestUtils.appendMcpClientArgs(baseArgs);
@@ -94,13 +96,47 @@ class DefaultMcpServerTest {
         }
     }
 
-    @McpClientTest
-    void testMcpToolCallTriggerBuild(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
+    static Stream<Arguments> triggerSecurityTestParameters() {
+        Stream<Arguments> baseArgs = Stream.of(
+                // security enable, no auth -> no run triggered
+                Arguments.of(true, false, false),
+                // security enable, auth -> no triggered
+                Arguments.of(true, true, true),
+                // security not enable, no auth -> run triggered yeah freedom!
+                Arguments.of(false, false, true),
+                // security not enable, auth -> run triggered root is the king
+                Arguments.of(false, true, true));
+        return TestUtils.appendMcpClientArgs(baseArgs);
+    }
+
+    @ParameterizedTest
+    @MethodSource("triggerSecurityTestParameters")
+    // @DisabledOnOs(OS.WINDOWS)
+    void testMcpToolCallTriggerBuild(
+            Boolean enableSecurity,
+            Boolean runAsAdmin,
+            Boolean expectedBuildRunned,
+            JenkinsMcpClientBuilder jenkinsMcpClientBuilder,
+            JenkinsRule jenkins)
             throws Exception {
+        if (enableSecurity) {
+            enableSecurity(jenkins);
+        }
         WorkflowJob project = jenkins.createProject(WorkflowJob.class, "demo-job");
         project.setDefinition(new CpsFlowDefinition("", true));
         var nextNumber = project.getNextBuildNumber();
-        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+        try (var client = jenkinsMcpClientBuilder
+                .jenkins(jenkins)
+                .requestCustomizer(request -> {
+                    if (runAsAdmin) {
+                        String username = "admin";
+                        String password = "admin";
+                        String authString = username + ":" + password;
+                        String encodedAuth = Base64.getEncoder().encodeToString(authString.getBytes());
+                        request.setHeader("Authorization", "Basic " + encodedAuth);
+                    }
+                })
+                .build()) {
             McpSchema.CallToolRequest request =
                     new McpSchema.CallToolRequest("triggerBuild", Map.of("jobFullName", project.getFullName()));
 
@@ -110,12 +146,21 @@ class DefaultMcpServerTest {
             assertThat(response.content().get(0).type()).isEqualTo("text");
             assertThat(response.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
                 assertThat(textContent.type()).isEqualTo("text");
-                assertThat(textContent.text()).contains("true");
+                assertThat(textContent.text()).contains(Boolean.toString(expectedBuildRunned));
             });
+            if (!expectedBuildRunned) {
+                jenkins.waitUntilNoActivityUpTo(MIN_1);
+                assertThat(project.getLastBuild()).isNull();
+            } else {
+                await().atMost(10, SECONDS)
+                        .untilAsserted(() -> assertThat(project.getLastBuild()).isNotNull());
+                await().atMost(10, SECONDS)
+                        .untilAsserted(() ->
+                                assertThat(project.getLastBuild().getResult()).isEqualTo(Result.SUCCESS));
+                assertThat(project.getLastBuild().getNumber()).isEqualTo(nextNumber);
+            }
         }
-        await().atMost(10, SECONDS).until(() -> project.getLastBuild() != null);
-        jenkins.waitForCompletion(project.getLastBuild());
-        await().atMost(10, SECONDS).until(() -> project.getLastBuild().getNumber() == nextNumber);
+        jenkins.waitUntilNoActivityUpTo(MIN_1);
     }
 
     @McpClientTest
@@ -156,6 +201,7 @@ class DefaultMcpServerTest {
                         () -> assertThat(project.getLastBuild().getResult()).isEqualTo(Result.SUCCESS));
         assertThat(project.getLastBuild().getNumber()).isEqualTo(nextNumber);
         assertThat(project.getLastBuild().getLog()).contains(List.of("string_value", "false", "option2"));
+        jenkins.waitUntilNoActivityUpTo(MIN_1);
     }
 
     @McpClientTest
@@ -196,6 +242,7 @@ class DefaultMcpServerTest {
                         () -> assertThat(project.getLastBuild().getResult()).isEqualTo(Result.SUCCESS));
         assertThat(project.getLastBuild().getNumber()).isEqualTo(nextNumber);
         assertThat(project.getLastBuild().getLog()).contains(List.of("default1", "false", "option2"));
+        jenkins.waitUntilNoActivityUpTo(MIN_1);
     }
 
     @McpClientTest
@@ -318,6 +365,7 @@ class DefaultMcpServerTest {
                         });
             }
         }
+        jenkins.waitUntilNoActivityUpTo(MIN_1);
     }
 
     @ParameterizedTest
@@ -415,12 +463,9 @@ class DefaultMcpServerTest {
     private void enableSecurity(JenkinsRule jenkins) throws Exception {
         JenkinsRule.DummySecurityRealm securityRealm = jenkins.createDummySecurityRealm();
         jenkins.jenkins.setSecurityRealm(securityRealm);
-        // Create a user
-
         var authStrategy = new FullControlOnceLoggedInAuthorizationStrategy();
         authStrategy.setAllowAnonymousRead(false);
         jenkins.jenkins.setAuthorizationStrategy(authStrategy);
-
         jenkins.jenkins.save();
     }
 }

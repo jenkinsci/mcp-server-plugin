@@ -27,10 +27,13 @@
 package io.jenkins.plugins.mcp.server.extensions;
 
 import static io.jenkins.plugins.mcp.server.extensions.util.JenkinsUtil.getBuildByNumberOrLast;
+import static io.jenkins.plugins.mcp.server.extensions.util.ParameterValueFactory.createParameterValue;
 
 import hudson.Extension;
 import hudson.model.AbstractItem;
 import hudson.model.AdministrativeMonitor;
+import hudson.model.Cause;
+import hudson.model.CauseAction;
 import hudson.model.Computer;
 import hudson.model.Item;
 import hudson.model.ItemGroup;
@@ -38,7 +41,6 @@ import hudson.model.Job;
 import hudson.model.ParametersAction;
 import hudson.model.ParametersDefinitionProperty;
 import hudson.model.Run;
-import hudson.model.SimpleParameterDefinition;
 import hudson.model.User;
 import hudson.slaves.Cloud;
 import io.jenkins.plugins.mcp.server.McpServerExtension;
@@ -63,7 +65,9 @@ public class DefaultMcpServer implements McpServerExtension {
 
     public static final String FULL_NAME = "fullName";
 
-    @Tool(description = "Get a specific build or the last build of a Jenkins job")
+    @Tool(
+            description = "Get a specific build or the last build of a Jenkins job",
+            annotations = @Tool.Annotations(destructiveHint = false))
     public Run getBuild(
             @ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
             @Nullable
@@ -74,13 +78,13 @@ public class DefaultMcpServer implements McpServerExtension {
         return getBuildByNumberOrLast(jobFullName, buildNumber).orElse(null);
     }
 
-    @Tool(description = "Get a Jenkins job by its full path")
+    @Tool(description = "Get a Jenkins job by its full path", annotations = @Tool.Annotations(destructiveHint = false))
     public Job getJob(
             @ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName) {
         return Jenkins.get().getItemByFullName(jobFullName, Job.class);
     }
 
-    @Tool(description = "Trigger a build for a Jenkins job")
+    @Tool(description = "Trigger a build for a Jenkins job") // keep the default value for destructive (true)
     public boolean triggerBuild(
             @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
             @ToolParam(description = "Build parameters (optional, e.g., {key1=value1,key2=value2})", required = false)
@@ -88,30 +92,30 @@ public class DefaultMcpServer implements McpServerExtension {
         var job = Jenkins.get().getItemByFullName(jobFullName, ParameterizedJobMixIn.ParameterizedJob.class);
 
         if (job != null) {
+            job.checkPermission(Item.BUILD);
+            Cause.UserIdCause userIdCause = new Cause.UserIdCause();
+            CauseAction action = new CauseAction(userIdCause);
             if (job.isParameterized() && job instanceof Job j) {
                 ParametersDefinitionProperty parametersDefinition =
                         (ParametersDefinitionProperty) j.getProperty(ParametersDefinitionProperty.class);
                 var parameterValues = parametersDefinition.getParameterDefinitions().stream()
                         .map(param -> {
-                            if (param instanceof SimpleParameterDefinition sd) {
-                                if (parameters != null && parameters.containsKey(param.getName())) {
-                                    var value = parameters.get(param.getName());
-                                    return sd.createValue(String.valueOf(value));
-                                } else {
-                                    return sd.getDefaultParameterValue();
-                                }
+                            if (parameters != null && parameters.containsKey(param.getName())) {
+                                var value = parameters.get(param.getName());
+                                return createParameterValue(param, value);
                             } else {
-                                log.warn(
-                                        "Unsupported parameter type: {}",
-                                        param.getClass().getName());
-                                return null;
+                                return param.getDefaultParameterValue();
                             }
                         })
                         .filter(Objects::nonNull)
                         .toList();
-                job.scheduleBuild2(0, new ParametersAction(parameterValues));
+                if (!parameterValues.isEmpty()) {
+                    job.scheduleBuild2(0, new ParametersAction(parameterValues), action);
+                } else {
+                    job.scheduleBuild2(0, action);
+                }
             } else {
-                job.scheduleBuild2(0);
+                job.scheduleBuild2(0, action);
             }
             return true;
         }
@@ -120,7 +124,8 @@ public class DefaultMcpServer implements McpServerExtension {
 
     @Tool(
             description =
-                    "Get a paginated list of Jenkins jobs, sorted by name. Returns up to 'limit' jobs starting from the 'skip' index. If no jobs are available in the requested range, returns an empty list.")
+                    "Get a paginated list of Jenkins jobs, sorted by name. Returns up to 'limit' jobs starting from the 'skip' index. If no jobs are available in the requested range, returns an empty list.",
+            annotations = @Tool.Annotations(destructiveHint = false))
     public List<Job> getJobs(
             @ToolParam(
                             description =
@@ -163,7 +168,7 @@ public class DefaultMcpServer implements McpServerExtension {
         }
     }
 
-    @Tool(description = "Update build display name and/or description")
+    @Tool(description = "Update build display name and/or description") // keep the default value for destructive (true)
     @SneakyThrows
     public boolean updateBuild(
             @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
@@ -194,7 +199,8 @@ public class DefaultMcpServer implements McpServerExtension {
 
     @Tool(
             description =
-                    "Get information about the currently authenticated user, including their full name or 'anonymous' if not authenticated")
+                    "Get information about the currently authenticated user, including their full name or 'anonymous' if not authenticated",
+            annotations = @Tool.Annotations(destructiveHint = false))
     @SneakyThrows
     public Map<String, String> whoAmI() {
         return Optional.ofNullable(User.current())
@@ -205,10 +211,11 @@ public class DefaultMcpServer implements McpServerExtension {
     @Tool(
             description =
                     "Checks the health and readiness status of a Jenkins instance, including whether it's in quiet"
-                            + " mode, has active administrative monitors, current queue size, and available executor capacity."
+                            + " mode, has active administrative monitors, current queue size, root URL Status, and available executor capacity."
                             + " This tool provides a comprehensive overview of the controller's operational state to determine if"
                             + " it's stable and ready to build. Use this tool to assess Jenkins instance health rather than"
-                            + " simple up/down status.")
+                            + " simple up/down status.",
+            annotations = @Tool.Annotations(destructiveHint = false))
     public Map<String, Object> getStatus() {
         var map = new HashMap<String, Object>();
         var jenkins = Jenkins.get();
@@ -229,18 +236,29 @@ public class DefaultMcpServer implements McpServerExtension {
         map.put("Buildable Queue Size", queue.countBuildableItems());
         map.put("Available executors (any label)", availableExecutors);
         // Tell me which clouds are defined as they can be used to provision ephemeral agents
-        map.put(
-                "Defined clouds that can provide agents (any label)",
-                jenkins.clouds.stream()
-                        .filter(cloud -> cloud.canProvision(new Cloud.CloudState(null, 1)))
-                        .map(Cloud::getDisplayName)
-                        .toList());
+        if (Jenkins.get().hasAnyPermission(Jenkins.SYSTEM_READ)) {
+            map.put(
+                    "Defined clouds that can provide agents (any label)",
+                    jenkins.clouds.stream()
+                            .filter(cloud -> cloud.canProvision(new Cloud.CloudState(null, 1)))
+                            .map(Cloud::getDisplayName)
+                            .toList());
+        }
         // getActiveAdministrativeMonitors is already protected, so no need to check the user
         map.put(
                 "Active administrative monitors",
                 jenkins.getActiveAdministrativeMonitors().stream()
                         .map(AdministrativeMonitor::getDisplayName)
                         .toList());
+
+        // Explicit root URL health check
+        if (jenkins.getRootUrl() == null || jenkins.getRootUrl().isEmpty()) {
+            map.put(
+                    "Root URL Status",
+                    "ERROR: Jenkins root URL is not configured. Please configure the Jenkins URL under \"Manage Jenkins → Configure System → Jenkins Location\" so tools like getJobs can work properly.\n ");
+        } else {
+            map.put("Root URL Status", "OK");
+        }
         return map;
     }
 }
