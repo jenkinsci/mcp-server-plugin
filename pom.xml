@@ -227,7 +227,7 @@
     <dependency>
       <groupId>org.jenkins-ci.tools</groupId>
       <artifactId>git-parameter</artifactId>
-      <version>0.11.0</version>
+      <version>444.vca_b_84d3703c2</version>
       <type>jar</type>
       <scope>test</scope>
     </dependency>
