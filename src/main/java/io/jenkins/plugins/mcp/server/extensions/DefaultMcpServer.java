@@ -84,6 +84,23 @@ public class DefaultMcpServer implements McpServerExtension {
         return Jenkins.get().getItemByFullName(jobFullName, Job.class);
     }
 
+    /**
+     * A {@link Cause} that indicates a Jenkins build was triggered via MCP call.
+     * <p>
+     * This is useful for the end user to understand that the call was trigger through this plugin's code
+     * and not some manual user intervention.</p>
+     * <p>And among others, it allows plugins like
+     * <a href="https://plugins.jenkins.io/buildtriggerbadge/">...</a> to offer custom badges</p>
+     *
+     * @see #triggerBuild(String, Map)
+     */
+    public static class MCPCause extends Cause {
+        @Override
+        public String getShortDescription() {
+            return "Triggered via MCP Server";
+        }
+    }
+
     @Tool(description = "Trigger a build for a Jenkins job") // keep the default value for destructive (true)
     public boolean triggerBuild(
             @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
@@ -93,8 +110,7 @@ public class DefaultMcpServer implements McpServerExtension {
 
         if (job != null) {
             job.checkPermission(Item.BUILD);
-            Cause.UserIdCause userIdCause = new Cause.UserIdCause();
-            CauseAction action = new CauseAction(userIdCause);
+            CauseAction action = new CauseAction(new MCPCause());
             if (job.isParameterized() && job instanceof Job j) {
                 ParametersDefinitionProperty parametersDefinition =
                         (ParametersDefinitionProperty) j.getProperty(ParametersDefinitionProperty.class);
