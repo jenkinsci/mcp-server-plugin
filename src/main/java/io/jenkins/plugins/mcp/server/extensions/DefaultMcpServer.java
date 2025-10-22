@@ -98,7 +98,8 @@ public class DefaultMcpServer implements McpServerExtension {
         private final String userId;
 
         public MCPCause() {
-            this.userId = User.current() != null ? User.current().getId() : null;
+            User currentUser = User.current();
+            this.userId = currentUser != null ? currentUser.getId() : null;
         }
 
         @Override
