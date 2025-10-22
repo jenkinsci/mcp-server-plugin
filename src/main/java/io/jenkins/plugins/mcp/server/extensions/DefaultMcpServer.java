@@ -95,8 +95,17 @@ public class DefaultMcpServer implements McpServerExtension {
      * @see #triggerBuild(String, Map)
      */
     public static class MCPCause extends Cause {
+        private final String userId;
+
+        public MCPCause() {
+            this.userId = User.current() != null ? User.current().getId() : null;
+        }
+
         @Override
         public String getShortDescription() {
+            if (userId != null) {
+                return "Triggered via MCP Server by " + userId;
+            }
             return "Triggered via MCP Server";
         }
     }
