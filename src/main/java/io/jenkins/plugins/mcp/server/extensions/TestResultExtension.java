@@ -1,6 +1,7 @@
 package io.jenkins.plugins.mcp.server.extensions;
 
 import hudson.model.Run;
+import hudson.tasks.junit.CaseResult;
 import hudson.tasks.junit.TestResultAction;
 import io.jenkins.plugins.mcp.server.McpServerExtension;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
@@ -25,7 +26,13 @@ public class TestResultExtension implements McpServerExtension {
                             description =
                                     "Build number (optional, if not provided, returns the test results for last build)",
                             required = false)
-                    Integer buildNumber) {
+                    Integer buildNumber,
+            @Nullable
+                    @ToolParam(
+                            description =
+                                    "To return only failing tests and not all test (to help reducing the size of returned data)",
+                            required = false)
+                    Boolean onlyFailingTests) {
         Optional<Run> run = JenkinsUtil.getBuildByNumberOrLast(jobFullName, buildNumber);
         if (run.isPresent()) {
             var testResultAction = run.get().getAction(TestResultAction.class);
@@ -34,7 +41,15 @@ public class TestResultExtension implements McpServerExtension {
                 response.put("TestResultAction", testResultAction);
                 var result = testResultAction.getResult();
                 if (result != null) {
-                    response.put("TestResult", result);
+                    if (Boolean.TRUE.equals(onlyFailingTests)) {
+                        var failingTests = result.getTestResult().getSuites().stream()
+                                .filter(suite -> suite.getCases().stream()
+                                        .anyMatch(caseResult -> caseResult.getStatus() == CaseResult.Status.FAILED))
+                                .toList();
+                        response.put("TestResult", failingTests);
+                    } else {
+                        response.put("TestResult", result);
+                    }
                 }
                 return response;
             }
