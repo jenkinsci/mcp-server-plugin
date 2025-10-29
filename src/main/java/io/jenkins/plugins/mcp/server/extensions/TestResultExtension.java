@@ -43,8 +43,8 @@ public class TestResultExtension implements McpServerExtension {
                 if (result != null) {
                     if (Boolean.TRUE.equals(onlyFailingTests)) {
                         var failingTests = result.getTestResult().getSuites().stream()
-                                .filter(suite -> suite.getCases().stream()
-                                        .anyMatch(caseResult -> caseResult.getStatus() == CaseResult.Status.FAILED))
+                                .flatMap(suiteResult -> suiteResult.getCases().stream())
+                                .filter(caseResult -> caseResult.getStatus() == CaseResult.Status.FAILED)
                                 .toList();
                         response.put("TestResult", failingTests);
                     } else {

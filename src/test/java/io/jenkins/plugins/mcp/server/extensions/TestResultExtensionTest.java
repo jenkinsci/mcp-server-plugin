@@ -189,8 +189,9 @@ public class TestResultExtensionTest {
                 String rawJson = ((McpSchema.TextContent) response.content().get(0)).text();
                 DocumentContext documentContext = JsonPath.using(conf).parse(rawJson);
 
-                List<Object> list = documentContext.read("$.TestResult..cases");
-                assertThat(list).size().isEqualTo(testResult.getSuites().size() - 1);
+                List<Object> list = documentContext.read("$.TestResult..className");
+                assertThat(list).size().isEqualTo(testResult.getFailedTests().size());
+                assertThat(list).size().isEqualTo(3); // There are 3 failing tests in the two reports
             }
         }
     }
