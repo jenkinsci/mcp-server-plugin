@@ -183,13 +183,13 @@ public class TestResultExtensionTest {
                 Object testResultAction = result.get("TestResultAction");
                 assertThat(testResultAction).isNotNull();
 
-                Object testResultRaw = result.get("TestResult");
+                Object testResultRaw = result.get("failingTests");
                 assertThat(testResultRaw).isNotNull();
                 Configuration conf = Configuration.defaultConfiguration();
                 String rawJson = ((McpSchema.TextContent) response.content().get(0)).text();
                 DocumentContext documentContext = JsonPath.using(conf).parse(rawJson);
 
-                List<Object> list = documentContext.read("$.TestResult..className");
+                List<Object> list = documentContext.read("$.failingTests..className");
                 assertThat(list).size().isEqualTo(testResult.getFailedTests().size());
                 assertThat(list).size().isEqualTo(3); // There are 3 failing tests in the two reports
             }
