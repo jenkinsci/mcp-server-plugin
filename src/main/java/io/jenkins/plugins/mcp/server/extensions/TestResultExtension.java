@@ -46,7 +46,7 @@ public class TestResultExtension implements McpServerExtension {
                                 .flatMap(suiteResult -> suiteResult.getCases().stream())
                                 .filter(caseResult -> caseResult.getStatus() == CaseResult.Status.FAILED)
                                 .toList();
-                        response.put("TestResult", failingTests);
+                        response.put("failingTests", failingTests);
                     } else {
                         response.put("TestResult", result);
                     }
