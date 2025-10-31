@@ -57,6 +57,7 @@ import java.lang.reflect.Parameter;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
@@ -160,8 +161,13 @@ public class McpToolWrapper {
         return null;
     }
 
-    private static String toJson(Object item) throws IOException {
-        return OBJECT_MAPPER.writeValueAsString(item);
+    private static String toJson(Object item) {
+        try {
+            return OBJECT_MAPPER.writeValueAsString(item);
+        } catch (IOException e) {
+            log.atError().setCause(e).log("This error should not happen");
+            throw new RuntimeException(e);
+        }
     }
 
     String generateForMethodInput() {
@@ -213,26 +219,31 @@ public class McpToolWrapper {
 
     McpSchema.CallToolResult toMcpResult(Object result) {
 
-        if (result == null) {
-            return McpSchema.CallToolResult.builder()
-                    .addTextContent("Result is null")
-                    .isError(false)
-                    .build();
-        }
-        try {
+        var builder = new ToolResponse.ToolResponseBuilder().status(ToolResponse.Status.COMPLETED);
 
-            var resultBuilder = McpSchema.CallToolResult.builder().isError(false);
-            if (result instanceof List listResult) {
-                for (var item : listResult) {
-                    resultBuilder.addTextContent(toJson(item));
+        if (result == null) {
+            builder.message(ToolResponse.NO_DATA_MSG);
+        } else {
+            if (result instanceof Collection collection) {
+                if (collection.isEmpty()) {
+                    builder.message(ToolResponse.NO_DATA_MSG);
+                } else {
+                    builder.message(ToolResponse.DATA_MSG).result(collection);
+                }
+            } else if (result instanceof Map map) {
+                if (map.isEmpty()) {
+                    builder.message(ToolResponse.NO_DATA_MSG);
+                } else {
+                    builder.message(ToolResponse.DATA_MSG).result(map);
                 }
             } else {
-                resultBuilder.addTextContent(toJson(result));
+                builder.message(ToolResponse.DATA_MSG).result(result);
             }
-            return resultBuilder.build();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
         }
+        return McpSchema.CallToolResult.builder()
+                .isError(false)
+                .addTextContent(toJson(builder.build()))
+                .build();
     }
 
     McpSchema.CallToolResult callRequest(McpSyncServerExchange exchange, McpSchema.CallToolRequest request) {
@@ -270,9 +281,17 @@ public class McpToolWrapper {
             if (rootCauseMessage.isEmpty()) {
                 rootCauseMessage = "Error invoking method: " + method.getName();
             }
+            if (log.isDebugEnabled()) {
+                log.atError().setCause(e).log("Error invoking tool method: {}: {}", method.getName(), rootCauseMessage);
+            }
+            ToolResponse toolResponse = new ToolResponse.ToolResponseBuilder()
+                    .message(rootCauseMessage)
+                    .status(ToolResponse.Status.FAILED)
+                    .build();
+
             return McpSchema.CallToolResult.builder()
                     .isError(true)
-                    .addTextContent(rootCauseMessage)
+                    .addTextContent(toJson(toolResponse))
                     .build();
         } finally {
             ACL.as(oldUser);

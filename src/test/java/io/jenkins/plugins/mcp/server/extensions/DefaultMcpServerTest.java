@@ -31,8 +31,9 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jayway.jsonpath.Configuration;
+import com.jayway.jsonpath.DocumentContext;
+import com.jayway.jsonpath.JsonPath;
 import hudson.model.BooleanParameterDefinition;
 import hudson.model.ChoiceParameterDefinition;
 import hudson.model.ParametersDefinitionProperty;
@@ -42,6 +43,7 @@ import hudson.security.FullControlOnceLoggedInAuthorizationStrategy;
 import io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder;
 import io.jenkins.plugins.mcp.server.junit.McpClientTest;
 import io.jenkins.plugins.mcp.server.junit.TestUtils;
+import io.jenkins.plugins.mcp.server.tool.ToolResponse;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.Base64;
 import java.util.List;
@@ -81,16 +83,11 @@ class DefaultMcpServerTest {
             assertThat(response.content().get(0).type()).isEqualTo("text");
             assertThat(response.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
                 assertThat(textContent.type()).isEqualTo("text");
-
-                ObjectMapper objectMapper = new ObjectMapper();
-                try {
-                    var contentMap = objectMapper.readValue(textContent.text(), Map.class);
-                    assertThat(contentMap).extractingByKey("result").isEqualTo("SUCCESS");
-                    assertThat(contentMap).extractingByKey("number").isEqualTo(build.getNumber());
-
-                } catch (JsonProcessingException e) {
-                    throw new RuntimeException(e);
-                }
+                DocumentContext documentContext =
+                        JsonPath.using(Configuration.defaultConfiguration()).parse(textContent.text());
+                var contentMap = documentContext.read("$.result", Map.class);
+                assertThat(contentMap).extractingByKey("result").isEqualTo("SUCCESS");
+                assertThat(contentMap).extractingByKey("number").isEqualTo(build.getNumber());
             });
         }
     }
@@ -260,7 +257,7 @@ class DefaultMcpServerTest {
             assertThat(response.content()).hasSize(1);
             assertThat(response.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
                 assertThat(textContent.type()).isEqualTo("text");
-                assertThat(textContent.text()).contains("Result is null");
+                assertThat(textContent.text()).contains(ToolResponse.NO_DATA_MSG);
             });
         }
     }
@@ -292,42 +289,30 @@ class DefaultMcpServerTest {
 
                 var response = client.callTool(request);
                 assertThat(response.isError()).isFalse();
-                assertThat(response.content()).hasSize(10);
                 assertThat(response.content().get(0).type()).isEqualTo("text");
-                assertThat(response.content())
-                        .first()
-                        .isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
-                            assertThat(textContent.type()).isEqualTo("text");
-
-                            ObjectMapper objectMapper = new ObjectMapper();
-                            try {
-                                var contentMap = objectMapper.readValue(textContent.text(), Map.class);
-                                assertThat(contentMap).containsEntry("name", "sub-demo-job0");
-                            } catch (JsonProcessingException e) {
-                                throw new RuntimeException(e);
-                            }
-                        });
+                DocumentContext documentContext = JsonPath.using(Configuration.defaultConfiguration())
+                        .parse(((McpSchema.TextContent) response.content().get(0)).text());
+                var contentList = documentContext.read("$.result", List.class);
+                assertThat(contentList).hasSize(10);
+                assertThat(contentList.get(0)).isInstanceOfSatisfying(Map.class, contentMap -> {
+                    // var contentMap = objectMapper.readValue(textContent.text(), Map.class);
+                    assertThat(contentMap).containsEntry("name", "sub-demo-job0");
+                });
             }
             {
                 McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("getJobs", Map.of());
 
                 var response = client.callTool(request);
                 assertThat(response.isError()).isFalse();
-                assertThat(response.content()).hasSize(3);
                 assertThat(response.content().get(0).type()).isEqualTo("text");
-                assertThat(response.content())
-                        .first()
-                        .isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
-                            assertThat(textContent.type()).isEqualTo("text");
-
-                            ObjectMapper objectMapper = new ObjectMapper();
-                            try {
-                                var contentMap = objectMapper.readValue(textContent.text(), Map.class);
-                                assertThat(contentMap).containsEntry("name", "demo-job0");
-                            } catch (JsonProcessingException e) {
-                                throw new RuntimeException(e);
-                            }
-                        });
+                DocumentContext documentContext = JsonPath.using(Configuration.defaultConfiguration())
+                        .parse(((McpSchema.TextContent) response.content().get(0)).text());
+                var contentList = documentContext.read("$.result", List.class);
+                assertThat(contentList).hasSize(3);
+                assertThat(contentList.get(0)).isInstanceOfSatisfying(Map.class, contentMap -> {
+                    // var contentMap = objectMapper.readValue(textContent.text(), Map.class);
+                    assertThat(contentMap).containsEntry("name", "demo-job0");
+                });
             }
         }
         jenkins.waitUntilNoActivityUpTo(MIN_1);
@@ -364,18 +349,18 @@ class DefaultMcpServerTest {
                 assertThat(response.isError()).isFalse();
                 assertThat(response.content()).hasSize(1);
                 assertThat(response.content().get(0).type()).isEqualTo("text");
+
                 assertThat(response.content())
                         .first()
                         .isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
                             assertThat(textContent.type()).isEqualTo("text");
 
-                            ObjectMapper objectMapper = new ObjectMapper();
-                            try {
-                                var contentMap = objectMapper.readValue(textContent.text(), Map.class);
-                                assertThat(contentMap).containsEntry(FULL_NAME, expectedUser);
-                            } catch (JsonProcessingException e) {
-                                throw new RuntimeException(e);
-                            }
+                            DocumentContext documentContext = JsonPath.using(Configuration.defaultConfiguration())
+                                    .parse(textContent.text());
+
+                            var contentMap = documentContext.read("$.result", Map.class);
+
+                            assertThat(contentMap).containsEntry(FULL_NAME, expectedUser);
                         });
             }
         }
@@ -403,23 +388,17 @@ class DefaultMcpServerTest {
                         .first()
                         .isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
                             assertThat(textContent.type()).isEqualTo("text");
-
-                            ObjectMapper objectMapper = new ObjectMapper();
-                            try {
-                                var contentMap = objectMapper.readValue(textContent.text(), Map.class);
-                                // Do not want to be too specific here as defaults may change and test become flaky
-                                assertThat(contentMap).containsKey("Active administrative monitors");
-                                assertThat(contentMap).containsKey("Available executors (any label)");
-                                assertThat(contentMap).containsKey("Buildable Queue Size");
-                                assertThat(contentMap)
-                                        .containsKey("Defined clouds that can provide agents (any label)");
-                                // This should not change
-                                assertThat(contentMap).containsEntry("Full Queue Size", 0);
-                                assertThat(contentMap).containsEntry("Quiet Mode", false);
-
-                            } catch (JsonProcessingException e) {
-                                throw new RuntimeException(e);
-                            }
+                            DocumentContext documentContext = JsonPath.using(Configuration.defaultConfiguration())
+                                    .parse(textContent.text());
+                            var contentMap = documentContext.read("$.result", Map.class);
+                            // Do not want to be too specific here as defaults may change and test become flaky
+                            assertThat(contentMap).containsKey("Active administrative monitors");
+                            assertThat(contentMap).containsKey("Available executors (any label)");
+                            assertThat(contentMap).containsKey("Buildable Queue Size");
+                            assertThat(contentMap).containsKey("Defined clouds that can provide agents (any label)");
+                            // This should not change
+                            assertThat(contentMap).containsEntry("Full Queue Size", 0);
+                            assertThat(contentMap).containsEntry("Quiet Mode", false);
                         });
             }
         }

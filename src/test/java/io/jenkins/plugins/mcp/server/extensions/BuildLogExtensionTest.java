@@ -30,17 +30,20 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jayway.jsonpath.Configuration;
+import com.jayway.jsonpath.DocumentContext;
+import com.jayway.jsonpath.JsonPath;
 import io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder;
 import io.jenkins.plugins.mcp.server.junit.McpClientTest;
 import io.jenkins.plugins.mcp.server.junit.TestUtils;
+import io.jenkins.plugins.mcp.server.tool.ToolResponse;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
+import net.minidev.json.JSONArray;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
@@ -87,25 +90,21 @@ public class BuildLogExtensionTest {
             response.content().forEach(content -> {
                 assertThat(content.type()).isEqualTo("text");
                 assertThat(content).isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
-                    JsonNode jsonNode;
-                    try {
-                        jsonNode = objectMapper.readTree(textContent.text());
-                    } catch (JsonProcessingException e) {
-                        throw new RuntimeException(e);
-                    }
-
-                    assertThat(jsonNode.has("hasMoreContent")).isTrue();
-                    assertThat(hasMoreContent).matches(expected -> expected == hasMoreContent);
+                    DocumentContext documentContext =
+                            JsonPath.using(Configuration.defaultConfiguration()).parse(textContent.text());
+                    var contentMap = documentContext.read("$.result", Map.class);
+                    assertThat((Boolean) contentMap.get("hasMoreContent"))
+                            .matches(expected -> expected == hasMoreContent);
 
                     // Verify new fields exist
-                    assertThat(jsonNode.has("totalLines")).isTrue();
-                    assertThat(jsonNode.has("startLine")).isTrue();
-                    assertThat(jsonNode.has("endLine")).isTrue();
+                    assertThat(contentMap.get("totalLines")).isNotNull();
+                    assertThat(contentMap.get("startLine")).isNotNull();
+                    assertThat(contentMap.get("endLine")).isNotNull();
 
-                    JsonNode linesArray = jsonNode.get("lines");
+                    JSONArray linesArray = (JSONArray) contentMap.get("lines");
                     assertThat(linesArray.size()).isEqualTo(expectedContentSize);
-                    for (JsonNode lineNode : linesArray) {
-                        assertThat(lineNode.asText().trim()).isNotEmpty();
+                    for (Object lineNode : linesArray) {
+                        assertThat(((String) lineNode).trim()).isNotEmpty();
                     }
                     if (!expectedLines.isEmpty()) {
                         List lines = objectMapper.convertValue(linesArray, List.class);
@@ -134,12 +133,10 @@ public class BuildLogExtensionTest {
             var response = client.callTool(request);
             assertThat(response.isError()).isFalse();
             assertThat(response.content()).hasSize(1);
-            response.content().forEach(content -> {
-                assertThat(content.type()).isEqualTo("text");
-                assertThat(content).isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
-                    assertThat(textContent.text()).isEqualTo("Result is null");
-                });
-            });
+            var contentMap = new ObjectMapper()
+                    .readValue(((McpSchema.TextContent) response.content().get(0)).text(), Map.class);
+            assertThat(contentMap.get("result")).isNull();
+            assertThat((String) contentMap.get("message")).isEqualTo(ToolResponse.NO_DATA_MSG);
         }
     }
 
@@ -175,7 +172,7 @@ public class BuildLogExtensionTest {
                         -4L,
                         3,
                         3,
-                        false,
+                        true,
                         List.of("Started", "[Pipeline] Start of Pipeline", "[Pipeline] End of Pipeline")),
                 Arguments.of(-2L, 3, 2, false, List.of("[Pipeline] End of Pipeline", "Finished: SUCCESS")),
                 Arguments.of(
@@ -184,13 +181,13 @@ public class BuildLogExtensionTest {
                         3,
                         false,
                         List.of("[Pipeline] Start of Pipeline", "[Pipeline] End of Pipeline", "Finished: SUCCESS")),
-                Arguments.of(-2L, 2, 2, true, List.of("[Pipeline] End of Pipeline", "Finished: SUCCESS")),
+                Arguments.of(-2L, 2, 2, false, List.of("[Pipeline] End of Pipeline", "Finished: SUCCESS")),
                 Arguments.of(-1L, 10, 1, false, List.of("Finished: SUCCESS")),
                 Arguments.of(-1L, -2, 2, true, List.of("[Pipeline] Start of Pipeline", "[Pipeline] End of Pipeline")),
                 Arguments.of(2L, -2, 2, true, List.of("Started", "[Pipeline] Start of Pipeline")),
                 // Test skip=0, limit<0: should return last -limit lines
-                Arguments.of(0L, -2, 2, true, List.of("[Pipeline] End of Pipeline", "Finished: SUCCESS")),
-                Arguments.of(0L, -1, 1, true, List.of("Finished: SUCCESS")));
+                Arguments.of(0L, -2, 2, false, List.of("[Pipeline] End of Pipeline", "Finished: SUCCESS")),
+                Arguments.of(0L, -1, 1, false, List.of("Finished: SUCCESS")));
 
         // 扩展成 2 倍：每组参数 + 两个不同的 McpClientProvider
         return TestUtils.appendMcpClientArgs(baseArgs);
@@ -220,23 +217,18 @@ public class BuildLogExtensionTest {
             var response = client.callTool(request);
             assertThat(response.isError()).isFalse();
             assertThat(response.content()).hasSize(1);
+            var content = response.content().get(0);
+            assertThat(content.type()).isEqualTo("text");
+            assertThat(content).isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                DocumentContext documentContext =
+                        JsonPath.using(Configuration.defaultConfiguration()).parse(textContent.text());
+                var contentMap = documentContext.read("$.result", Map.class);
 
-            response.content().forEach(content -> {
-                assertThat(content.type()).isEqualTo("text");
-                assertThat(content).isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
-                    JsonNode jsonNode;
-                    try {
-                        jsonNode = objectMapper.readTree(textContent.text());
-                    } catch (JsonProcessingException e) {
-                        throw new RuntimeException(e);
-                    }
-
-                    assertThat(jsonNode.has("pattern")).isTrue();
-                    assertThat(jsonNode.get("pattern").asText()).isEqualTo("ERROR");
-                    assertThat(jsonNode.has("matchCount")).isTrue();
-                    assertThat(jsonNode.get("matchCount").asInt()).isGreaterThan(0);
-                    assertThat(jsonNode.has("matches")).isTrue();
-                });
+                assertThat(contentMap.get("pattern")).isNotNull();
+                assertThat((String) contentMap.get("pattern")).isEqualTo("ERROR");
+                assertThat(contentMap.get("matchCount")).isNotNull();
+                assertThat((Integer) contentMap.get("matchCount")).isGreaterThan(0);
+                assertThat(contentMap.get("matches")).isNotNull();
             });
         }
     }
@@ -261,19 +253,15 @@ public class BuildLogExtensionTest {
             assertThat(response.isError()).isFalse();
             assertThat(response.content()).hasSize(1);
 
-            response.content().forEach(content -> {
-                assertThat(content.type()).isEqualTo("text");
-                assertThat(content).isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
-                    JsonNode jsonNode;
-                    try {
-                        jsonNode = objectMapper.readTree(textContent.text());
-                    } catch (JsonProcessingException e) {
-                        throw new RuntimeException(e);
-                    }
+            var content = response.content().get(0);
+            assertThat(content.type()).isEqualTo("text");
+            assertThat(content).isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                DocumentContext documentContext =
+                        JsonPath.using(Configuration.defaultConfiguration()).parse(textContent.text());
+                var contentMap = documentContext.read("$.result", Map.class);
 
-                    assertThat(jsonNode.get("useRegex").asBoolean()).isTrue();
-                    assertThat(jsonNode.get("matchCount").asInt()).isGreaterThanOrEqualTo(2);
-                });
+                assertThat((Boolean) contentMap.get("useRegex")).isTrue();
+                assertThat((Integer) contentMap.get("matchCount")).isGreaterThanOrEqualTo(2);
             });
         }
     }
