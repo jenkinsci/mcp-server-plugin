@@ -230,7 +230,20 @@ public class Endpoint extends CrumbExclusion implements RootAction {
             if (isSSERequest(servletRequest)) {
                 handleSSE(servletRequest, servletResponse);
             } else if (isStreamableRequest(servletRequest)) {
-                handleMessage(servletRequest, servletResponse, httpServletStreamableServerTransportProvider);
+                if (servletRequest instanceof HttpServletRequest req
+                        && req.getMethod().equalsIgnoreCase("GET")) {
+                    // Serve friendly error page for GET requests to /mcp-server/mcp
+                    HttpServletResponse resp = (HttpServletResponse) servletResponse;
+                    resp.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+                    resp.setContentType("text/html;charset=UTF-8");
+                    resp.getWriter()
+                            .write(
+                                    "<html><head><title>Model Context Protocol Endpoint</title></head>"
+                                            + "<body><h2>This endpoint is designed for an AI agent using the Model Context Protocol.</h2></body></html>");
+                    resp.getWriter().flush();
+                } else {
+                    handleMessage(servletRequest, servletResponse, httpServletStreamableServerTransportProvider);
+                }
             } else {
                 filterChain.doFilter(servletRequest, servletResponse);
             }
