@@ -29,8 +29,9 @@ package io.jenkins.plugins.mcp.server;
 import static io.jenkins.plugins.mcp.server.Endpoint.MCP_SERVER_SSE;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jayway.jsonpath.Configuration;
+import com.jayway.jsonpath.DocumentContext;
+import com.jayway.jsonpath.JsonPath;
 import io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder;
 import io.jenkins.plugins.mcp.server.junit.McpClientTest;
 import io.modelcontextprotocol.spec.McpSchema;
@@ -98,15 +99,11 @@ public class EndPointTest {
             assertThat(response.content().get(0).type()).isEqualTo("text");
             assertThat(response.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
                 assertThat(textContent.type()).isEqualTo("text");
+                DocumentContext documentContext =
+                        JsonPath.using(Configuration.defaultConfiguration()).parse(textContent.text());
 
-                ObjectMapper objectMapper = new ObjectMapper();
-                try {
-                    var contetMap = objectMapper.readValue(textContent.text(), Map.class);
-                    assertThat(contetMap).extractingByKey("message").isEqualTo("Hello, foo!");
-
-                } catch (JsonProcessingException e) {
-                    throw new RuntimeException(e);
-                }
+                var contentMap = documentContext.read("$.result", Map.class);
+                assertThat(contentMap).extractingByKey("message").isEqualTo("Hello, foo!");
             });
         }
     }
@@ -114,9 +111,6 @@ public class EndPointTest {
     @McpClientTest
     void testMcpToolCallIntResult(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
             throws Exception {
-
-        var url = jenkins.getURL();
-        var baseUrl = url.toString();
 
         try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
             McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("testInt", Map.of());
@@ -127,15 +121,10 @@ public class EndPointTest {
             assertThat(response.content().get(0).type()).isEqualTo("text");
             assertThat(response.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
                 assertThat(textContent.type()).isEqualTo("text");
-
-                ObjectMapper objectMapper = new ObjectMapper();
-                try {
-                    var result = objectMapper.readValue(textContent.text(), Integer.class);
-                    assertThat(result).isEqualTo(10);
-
-                } catch (JsonProcessingException e) {
-                    throw new RuntimeException(e);
-                }
+                DocumentContext documentContext =
+                        JsonPath.using(Configuration.defaultConfiguration()).parse(textContent.text());
+                var result = documentContext.read("$.result", Integer.class);
+                assertThat(result).isEqualTo(10);
             });
         }
     }

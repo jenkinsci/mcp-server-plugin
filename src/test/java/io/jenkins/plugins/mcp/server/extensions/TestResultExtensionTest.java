@@ -65,11 +65,15 @@ public class TestResultExtensionTest {
             assertThat(response.content().get(0).type()).isEqualTo("text");
             assertThat(response.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
                 assertThat(textContent.type()).isEqualTo("text");
-                ;
             });
 
-            Map<String, Object> result = OBJECT_MAPPER.readValue(
-                    ((McpSchema.TextContent) response.content().get(0)).text(), Map.class);
+            DocumentContext documentContext = JsonPath.using(Configuration.defaultConfiguration())
+                    .parse(((McpSchema.TextContent) response.content().get(0)).text());
+
+            var result = documentContext.read("$.result", Map.class);
+
+            //            Map<String, Object> result = OBJECT_MAPPER.readValue(
+            //                    ((McpSchema.TextContent) response.content().get(0)).text(), Map.class);
 
             Object testResultAction = result.get("TestResultAction");
             assertThat(testResultAction).isNotNull();
@@ -79,18 +83,18 @@ public class TestResultExtensionTest {
             Configuration conf = Configuration.defaultConfiguration();
             String rawJson = ((McpSchema.TextContent) response.content().get(0)).text();
             //            System.out.println(rawJson);
-            DocumentContext documentContext = JsonPath.using(conf).parse(rawJson);
-            assertThat(documentContext.read("$.TestResult.failCount", Integer.class))
+            documentContext = JsonPath.using(conf).parse(rawJson);
+            assertThat(documentContext.read("$.result.TestResult.failCount", Integer.class))
                     .isEqualTo(testResult.getFailCount());
-            assertThat(documentContext.read("$.TestResult.passCount", Integer.class))
+            assertThat(documentContext.read("$.result.TestResult.passCount", Integer.class))
                     .isEqualTo(testResult.getPassCount());
 
             //            documentContext = JsonPath.using(conf).parse(rawJson);
             //            conf = conf.addOptions(Option.ALWAYS_RETURN_LIST);
-            List<Object> list = documentContext.read("$.TestResult..suites");
+            List<Object> list = documentContext.read("$.result.TestResult..suites");
             assertThat(list).size().isEqualTo(testResult.getSuites().size());
 
-            list = documentContext.read("$.TestResult..suites..cases..className");
+            list = documentContext.read("$.result.TestResult..suites..cases..className");
             assertThat(list)
                     .size()
                     .isEqualTo(testResult.getSuites().stream()
