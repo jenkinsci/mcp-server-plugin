@@ -33,16 +33,14 @@ public class TestResultExtensionTest {
             throws Exception {
 
         WorkflowJob j = jenkins.createProject(WorkflowJob.class, "singleStep");
-        j.setDefinition(new CpsFlowDefinition(
-                """
+        j.setDefinition(new CpsFlowDefinition("""
                         stage('first') {
                           node {
                             def results = junit(testResults: '*.xml')
                             assert results.totalCount == 6
                           }
                         }
-                        """,
-                true));
+                        """, true));
         FilePath ws = jenkins.jenkins.getWorkspaceFor(j);
         FilePath testFile = Objects.requireNonNull(ws).child("test-result.xml");
         testFile.copyFrom(TestResultExtensionTest.class.getResource("junit-report-20090516.xml"));
@@ -121,16 +119,14 @@ public class TestResultExtensionTest {
             throws Exception {
 
         WorkflowJob j = jenkins.createProject(WorkflowJob.class, "singleStep");
-        j.setDefinition(new CpsFlowDefinition(
-                """
+        j.setDefinition(new CpsFlowDefinition("""
                         stage('first') {
                           node {
                             def results = junit(testResults: '*.xml')
                             assert results.totalCount == 6
                           }
                         }
-                        """,
-                true));
+                        """, true));
         FilePath ws = jenkins.jenkins.getWorkspaceFor(j);
 
         List.of("TEST-org.test.DefaultTest.xml", "junit-report-20090516.xml").forEach(s -> {
