@@ -230,8 +230,7 @@ public class Endpoint extends CrumbExclusion implements RootAction {
             if (isSSERequest(servletRequest)) {
                 handleSSE(servletRequest, servletResponse);
             } else if (isStreamableRequest(servletRequest)) {
-                if (servletRequest instanceof HttpServletRequest req
-                        && req.getMethod().equalsIgnoreCase("GET")) {
+                if (isBrowserRequest(servletRequest)) {
                     // Serve friendly error page for GET requests to /mcp-server/mcp
                     HttpServletResponse resp = (HttpServletResponse) servletResponse;
                     resp.setStatus(HttpServletResponse.SC_BAD_REQUEST);
@@ -248,6 +247,15 @@ public class Endpoint extends CrumbExclusion implements RootAction {
                 filterChain.doFilter(servletRequest, servletResponse);
             }
         });
+    }
+
+    private boolean isBrowserRequest(ServletRequest servletRequest) {
+        if (servletRequest instanceof HttpServletRequest req && req.getMethod().equalsIgnoreCase("GET")) {
+            String acceptHeader = req.getHeader("Accept");
+            return acceptHeader != null && acceptHeader.contains("text/html");
+        } else {
+            return false;
+        }
     }
 
     private static McpTransportContextExtractor<HttpServletRequest> createExtractor() {
