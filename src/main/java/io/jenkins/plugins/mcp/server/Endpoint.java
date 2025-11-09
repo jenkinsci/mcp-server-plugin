@@ -90,6 +90,8 @@ public class Endpoint extends CrumbExclusion implements RootAction {
 
     public static final String MCP_SERVER_MESSAGE = MCP_SERVER + MESSAGE_ENDPOINT;
     public static final String USER_ID = Endpoint.class.getName() + ".userId";
+    public static final String HTTP_SERVLET_REQUEST = Endpoint.class.getName() + ".httpServletRequest";
+
     private static final String MCP_CONTEXT_KEY = Endpoint.class.getName() + ".mcpContext";
 
     /**
@@ -421,6 +423,7 @@ public class Endpoint extends CrumbExclusion implements RootAction {
         if (userId != null) {
             contextMap.put(USER_ID, userId);
         }
+        contextMap.put(HTTP_SERVLET_REQUEST, request);
         request.setAttribute(MCP_CONTEXT_KEY, McpTransportContext.create(contextMap));
     }
 }
