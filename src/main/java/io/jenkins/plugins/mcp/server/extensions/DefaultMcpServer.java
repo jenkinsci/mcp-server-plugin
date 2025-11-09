@@ -46,6 +46,7 @@ import hudson.slaves.Cloud;
 import io.jenkins.plugins.mcp.server.McpServerExtension;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
+import io.jenkins.plugins.mcp.server.tool.JenkinsMcpContext;
 import jakarta.annotation.Nullable;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -56,8 +57,11 @@ import java.util.Objects;
 import java.util.Optional;
 import jenkins.model.Jenkins;
 import jenkins.model.ParameterizedJobMixIn;
+import lombok.AllArgsConstructor;
+import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.kohsuke.stapler.export.Exported;
 
 @Extension
 @Slf4j
@@ -94,11 +98,19 @@ public class DefaultMcpServer implements McpServerExtension {
      *
      * @see #triggerBuild(String, Map)
      */
+    @Data
+    @AllArgsConstructor
     public static class MCPCause extends Cause {
+        private String addr;
+
+        @Exported(visibility = 3)
+        public String getAddr() {
+            return this.addr;
+        }
 
         @Override
         public String getShortDescription() {
-            return "Triggered via MCP Server";
+            return "Triggered via MCP Client from " + addr;
         }
     }
 
@@ -111,7 +123,8 @@ public class DefaultMcpServer implements McpServerExtension {
 
         if (job != null) {
             job.checkPermission(Item.BUILD);
-            CauseAction action = new CauseAction(new MCPCause(), new Cause.UserIdCause());
+            var remoteAddr = JenkinsMcpContext.get().getHttpServletRequest().getRemoteAddr();
+            CauseAction action = new CauseAction(new MCPCause(remoteAddr), new Cause.UserIdCause());
             if (job.isParameterized() && job instanceof Job j) {
                 ParametersDefinitionProperty parametersDefinition =
                         (ParametersDefinitionProperty) j.getProperty(ParametersDefinitionProperty.class);

@@ -26,6 +26,7 @@
 
 package io.jenkins.plugins.mcp.server.tool;
 
+import static io.jenkins.plugins.mcp.server.Endpoint.HTTP_SERVLET_REQUEST;
 import static io.jenkins.plugins.mcp.server.Endpoint.USER_ID;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -51,6 +52,7 @@ import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.server.McpSyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
@@ -274,8 +276,12 @@ public class McpToolWrapper {
                     })
                     .toArray();
 
+            var transportContext = exchange.transportContext();
+            var jenkinsMcpContext = JenkinsMcpContext.get();
+            jenkinsMcpContext.setHttpServletRequest((HttpServletRequest) transportContext.get(HTTP_SERVLET_REQUEST));
             var result = method.invoke(target, methodArgs);
             return toMcpResult(result);
+
         } catch (Exception e) {
             var rootCauseMessage = ExceptionUtils.getRootCauseMessage(e);
             if (rootCauseMessage.isEmpty()) {
@@ -295,6 +301,7 @@ public class McpToolWrapper {
                     .build();
         } finally {
             ACL.as(oldUser);
+            JenkinsMcpContext.clear();
         }
     }
 
