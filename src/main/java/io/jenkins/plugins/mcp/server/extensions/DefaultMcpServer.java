@@ -95,18 +95,9 @@ public class DefaultMcpServer implements McpServerExtension {
      * @see #triggerBuild(String, Map)
      */
     public static class MCPCause extends Cause {
-        private final String userId;
-
-        public MCPCause() {
-            User currentUser = User.current();
-            this.userId = currentUser != null ? currentUser.getId() : null;
-        }
 
         @Override
         public String getShortDescription() {
-            if (userId != null) {
-                return "Triggered via MCP Server by " + userId;
-            }
             return "Triggered via MCP Server";
         }
     }
@@ -120,7 +111,7 @@ public class DefaultMcpServer implements McpServerExtension {
 
         if (job != null) {
             job.checkPermission(Item.BUILD);
-            CauseAction action = new CauseAction(new MCPCause());
+            CauseAction action = new CauseAction(new MCPCause(), new Cause.UserIdCause());
             if (job.isParameterized() && job instanceof Job j) {
                 ParametersDefinitionProperty parametersDefinition =
                         (ParametersDefinitionProperty) j.getProperty(ParametersDefinitionProperty.class);
