@@ -14,6 +14,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import lombok.Getter;
+import lombok.Setter;
 import org.jenkinsci.plugins.variant.OptionalExtension;
 
 @OptionalExtension(requirePlugins = "junit")
@@ -47,7 +49,8 @@ public class TestResultExtension implements McpServerExtension {
                     if (Boolean.TRUE.equals(onlyFailingTests)) {
                         var failingTests = result.getTestResult().getSuites().stream()
                                 .flatMap(suiteResult -> suiteResult.getCases().stream())
-                                .filter(caseResult -> caseResult.getStatus() == hudson.tasks.junit.CaseResult.Status.FAILED)
+                                .filter(caseResult ->
+                                        caseResult.getStatus() == hudson.tasks.junit.CaseResult.Status.FAILED)
                                 .toList();
                         response.put("failingTests", failingTests);
                     } else {
@@ -112,7 +115,8 @@ public class TestResultExtension implements McpServerExtension {
         return Map.of();
     }
 
-
+    @Getter
+    @Setter
     public static final class CaseResult {
         private float duration;
         private String className;
@@ -124,10 +128,22 @@ public class TestResultExtension implements McpServerExtension {
         private int failedSince;
         private String stdout;
         private String stderr;
-        private Map<String,String> properties;
+        private Map<String, String> properties;
         private List<FlakyFailure> flakyFailures;
 
-        public CaseResult(float duration, String className, String testName, String skippedMessage, boolean skipped, String errorStackTrace, String errorDetails, int failedSince, String stdout, String stderr, Map<String, String> properties, List<FlakyFailure> flakyFailures) {
+        public CaseResult(
+                float duration,
+                String className,
+                String testName,
+                String skippedMessage,
+                boolean skipped,
+                String errorStackTrace,
+                String errorDetails,
+                int failedSince,
+                String stdout,
+                String stderr,
+                Map<String, String> properties,
+                List<FlakyFailure> flakyFailures) {
             this.duration = duration;
             this.className = className;
             this.testName = testName;
@@ -141,56 +157,10 @@ public class TestResultExtension implements McpServerExtension {
             this.properties = properties;
             this.flakyFailures = flakyFailures;
         }
-
-        public float getDuration() {
-            return duration;
-        }
-
-        public String getClassName() {
-            return className;
-        }
-
-        public String getTestName() {
-            return testName;
-        }
-
-        public String getSkippedMessage() {
-            return skippedMessage;
-        }
-
-        public boolean isSkipped() {
-            return skipped;
-        }
-
-        public String getErrorStackTrace() {
-            return errorStackTrace;
-        }
-
-        public String getErrorDetails() {
-            return errorDetails;
-        }
-
-        public int getFailedSince() {
-            return failedSince;
-        }
-
-        public String getStdout() {
-            return stdout;
-        }
-
-        public String getStderr() {
-            return stderr;
-        }
-
-        public Map<String, String> getProperties() {
-            return properties;
-        }
-
-        public List<FlakyFailure> getFlakyFailures() {
-            return flakyFailures;
-        }
     }
 
+    @Getter
+    @Setter
     public static final class FlakyFailure {
         private final String message;
         private final String type;
@@ -204,26 +174,6 @@ public class TestResultExtension implements McpServerExtension {
             this.stackTrace = stackTrace;
             this.stdout = stdout;
             this.stderr = stderr;
-        }
-
-        public String getMessage() {
-            return message;
-        }
-
-        public String getType() {
-            return type;
-        }
-
-        public String getStackTrace() {
-            return stackTrace;
-        }
-
-        public String getStdout() {
-            return stdout;
-        }
-
-        public String getStderr() {
-            return stderr;
         }
     }
 }
