@@ -9,11 +9,14 @@ import com.jayway.jsonpath.JsonPath;
 import hudson.FilePath;
 import hudson.model.Result;
 import hudson.model.Run;
+import hudson.tasks.junit.CaseResult;
+import hudson.tasks.junit.SuiteResult;
 import hudson.tasks.junit.TestResult;
 import hudson.tasks.junit.TestResultAction;
 import io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder;
 import io.jenkins.plugins.mcp.server.junit.McpClientTest;
 import io.modelcontextprotocol.spec.McpSchema;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -176,6 +179,85 @@ public class TestResultExtensionTest {
                 List<Object> list = documentContext.read("$..failingTests..className");
                 assertThat(list).size().isEqualTo(testResult.getFailedTests().size());
                 assertThat(list).size().isEqualTo(3); // There are 3 failing tests in the two reports
+            }
+        }
+    }
+
+    @McpClientTest
+    void testMcpToolCallGetFlakyFailures(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
+            throws Exception {
+
+        WorkflowJob j = jenkins.createProject(WorkflowJob.class, "singleStep");
+        j.setDefinition(new CpsFlowDefinition("""
+                        stage('first') {
+                          node {
+                            def results = junit(testResults: '*.xml')
+                            assert results.totalCount == 6
+                          }
+                        }
+                        """, true));
+        FilePath ws = jenkins.jenkins.getWorkspaceFor(j);
+
+        List.of(
+                        "TEST-org.test.DefaultTest.xml",
+                        "junit-report-20090516.xml",
+                        "TEST-io.olamy.FlakyTest.xml",
+                        "TEST-org.foo.FlakyTest.xml")
+                .forEach(s -> {
+                    try {
+                        FilePath testFile =
+                                Objects.requireNonNull(ws).child("test-result" + UUID.randomUUID() + ".xml");
+                        testFile.copyFrom(TestResultExtensionTest.class.getResource(s));
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                });
+
+        Run run = jenkins.buildAndAssertStatus(Result.FAILURE, j);
+        assertThat(run).isNotNull();
+        assertThat(run.getAction(TestResultAction.class)).isNotNull();
+
+        TestResult testResult = run.getAction(TestResultAction.class).getResult();
+
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+            {
+                McpSchema.CallToolRequest request =
+                        new McpSchema.CallToolRequest("getFlakyFailures", Map.of("jobFullName", j.getFullName()));
+
+                var response = client.callTool(request);
+
+                // Assert response
+                assertThat(response.isError()).isFalse();
+                assertThat(response.content()).hasSize(1);
+                assertThat(response.content().get(0).type()).isEqualTo("text");
+                assertThat(response.content())
+                        .first()
+                        .isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                            assertThat(textContent.type()).isEqualTo("text");
+                        });
+
+                DocumentContext documentContext = JsonPath.using(Configuration.defaultConfiguration())
+                        .parse(((McpSchema.TextContent) response.content().get(0)).text());
+
+                var result = documentContext.read("$.result", Map.class);
+
+                Object testResultAction = result.get("TestResultAction");
+                assertThat(testResultAction).isNotNull();
+
+                Object testResultRaw = result.get("flakyFailures");
+                assertThat(testResultRaw).isNotNull();
+
+                List<Object> list = documentContext.read("$..flakyFailures..message");
+                assertThat(list)
+                        .size()
+                        .isEqualTo(testResult.getSuites().stream()
+                                .map(SuiteResult::getCases)
+                                .flatMap(Collection::stream)
+                                .map(CaseResult::getFlakyFailures)
+                                .filter(failures -> !failures.isEmpty())
+                                .mapToLong(Collection::size)
+                                .sum());
+                assertThat(list).size().isEqualTo(4); // There are 4 flaky failures in the four reports
             }
         }
     }

@@ -31,8 +31,8 @@
     <changelist>999999-SNAPSHOT</changelist>
     <revision>0</revision>
     <!-- https://www.jenkins.io/doc/developer/plugin-development/choosing-jenkins-baseline/ -->
-    <jenkins.baseline>2.492</jenkins.baseline>
-    <jenkins.version>${jenkins.baseline}.3</jenkins.version>
+    <jenkins.baseline>2.516</jenkins.baseline>
+    <jenkins.version>2.533</jenkins.version>
     <gitHubRepo>jenkinsci/${project.artifactId}-plugin</gitHubRepo>
     <spotless.check.skip>false</spotless.check.skip>
     <ban-junit4-imports.skip>false</ban-junit4-imports.skip>
@@ -51,7 +51,7 @@
         <!-- Pick up common dependencies for the selected LTS line: https://github.com/jenkinsci/bom#usage -->
         <groupId>io.jenkins.tools.bom</groupId>
         <artifactId>bom-${jenkins.baseline}.x</artifactId>
-        <version>5422.v0fce72a_b_b_8cf</version>
+        <version>5701.va_b_018a_a_6b_0d3</version>
         <type>pom</type>
         <scope>import</scope>
       </dependency>
@@ -161,6 +161,7 @@
     <dependency>
       <groupId>org.jenkins-ci.plugins</groupId>
       <artifactId>junit</artifactId>
+      <version>1380.v491ff054cd35</version>
       <optional>true</optional>
     </dependency>
     <dependency>
