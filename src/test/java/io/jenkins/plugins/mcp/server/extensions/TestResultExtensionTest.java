@@ -244,7 +244,7 @@ public class TestResultExtensionTest {
                 Object testResultAction = result.get("TestResultAction");
                 assertThat(testResultAction).isNotNull();
 
-                Object testResultRaw = result.get("flakyFailures");
+                Object testResultRaw = result.get("TestResultWithFlakyFailures");
                 assertThat(testResultRaw).isNotNull();
 
                 List<Object> list = documentContext.read("$..flakyFailures..message");

@@ -11,6 +11,7 @@ import io.jenkins.plugins.mcp.server.extensions.util.JenkinsUtil;
 import jakarta.annotation.Nullable;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.jenkinsci.plugins.variant.OptionalExtension;
@@ -46,7 +47,7 @@ public class TestResultExtension implements McpServerExtension {
                     if (Boolean.TRUE.equals(onlyFailingTests)) {
                         var failingTests = result.getTestResult().getSuites().stream()
                                 .flatMap(suiteResult -> suiteResult.getCases().stream())
-                                .filter(caseResult -> caseResult.getStatus() == CaseResult.Status.FAILED)
+                                .filter(caseResult -> caseResult.getStatus() == hudson.tasks.junit.CaseResult.Status.FAILED)
                                 .toList();
                         response.put("failingTests", failingTests);
                     } else {
@@ -81,18 +82,113 @@ public class TestResultExtension implements McpServerExtension {
                     var flakyFailures = result.getTestResult().getSuites().stream()
                             .map(SuiteResult::getCases)
                             .flatMap(Collection::stream)
-                            .map(CaseResult::getFlakyFailures)
-                            .filter(failures -> !failures.isEmpty())
-                            .flatMap(Collection::stream)
-                            // well record doesn't look to be supported so map to a standard java bean
-                            .map(f -> new FlakyFailure(f.message(), f.type(), f.stackTrace(), f.stdout(), f.stderr()))
+                            .filter(caseResult -> !caseResult.getFlakyFailures().isEmpty())
+                            .map(caseResult -> new CaseResult(
+                                    caseResult.getDuration(),
+                                    caseResult.getClassName(),
+                                    caseResult.getName(),
+                                    caseResult.getSkippedMessage(),
+                                    caseResult.isSkipped(),
+                                    caseResult.getErrorStackTrace(),
+                                    caseResult.getErrorDetails(),
+                                    caseResult.getFailedSince(),
+                                    caseResult.getStdout(),
+                                    caseResult.getStderr(),
+                                    caseResult.getProperties(),
+                                    caseResult.getFlakyFailures().stream()
+                                            .map(flakyFailure -> new FlakyFailure(
+                                                    flakyFailure.message(),
+                                                    flakyFailure.type(),
+                                                    flakyFailure.stackTrace(),
+                                                    flakyFailure.stdout(),
+                                                    flakyFailure.stderr()))
+                                            .toList()))
                             .toList();
-                    response.put("flakyFailures", flakyFailures);
+                    response.put("TestResultWithFlakyFailures", flakyFailures);
                 }
                 return response;
             }
         }
         return Map.of();
+    }
+
+
+    public static final class CaseResult {
+        private float duration;
+        private String className;
+        private String testName;
+        private String skippedMessage;
+        private boolean skipped;
+        private String errorStackTrace;
+        private String errorDetails;
+        private int failedSince;
+        private String stdout;
+        private String stderr;
+        private Map<String,String> properties;
+        private List<FlakyFailure> flakyFailures;
+
+        public CaseResult(float duration, String className, String testName, String skippedMessage, boolean skipped, String errorStackTrace, String errorDetails, int failedSince, String stdout, String stderr, Map<String, String> properties, List<FlakyFailure> flakyFailures) {
+            this.duration = duration;
+            this.className = className;
+            this.testName = testName;
+            this.skippedMessage = skippedMessage;
+            this.skipped = skipped;
+            this.errorStackTrace = errorStackTrace;
+            this.errorDetails = errorDetails;
+            this.failedSince = failedSince;
+            this.stdout = stdout;
+            this.stderr = stderr;
+            this.properties = properties;
+            this.flakyFailures = flakyFailures;
+        }
+
+        public float getDuration() {
+            return duration;
+        }
+
+        public String getClassName() {
+            return className;
+        }
+
+        public String getTestName() {
+            return testName;
+        }
+
+        public String getSkippedMessage() {
+            return skippedMessage;
+        }
+
+        public boolean isSkipped() {
+            return skipped;
+        }
+
+        public String getErrorStackTrace() {
+            return errorStackTrace;
+        }
+
+        public String getErrorDetails() {
+            return errorDetails;
+        }
+
+        public int getFailedSince() {
+            return failedSince;
+        }
+
+        public String getStdout() {
+            return stdout;
+        }
+
+        public String getStderr() {
+            return stderr;
+        }
+
+        public Map<String, String> getProperties() {
+            return properties;
+        }
+
+        public List<FlakyFailure> getFlakyFailures() {
+            return flakyFailures;
+        }
     }
 
     public static final class FlakyFailure {
