@@ -33,7 +33,6 @@ import hudson.Extension;
 import hudson.model.RootAction;
 import hudson.model.User;
 import hudson.security.csrf.CrumbExclusion;
-import hudson.util.PluginServletFilter;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.tool.McpToolWrapper;
 import io.modelcontextprotocol.common.McpTransportContext;
@@ -44,11 +43,8 @@ import io.modelcontextprotocol.server.McpTransportContextExtractor;
 import io.modelcontextprotocol.server.transport.HttpServletSseServerTransportProvider;
 import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema;
-import jakarta.servlet.Filter;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
-import jakarta.servlet.ServletRequest;
-import jakarta.servlet.ServletResponse;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -60,6 +56,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import jenkins.model.Jenkins;
+import jenkins.util.HttpServletFilter;
 import jenkins.util.SystemProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -72,7 +69,7 @@ import org.kohsuke.accmod.restrictions.NoExternalUse;
 @Restricted(NoExternalUse.class)
 @Extension
 @Slf4j
-public class Endpoint extends CrumbExclusion implements RootAction {
+public class Endpoint extends CrumbExclusion implements RootAction, HttpServletFilter {
 
     public static final String MCP_SERVER = "mcp-server";
 
@@ -228,31 +225,34 @@ public class Endpoint extends CrumbExclusion implements RootAction {
                 .prompts(prompts)
                 .resources(resources)
                 .build();
-        PluginServletFilter.addFilter((Filter) (servletRequest, servletResponse, filterChain) -> {
-            if (isSSERequest(servletRequest)) {
-                handleSSE(servletRequest, servletResponse);
-            } else if (isStreamableRequest(servletRequest)) {
-                if (isBrowserRequest(servletRequest)) {
-                    // Serve friendly error page for GET requests to /mcp-server/mcp
-                    HttpServletResponse resp = (HttpServletResponse) servletResponse;
-                    resp.setStatus(HttpServletResponse.SC_BAD_REQUEST);
-                    resp.setContentType("text/html;charset=UTF-8");
-                    resp.getWriter()
-                            .write(
-                                    "<html><head><title>Model Context Protocol Endpoint</title></head>"
-                                            + "<body><h2>This endpoint is designed for an AI agent using the Model Context Protocol.</h2></body></html>");
-                    resp.getWriter().flush();
-                } else {
-                    handleMessage(servletRequest, servletResponse, httpServletStreamableServerTransportProvider);
-                }
-            } else {
-                filterChain.doFilter(servletRequest, servletResponse);
-            }
-        });
     }
 
-    private boolean isBrowserRequest(ServletRequest servletRequest) {
-        if (servletRequest instanceof HttpServletRequest req && req.getMethod().equalsIgnoreCase("GET")) {
+    @Override
+    public boolean handle(HttpServletRequest req, HttpServletResponse resp) throws IOException, ServletException {
+        if (isSSERequest(req)) {
+            handleSSE(req, resp);
+            return true;
+        } else if (isStreamableRequest(req)) {
+            if (isBrowserRequest(req)) {
+                // Serve friendly error page for GET requests to /mcp-server/mcp
+                resp.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+                resp.setContentType("text/html;charset=UTF-8");
+                resp.getWriter()
+                        .write(
+                                "<html><head><title>Model Context Protocol Endpoint</title></head>"
+                                        + "<body><h2>This endpoint is designed for an AI agent using the Model Context Protocol.</h2></body></html>");
+                resp.getWriter().flush();
+            } else {
+                handleMessage(req, resp, httpServletStreamableServerTransportProvider);
+            }
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    private boolean isBrowserRequest(HttpServletRequest req) {
+        if (req.getMethod().equalsIgnoreCase("GET")) {
             String acceptHeader = req.getHeader("Accept");
             return acceptHeader != null && acceptHeader.contains("text/html");
         } else {
@@ -264,11 +264,11 @@ public class Endpoint extends CrumbExclusion implements RootAction {
         return (httpServletRequest) -> (McpTransportContext) httpServletRequest.getAttribute(MCP_CONTEXT_KEY);
     }
 
-    private boolean validOriginHeader(ServletRequest request, ServletResponse response) {
-        String originHeaderValue = ((HttpServletRequest) request).getHeader("Origin");
+    private boolean validOriginHeader(HttpServletRequest request, HttpServletResponse response) {
+        String originHeaderValue = request.getHeader("Origin");
         if (REQUIRE_ORIGIN_HEADER && StringUtils.isEmpty(originHeaderValue)) {
             try {
-                ((HttpServletResponse) response).sendError(HttpServletResponse.SC_FORBIDDEN, "Missing Origin header");
+                response.sendError(HttpServletResponse.SC_FORBIDDEN, "Missing Origin header");
                 return false;
             } catch (IOException e) {
                 throw new RuntimeException(e);
@@ -282,12 +282,12 @@ public class Endpoint extends CrumbExclusion implements RootAction {
                 return true;
             }
 
-            String o = getRootUrlFromRequest((HttpServletRequest) request);
+            String o = getRootUrlFromRequest(request);
             String removeSuffix1 = "/";
             if (o.endsWith(removeSuffix1)) {
                 o = o.substring(0, o.length() - removeSuffix1.length());
             }
-            String removeSuffix2 = ((HttpServletRequest) request).getContextPath();
+            String removeSuffix2 = request.getContextPath();
             if (o.endsWith(removeSuffix2)) {
                 o = o.substring(0, o.length() - removeSuffix2.length());
             }
@@ -297,10 +297,9 @@ public class Endpoint extends CrumbExclusion implements RootAction {
                 log.debug("Rejecting origin: {}; expected was from request: {}", originHeaderValue, expectedOrigin);
                 try {
 
-                    ((HttpServletResponse) response)
-                            .sendError(
-                                    HttpServletResponse.SC_FORBIDDEN,
-                                    "Unexpected request origin (check your reverse proxy settings)");
+                    response.sendError(
+                            HttpServletResponse.SC_FORBIDDEN,
+                            "Unexpected request origin (check your reverse proxy settings)");
                     return false;
                 } catch (IOException e) {
                     throw new RuntimeException(e);
@@ -381,30 +380,25 @@ public class Endpoint extends CrumbExclusion implements RootAction {
         return MCP_SERVER;
     }
 
-    boolean isSSERequest(ServletRequest servletRequest) {
-        if (servletRequest instanceof HttpServletRequest request) {
-            String requestedResource = getRequestedResourcePath(request);
-            return requestedResource.startsWith("/" + MCP_SERVER_SSE)
-                    && request.getMethod().equalsIgnoreCase("GET");
-        }
-        return false;
+    private boolean isSSERequest(HttpServletRequest request) {
+        String requestedResource = getRequestedResourcePath(request);
+        return requestedResource.startsWith("/" + MCP_SERVER_SSE)
+                && request.getMethod().equalsIgnoreCase("GET");
     }
 
-    boolean isStreamableRequest(ServletRequest servletRequest) {
-        if (servletRequest instanceof HttpServletRequest request) {
-            String requestedResource = getRequestedResourcePath(request);
-            return requestedResource.startsWith("/" + MCP_SERVER_STREAMABLE)
-                    && (request.getMethod().equalsIgnoreCase("GET")
-                            || (request.getMethod().equalsIgnoreCase("POST")));
-        }
-        return false;
+    private boolean isStreamableRequest(HttpServletRequest request) {
+        String requestedResource = getRequestedResourcePath(request);
+        return requestedResource.startsWith("/" + MCP_SERVER_STREAMABLE)
+                && (request.getMethod().equalsIgnoreCase("GET")
+                        || (request.getMethod().equalsIgnoreCase("POST")));
     }
 
-    protected void handleSSE(ServletRequest request, ServletResponse response) throws IOException, ServletException {
+    private void handleSSE(HttpServletRequest request, HttpServletResponse response)
+            throws IOException, ServletException {
         httpServletSseServerTransportProvider.service(request, response);
     }
 
-    private void handleMessage(ServletRequest request, ServletResponse response, HttpServlet httpServlet)
+    private void handleMessage(HttpServletRequest request, HttpServletResponse response, HttpServlet httpServlet)
             throws IOException, ServletException {
         if (!validOriginHeader(request, response)) {
             return;
@@ -413,7 +407,7 @@ public class Endpoint extends CrumbExclusion implements RootAction {
         httpServlet.service(request, response);
     }
 
-    private static void prepareMcpContext(ServletRequest request) {
+    private static void prepareMcpContext(HttpServletRequest request) {
         Map<String, Object> contextMap = new HashMap<>();
         var currentUser = User.current();
         String userId = null;
