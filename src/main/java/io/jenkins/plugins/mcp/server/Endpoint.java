@@ -153,7 +153,27 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
             handleMessage(request, response, httpServletStreamableServerTransportProvider);
             return true;
         }
+        // Return 404 for OAuth 2.1 endpoints that this plugin doesn't implement.
+        // This tells MCP clients that OAuth DCR is not supported, so they should
+        // fall back to using the Authorization header (Basic Auth with API token).
+        if (isOAuthEndpoint(requestedResource)) {
+            response.setStatus(HttpServletResponse.SC_NOT_FOUND);
+            response.setContentType("application/json");
+            response.getWriter().write("{\"error\":\"not_found\",\"error_description\":\"OAuth endpoints not implemented. Use Basic Auth with Jenkins API token.\"}");
+            response.getWriter().flush();
+            return true;
+        }
         return false;
+    }
+
+    /**
+     * Check if the request is for an OAuth 2.1 related endpoint.
+     * Jenkins MCP server uses Basic Auth with API tokens, not OAuth 2.1.
+     */
+    private boolean isOAuthEndpoint(String requestedResource) {
+        return requestedResource.equals("/register")
+                || requestedResource.startsWith("/.well-known/oauth")
+                || requestedResource.startsWith("/.well-known/openid");
     }
 
     protected void init() throws ServletException {
