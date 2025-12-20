@@ -159,7 +159,9 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
         if (isOAuthEndpoint(requestedResource)) {
             response.setStatus(HttpServletResponse.SC_NOT_FOUND);
             response.setContentType("application/json");
-            response.getWriter().write("{\"error\":\"not_found\",\"error_description\":\"OAuth endpoints not implemented. Use Basic Auth with Jenkins API token.\"}");
+            response.getWriter()
+                    .write(
+                            "{\"error\":\"not_found\",\"error_description\":\"OAuth endpoints not implemented. Use Basic Auth with Jenkins API token.\"}");
             response.getWriter().flush();
             return true;
         }
