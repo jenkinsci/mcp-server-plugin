@@ -159,4 +159,23 @@ public class EndPointTest {
             assertThat(response.getStatusCode()).isEqualTo(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
         }
     }
+
+    /**
+     * Tests that OAuth 2.1 /register endpoint returns proper 404 JSON response.
+     * This tells MCP clients that OAuth is not supported, so they should fall back to Basic Auth.
+     */
+    @Test
+    void testOAuthRegisterEndpointReturns404(JenkinsRule jenkins) throws Exception {
+        var url = jenkins.getURL();
+        var registerUrl = url.toString() + "register";
+        try (JenkinsRule.WebClient webClient = jenkins.createWebClient()) {
+            webClient.getOptions().setThrowExceptionOnFailingStatusCode(false);
+            var request = new WebRequest(new URL(registerUrl), HttpMethod.POST);
+            var response = webClient.loadWebResponse(request);
+            assertThat(response.getStatusCode()).isEqualTo(HttpServletResponse.SC_NOT_FOUND);
+            assertThat(response.getContentType()).contains("application/json");
+            assertThat(response.getContentAsString()).contains("not_found");
+            assertThat(response.getContentAsString()).contains("OAuth /register not supported");
+        }
+    }
 }
