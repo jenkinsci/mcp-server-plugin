@@ -40,8 +40,20 @@ import org.kohsuke.stapler.export.TreePruner;
 public class JenkinsExportedBeanSerializer extends JsonSerializer<Object> {
     private static final ModelBuilder MODEL_BUILDER = new ModelBuilder();
 
-    // remove some values which are not useful in the JSON output
-    private static final List<String> EXCLUDED_PROPERTIES = List.of("enclosingBlocks", "nodeId");
+    // Exclude properties that are not useful in LLM context or cause excessive response sizes.
+    // These fall into two categories:
+    // 1. Internal Jenkins machinery (enclosingBlocks, nodeId, actions, properties)
+    // 2. Large collections that can overwhelm LLM context windows (builds, healthReport, queueItem)
+    // Clients needing detailed build info should use getBuild() for specific builds.
+    private static final List<String> EXCLUDED_PROPERTIES = List.of(
+            "enclosingBlocks",
+            "nodeId",
+            "actions",
+            "properties",
+            "builds",
+            "healthReport",
+            "queueItem"
+    );
 
     private static final TreePruner CLEANER_PRUNER = new TreePruner() {
         @Override
