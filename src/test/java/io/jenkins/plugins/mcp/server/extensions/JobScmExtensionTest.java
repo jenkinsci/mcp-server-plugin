@@ -167,4 +167,58 @@ public class JobScmExtensionTest {
             });
         }
     }
+
+    @McpClientTest
+    void testFindJobsWithScmUrl(
+            JenkinsRule jenkins,
+            GitSampleRepoRule gitRepo1,
+            GitSampleRepoRule gitRepo2,
+            JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
+            throws Exception {
+        // Setup Git repository
+        gitRepo1.init();
+        gitRepo1.git("remote", "add", "origin", "git@github.com:example/repo1.git");
+        String repoRoot1 = gitRepo1.getRoot().getAbsolutePath().replace(File.separator, "/");
+
+        gitRepo2.init();
+        gitRepo2.git("remote", "add", "origin", "git@github.com:example/repo2.git");
+        String repoRoot2 = gitRepo2.getRoot().getAbsolutePath().replace(File.separator, "/");
+
+        // Create a job with Git SCM
+        WorkflowJob project1 = jenkins.createProject(WorkflowJob.class, "git-scm-test-job-1a");
+        project1.setDefinition(new CpsFlowDefinition("node { git '" + repoRoot1 + "' }", true));
+
+        jenkins.buildAndAssertSuccess(project1);
+
+        WorkflowJob project2 = jenkins.createProject(WorkflowJob.class, "git-scm-test-job-1b");
+        project2.setDefinition(new CpsFlowDefinition("node { git '" + repoRoot1 + "' }", true));
+
+        jenkins.buildAndAssertSuccess(project2);
+
+        WorkflowJob project3 = jenkins.createProject(WorkflowJob.class, "git-scm-test-job-2");
+        project3.setDefinition(new CpsFlowDefinition("node { git '" + repoRoot2 + "' }", true));
+
+        jenkins.buildAndAssertSuccess(project3);
+
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+            // Call getBuildChangeSets tool for the second build
+            McpSchema.CallToolRequest request =
+                    new McpSchema.CallToolRequest("findJobsWithScmUrl", Map.of("scmUrl", "file://" + repoRoot1));
+
+            var response = client.callTool(request);
+
+            assertThat(response.isError())
+                    .as("Expected successful message. Content:", response.content())
+                    .isFalse();
+            assertThat(response.content()).hasSize(1);
+            assertThat(response.content().get(0).type()).isEqualTo("text");
+            assertThat(response.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                assertThat(textContent.type()).isEqualTo("text");
+                String jobsListContent = textContent.text();
+                assertThat(jobsListContent).contains("git-scm-test-job-1a");
+                assertThat(jobsListContent).contains("git-scm-test-job-1b");
+                assertThat(jobsListContent).doesNotContain("git-scm-test-job-2");
+            });
+        }
+    }
 }
