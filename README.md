@@ -233,6 +233,7 @@ The plugin provides the following built-in tools for interacting with Jenkins:
 - `getJobScm`: Retrieve SCM configurations of a Jenkins job.
 - `getBuildScm`: Retrieve SCM configurations of a specific build.
 - `getBuildChangeSets`: Retrieve change log sets of a specific build.
+- `findJobsWithScmUrl`: Find jobs using a specific SCM (git) repository URL
 
 #### Management Information
 - `whoAmI`: Get information about the current user.
