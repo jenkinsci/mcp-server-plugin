@@ -65,12 +65,16 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import jenkins.model.Jenkins;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.kohsuke.stapler.Stapler;
+import org.kohsuke.stapler.StaplerRequest2;
+import org.kohsuke.stapler.StaplerResponse2;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
@@ -291,8 +295,23 @@ public class McpToolWrapper {
             jenkinsMcpContext.setHttpServletResponse(res);
             Stapler stapler = (Stapler) transportContext.get(STAPLER);
             jenkinsMcpContext.setStapler(stapler);
-            var result = method.invoke(target, methodArgs);
-            return toMcpResult(result);
+
+            // below code is to simulate the behavior of Stapler framework when call the target method
+            final var mcpResultHolder = new AtomicReference<McpSchema.CallToolResult>();
+            stapler.invoke(
+                    req,
+                    res,
+                    new Object() {
+                        @SneakyThrows
+                        public void doInvoke(StaplerRequest2 req, StaplerResponse2 rsp) {
+                            var result = method.invoke(target, methodArgs);
+                            var mcpResult = toMcpResult(result);
+                            mcpResultHolder.set(mcpResult);
+                        }
+                    },
+                    "invoke");
+
+            return mcpResultHolder.get();
 
         } catch (Exception e) {
             var rootCauseMessage = ExceptionUtils.getRootCauseMessage(e);
