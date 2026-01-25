@@ -26,9 +26,12 @@
 
 package io.jenkins.plugins.mcp.server.junit;
 
+import hudson.security.FullControlOnceLoggedInAuthorizationStrategy;
 import java.util.Arrays;
 import java.util.stream.Stream;
+import lombok.SneakyThrows;
 import org.junit.jupiter.params.provider.Arguments;
+import org.jvnet.hudson.test.JenkinsRule;
 
 public class TestUtils {
     public static Stream<Arguments> appendMcpClientArgs(Stream<Arguments> baseArgs) {
@@ -41,5 +44,15 @@ public class TestUtils {
         Object[] combined = Arrays.copyOf(original, original.length + 1);
         combined[original.length] = extra;
         return combined;
+    }
+
+    @SneakyThrows
+    public static void enableSecurity(JenkinsRule jenkins) {
+        JenkinsRule.DummySecurityRealm securityRealm = jenkins.createDummySecurityRealm();
+        jenkins.jenkins.setSecurityRealm(securityRealm);
+        var authStrategy = new FullControlOnceLoggedInAuthorizationStrategy();
+        authStrategy.setAllowAnonymousRead(false);
+        jenkins.jenkins.setAuthorizationStrategy(authStrategy);
+        jenkins.jenkins.save();
     }
 }

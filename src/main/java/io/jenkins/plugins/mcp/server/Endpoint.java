@@ -58,10 +58,19 @@ import java.util.Map;
 import jenkins.model.Jenkins;
 import jenkins.util.HttpServletFilter;
 import jenkins.util.SystemProperties;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.jenkinsci.Symbol;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
+import org.kohsuke.stapler.Stapler;
+import org.kohsuke.stapler.StaplerProxy;
+import org.kohsuke.stapler.StaplerRequest2;
+import org.kohsuke.stapler.StaplerResponse2;
+import org.kohsuke.stapler.interceptor.RequirePOST;
+import org.kohsuke.stapler.verb.GET;
+import org.kohsuke.stapler.verb.POST;
 
 /**
  *
@@ -69,7 +78,8 @@ import org.kohsuke.accmod.restrictions.NoExternalUse;
 @Restricted(NoExternalUse.class)
 @Extension
 @Slf4j
-public class Endpoint extends CrumbExclusion implements RootAction, HttpServletFilter {
+@Symbol("mcp-server")
+public class Endpoint extends CrumbExclusion implements RootAction, HttpServletFilter, StaplerProxy {
 
     public static final String MCP_SERVER = "mcp-server";
 
@@ -88,6 +98,8 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
     public static final String MCP_SERVER_MESSAGE = MCP_SERVER + MESSAGE_ENDPOINT;
     public static final String USER_ID = Endpoint.class.getName() + ".userId";
     public static final String HTTP_SERVLET_REQUEST = Endpoint.class.getName() + ".httpServletRequest";
+    public static final String HTTP_SERVLET_RESPONSE = Endpoint.class.getName() + ".httpServletResponse";
+    public static final String STAPLER = Endpoint.class.getName() + ".stapler";
 
     private static final String MCP_CONTEXT_KEY = Endpoint.class.getName() + ".mcpContext";
 
@@ -140,21 +152,31 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
             init();
         }
         String requestedResource = getRequestedResourcePath(request);
-        if (requestedResource.startsWith("/" + MCP_SERVER_MESSAGE)
-                && request.getMethod().equalsIgnoreCase("POST")) {
-            handleMessage(request, response, httpServletSseServerTransportProvider);
-            return true; // Do not allow this request on to Stapler
-        }
         if (requestedResource.startsWith("/" + MCP_SERVER_SSE)
                 && request.getMethod().equalsIgnoreCase("POST")) {
             response.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
             return true;
         }
-        if (isStreamableRequest(request)) {
-            handleMessage(request, response, httpServletStreamableServerTransportProvider);
-            return true;
-        }
-        return false;
+        chain.doFilter(request, response);
+        return true;
+    }
+
+    @SneakyThrows
+    @SuppressWarnings("lgtm[jenkins/no-permission-check]")
+    @RequirePOST
+    public void doMessage(StaplerRequest2 req, StaplerResponse2 rsp) {
+        String requestedResource = getRequestedResourcePath(req);
+
+        handleMessage(req, rsp, httpServletSseServerTransportProvider);
+    }
+
+    @SneakyThrows
+    @SuppressWarnings("lgtm[jenkins/no-permission-check]")
+    @POST
+    @GET
+    public void doMcp(StaplerRequest2 req, StaplerResponse2 rsp) {
+
+        handleMessage(req, rsp, httpServletStreamableServerTransportProvider);
     }
 
     protected synchronized void init() throws ServletException {
@@ -240,19 +262,17 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
         if (isSSERequest(req)) {
             handleSSE(req, resp);
             return true;
-        } else if (isStreamableRequest(req)) {
-            if (isBrowserRequest(req)) {
-                // Serve friendly error page for GET requests to /mcp-server/mcp
-                resp.setStatus(HttpServletResponse.SC_BAD_REQUEST);
-                resp.setContentType("text/html;charset=UTF-8");
-                resp.getWriter()
-                        .write(
-                                "<html><head><title>Model Context Protocol Endpoint</title></head>"
-                                        + "<body><h2>This endpoint is designed for an AI agent using the Model Context Protocol.</h2></body></html>");
-                resp.getWriter().flush();
-            } else {
-                handleMessage(req, resp, httpServletStreamableServerTransportProvider);
-            }
+        } else if (isStreamableRequest(req) && isBrowserRequest(req)) {
+
+            // Serve friendly error page for GET requests to /mcp-server/mcp
+            resp.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            resp.setContentType("text/html;charset=UTF-8");
+            resp.getWriter()
+                    .write(
+                            "<html><head><title>Model Context Protocol Endpoint</title></head>"
+                                    + "<body><h2>This endpoint is designed for an AI agent using the Model Context Protocol.</h2></body></html>");
+            resp.getWriter().flush();
+
             return true;
         } else {
             return false;
@@ -411,11 +431,11 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
         if (!validOriginHeader(request, response)) {
             return;
         }
-        prepareMcpContext(request);
+        prepareMcpContext(request, response);
         httpServlet.service(request, response);
     }
 
-    private static void prepareMcpContext(HttpServletRequest request) {
+    private static void prepareMcpContext(HttpServletRequest request, HttpServletResponse response) {
         Map<String, Object> contextMap = new HashMap<>();
         var currentUser = User.current();
         String userId = null;
@@ -426,6 +446,13 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
             contextMap.put(USER_ID, userId);
         }
         contextMap.put(HTTP_SERVLET_REQUEST, request);
+        contextMap.put(HTTP_SERVLET_RESPONSE, response);
+        contextMap.put(STAPLER, Stapler.getCurrent());
         request.setAttribute(MCP_CONTEXT_KEY, McpTransportContext.create(contextMap));
+    }
+
+    @Override
+    public Object getTarget() {
+        return this;
     }
 }

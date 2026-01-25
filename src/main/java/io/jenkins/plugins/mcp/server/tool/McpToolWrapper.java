@@ -27,12 +27,15 @@
 package io.jenkins.plugins.mcp.server.tool;
 
 import static io.jenkins.plugins.mcp.server.Endpoint.HTTP_SERVLET_REQUEST;
+import static io.jenkins.plugins.mcp.server.Endpoint.HTTP_SERVLET_RESPONSE;
+import static io.jenkins.plugins.mcp.server.Endpoint.STAPLER;
 import static io.jenkins.plugins.mcp.server.Endpoint.USER_ID;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.github.victools.jsonschema.generator.Module;
 import com.github.victools.jsonschema.generator.Option;
 import com.github.victools.jsonschema.generator.OptionPreset;
 import com.github.victools.jsonschema.generator.SchemaGenerator;
@@ -42,6 +45,7 @@ import com.github.victools.jsonschema.generator.SchemaVersion;
 import com.github.victools.jsonschema.module.jackson.JacksonModule;
 import com.github.victools.jsonschema.module.jackson.JacksonOption;
 import com.github.victools.jsonschema.module.swagger2.Swagger2Module;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.model.User;
 import hudson.security.ACL;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
@@ -53,6 +57,7 @@ import io.modelcontextprotocol.server.McpSyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
@@ -62,11 +67,16 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import jenkins.model.Jenkins;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
+import org.kohsuke.stapler.Stapler;
+import org.kohsuke.stapler.StaplerRequest2;
+import org.kohsuke.stapler.StaplerResponse2;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
@@ -83,9 +93,8 @@ public class McpToolWrapper {
     }
 
     static {
-        com.github.victools.jsonschema.generator.Module jacksonModule =
-                new JacksonModule(JacksonOption.RESPECT_JSONPROPERTY_REQUIRED);
-        com.github.victools.jsonschema.generator.Module openApiModule = new Swagger2Module();
+        Module jacksonModule = new JacksonModule(JacksonOption.RESPECT_JSONPROPERTY_REQUIRED);
+        Module openApiModule = new Swagger2Module();
 
         SchemaGeneratorConfigBuilder schemaGeneratorConfigBuilder = new SchemaGeneratorConfigBuilder(
                         SchemaVersion.DRAFT_2020_12, OptionPreset.PLAIN_JSON)
@@ -281,9 +290,31 @@ public class McpToolWrapper {
 
             var transportContext = exchange.transportContext();
             var jenkinsMcpContext = JenkinsMcpContext.get();
-            jenkinsMcpContext.setHttpServletRequest((HttpServletRequest) transportContext.get(HTTP_SERVLET_REQUEST));
-            var result = method.invoke(target, methodArgs);
-            return toMcpResult(result);
+            HttpServletRequest req = (HttpServletRequest) transportContext.get(HTTP_SERVLET_REQUEST);
+            jenkinsMcpContext.setHttpServletRequest(req);
+            HttpServletResponse res = (HttpServletResponse) transportContext.get(HTTP_SERVLET_RESPONSE);
+            jenkinsMcpContext.setHttpServletResponse(res);
+            Stapler stapler = (Stapler) transportContext.get(STAPLER);
+            jenkinsMcpContext.setStapler(stapler);
+
+            // below code is to simulate the behavior of Stapler framework when call the target method
+            final var mcpResultHolder = new AtomicReference<McpSchema.CallToolResult>();
+            stapler.invoke(
+                    req,
+                    res,
+                    new Object() {
+                        @SneakyThrows
+                        @SuppressFBWarnings
+                        @SuppressWarnings({"lgtm[jenkins/no-permission-check]", "lgtm[jenkins/csrf"})
+                        public void doInvoke(StaplerRequest2 req, StaplerResponse2 rsp) {
+                            var result = method.invoke(target, methodArgs);
+                            var mcpResult = toMcpResult(result);
+                            mcpResultHolder.set(mcpResult);
+                        }
+                    },
+                    "invoke");
+
+            return mcpResultHolder.get();
 
         } catch (Exception e) {
             var rootCauseMessage = ExceptionUtils.getRootCauseMessage(e);
