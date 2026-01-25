@@ -1,4 +1,5 @@
 # MCP Server Plugin for Jenkins
+[![Build Status](https://ci.jenkins.io/job/Plugins/job/mcp-server-plugin/job/main/badge/icon)](https://ci.jenkins.io/job/Plugins/job/mcp-server-plugin/job/main/)
 
 The MCP (Model Context Protocol) Server Plugin for Jenkins implements the server-side component of the Model Context Protocol. This plugin enables Jenkins to act as an MCP server, providing context, tools, and capabilities to MCP clients, such as LLM-powered applications or IDEs.
 
