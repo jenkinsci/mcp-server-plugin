@@ -94,14 +94,14 @@ class DefaultMcpServerTest {
 
     static Stream<Arguments> triggerSecurityTestParameters() {
         Stream<Arguments> baseArgs = Stream.of(
-                // security enable, no auth -> no run triggered
-                Arguments.of(true, false, false),
-                // security enable, auth -> no triggered
-                Arguments.of(true, true, true),
+                // security enable, no auth -> no, AccessDenied
+                Arguments.of(true, false, true, "AccessDenied", false),
+                // security enable, auth -> no, triggered
+                Arguments.of(true, true, false, "COMPLETED", true),
                 // security not enable, no auth -> run triggered yeah freedom!
-                Arguments.of(false, false, true),
+                Arguments.of(false, false, false, "COMPLETED", true),
                 // security not enable, auth -> run triggered root is the king
-                Arguments.of(false, true, true));
+                Arguments.of(false, true, false, "COMPLETED", true));
         return TestUtils.appendMcpClientArgs(baseArgs);
     }
 
@@ -111,6 +111,8 @@ class DefaultMcpServerTest {
     void testMcpToolCallTriggerBuild(
             Boolean enableSecurity,
             Boolean runAsAdmin,
+            Boolean isError,
+            String expectedText,
             Boolean expectedBuildRunned,
             JenkinsMcpClientBuilder jenkinsMcpClientBuilder,
             JenkinsRule jenkins)
@@ -137,12 +139,13 @@ class DefaultMcpServerTest {
                     new McpSchema.CallToolRequest("triggerBuild", Map.of("jobFullName", project.getFullName()));
 
             var response = client.callTool(request);
-            assertThat(response.isError()).isFalse();
+
+            assertThat(response.isError()).isEqualTo(isError);
             assertThat(response.content()).hasSize(1);
             assertThat(response.content().get(0).type()).isEqualTo("text");
             assertThat(response.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
                 assertThat(textContent.type()).isEqualTo("text");
-                assertThat(textContent.text()).contains(Boolean.toString(expectedBuildRunned));
+                assertThat(textContent.text()).contains(expectedText);
             });
             if (!expectedBuildRunned) {
                 jenkins.waitUntilNoActivityUpTo(MIN_1);
