@@ -64,6 +64,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import jenkins.model.Jenkins;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.springframework.lang.Nullable;
@@ -257,6 +258,8 @@ public class McpToolWrapper {
             if (user != null) {
                 ACL.as(user);
             }
+            // need Jenkins.READ at least
+            Jenkins.get().checkPermission(Jenkins.READ);
             if (log.isTraceEnabled()) {
                 log.trace(
                         "Tool call: {} as user '{}', arguments: {}",
