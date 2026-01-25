@@ -28,12 +28,14 @@ package io.jenkins.plugins.mcp.server;
 
 import static io.jenkins.plugins.mcp.server.Endpoint.MCP_SERVER_SSE;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatRuntimeException;
 
 import com.jayway.jsonpath.Configuration;
 import com.jayway.jsonpath.DocumentContext;
 import com.jayway.jsonpath.JsonPath;
 import io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder;
 import io.jenkins.plugins.mcp.server.junit.McpClientTest;
+import io.jenkins.plugins.mcp.server.junit.TestUtils;
 import io.modelcontextprotocol.spec.McpSchema;
 import jakarta.servlet.http.HttpServletResponse;
 import java.net.URL;
@@ -159,5 +161,14 @@ public class EndPointTest {
             var response = webClient.loadWebResponse(request);
             assertThat(response.getStatusCode()).isEqualTo(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
         }
+    }
+
+    @McpClientTest
+    void testMcpInitFailedWithNoPermission(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder) {
+        TestUtils.enableSecurity(jenkins);
+
+        assertThatRuntimeException()
+                .isThrownBy(() -> jenkinsMcpClientBuilder.jenkins(jenkins).build())
+                .withMessageContaining("Client failed to initialize");
     }
 }

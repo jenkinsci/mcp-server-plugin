@@ -27,6 +27,8 @@
 package io.jenkins.plugins.mcp.server.tool;
 
 import static io.jenkins.plugins.mcp.server.Endpoint.HTTP_SERVLET_REQUEST;
+import static io.jenkins.plugins.mcp.server.Endpoint.HTTP_SERVLET_RESPONSE;
+import static io.jenkins.plugins.mcp.server.Endpoint.STAPLER;
 import static io.jenkins.plugins.mcp.server.Endpoint.USER_ID;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -53,6 +55,7 @@ import io.modelcontextprotocol.server.McpSyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
@@ -67,6 +70,7 @@ import java.util.stream.Collectors;
 import jenkins.model.Jenkins;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
+import org.kohsuke.stapler.Stapler;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
@@ -281,7 +285,12 @@ public class McpToolWrapper {
 
             var transportContext = exchange.transportContext();
             var jenkinsMcpContext = JenkinsMcpContext.get();
-            jenkinsMcpContext.setHttpServletRequest((HttpServletRequest) transportContext.get(HTTP_SERVLET_REQUEST));
+            HttpServletRequest req = (HttpServletRequest) transportContext.get(HTTP_SERVLET_REQUEST);
+            jenkinsMcpContext.setHttpServletRequest(req);
+            HttpServletResponse res = (HttpServletResponse) transportContext.get(HTTP_SERVLET_RESPONSE);
+            jenkinsMcpContext.setHttpServletResponse(res);
+            Stapler stapler = (Stapler) transportContext.get(STAPLER);
+            jenkinsMcpContext.setStapler(stapler);
             var result = method.invoke(target, methodArgs);
             return toMcpResult(result);
 

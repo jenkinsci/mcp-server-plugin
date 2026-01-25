@@ -1,13 +1,19 @@
 package io.jenkins.plugins.mcp.server.tool;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.Data;
+import org.kohsuke.stapler.Stapler;
 
 @Data
 public class JenkinsMcpContext {
     private static final ThreadLocal<JenkinsMcpContext> CONTEXT = ThreadLocal.withInitial(JenkinsMcpContext::new);
 
     HttpServletRequest httpServletRequest;
+
+    HttpServletResponse httpServletResponse;
+
+    Stapler stapler;
 
     /**
      * Gets the JenkinsMcpContext for the current thread. Creates a new one if it doesn't exist.

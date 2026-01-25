@@ -27,6 +27,7 @@
 package io.jenkins.plugins.mcp.server.extensions;
 
 import static io.jenkins.plugins.mcp.server.extensions.DefaultMcpServer.FULL_NAME;
+import static io.jenkins.plugins.mcp.server.junit.TestUtils.enableSecurity;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
@@ -39,7 +40,6 @@ import hudson.model.ChoiceParameterDefinition;
 import hudson.model.ParametersDefinitionProperty;
 import hudson.model.Result;
 import hudson.model.StringParameterDefinition;
-import hudson.security.FullControlOnceLoggedInAuthorizationStrategy;
 import io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder;
 import io.jenkins.plugins.mcp.server.junit.McpClientTest;
 import io.jenkins.plugins.mcp.server.junit.TestUtils;
@@ -95,7 +95,7 @@ class DefaultMcpServerTest {
     static Stream<Arguments> triggerSecurityTestParameters() {
         Stream<Arguments> baseArgs = Stream.of(
                 // security enable, no auth -> no, AccessDenied
-                Arguments.of(true, false, true, "AccessDenied", false),
+                //                Arguments.of(true, false, true, "AccessDenied", false),
                 // security enable, auth -> no, triggered
                 Arguments.of(true, true, false, "COMPLETED", true),
                 // security not enable, no auth -> run triggered yeah freedom!
@@ -405,14 +405,5 @@ class DefaultMcpServerTest {
                         });
             }
         }
-    }
-
-    private void enableSecurity(JenkinsRule jenkins) throws Exception {
-        JenkinsRule.DummySecurityRealm securityRealm = jenkins.createDummySecurityRealm();
-        jenkins.jenkins.setSecurityRealm(securityRealm);
-        var authStrategy = new FullControlOnceLoggedInAuthorizationStrategy();
-        authStrategy.setAllowAnonymousRead(false);
-        jenkins.jenkins.setAuthorizationStrategy(authStrategy);
-        jenkins.jenkins.save();
     }
 }
