@@ -305,6 +305,7 @@ public class McpToolWrapper {
                     new Object() {
                         @SneakyThrows
                         @SuppressFBWarnings
+                        @SuppressWarnings({"lgtm[jenkins/no-permission-check]", "lgtm[jenkins/csrf"})
                         public void doInvoke(StaplerRequest2 req, StaplerResponse2 rsp) {
                             var result = method.invoke(target, methodArgs);
                             var mcpResult = toMcpResult(result);

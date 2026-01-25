@@ -68,6 +68,9 @@ import org.kohsuke.stapler.Stapler;
 import org.kohsuke.stapler.StaplerProxy;
 import org.kohsuke.stapler.StaplerRequest2;
 import org.kohsuke.stapler.StaplerResponse2;
+import org.kohsuke.stapler.interceptor.RequirePOST;
+import org.kohsuke.stapler.verb.GET;
+import org.kohsuke.stapler.verb.POST;
 
 /**
  *
@@ -159,6 +162,8 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
     }
 
     @SneakyThrows
+    @SuppressWarnings("lgtm[jenkins/no-permission-check]")
+    @RequirePOST
     public void doMessage(StaplerRequest2 req, StaplerResponse2 rsp) {
         String requestedResource = getRequestedResourcePath(req);
 
@@ -166,6 +171,9 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
     }
 
     @SneakyThrows
+    @SuppressWarnings("lgtm[jenkins/no-permission-check]")
+    @POST
+    @GET
     public void doMcp(StaplerRequest2 req, StaplerResponse2 rsp) {
 
         handleMessage(req, rsp, httpServletStreamableServerTransportProvider);
