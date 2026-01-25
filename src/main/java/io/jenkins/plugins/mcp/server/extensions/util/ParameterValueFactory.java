@@ -36,6 +36,7 @@ import hudson.model.RunParameterDefinition;
 import hudson.model.StringParameterDefinition;
 import hudson.model.TextParameterDefinition;
 import java.util.List;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -44,6 +45,11 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 public final class ParameterValueFactory {
+
+    public static final String GIT_PARAMETER_DEFINITION =
+            "net.uaznia.lukanus.hudson.plugins.gitparameter.GitParameterDefinition";
+    public static final String EXTENDED_CHOICE_PARAMETER_DEFINITION =
+            "com.cwctravel.hudson.plugins.extended_choice_parameter.ExtendedChoiceParameterDefinition";
 
     /**
      * Creates a parameter value from a parameter definition and input value.
@@ -55,8 +61,10 @@ public final class ParameterValueFactory {
      */
     public static ParameterValue createParameterValue(ParameterDefinition param, Object inputValue) {
         try {
-            if (isGitParameterDefinition(param)) {
+            if (isParameterDefinitionOf(param, GIT_PARAMETER_DEFINITION)) {
                 return createGitParameterValue(param, inputValue);
+            } else if (isParameterDefinitionOf(param, EXTENDED_CHOICE_PARAMETER_DEFINITION)) {
+                return createExtendedChoiceParameterValue(param, inputValue);
             } else if (param instanceof StringParameterDefinition) {
                 return createStringParameterValue((StringParameterDefinition) param, inputValue);
             } else if (param instanceof BooleanParameterDefinition) {
@@ -155,10 +163,10 @@ public final class ParameterValueFactory {
         return null;
     }
 
-    private static boolean isGitParameterDefinition(ParameterDefinition param) {
+    private static boolean isParameterDefinitionOf(ParameterDefinition param, String className) {
         Class<?> current = param.getClass();
         while (current != null) {
-            if (current.getName().equals("net.uaznia.lukanus.hudson.plugins.gitparameter.GitParameterDefinition")) {
+            if (current.getName().equals(className)) {
                 return true;
             }
             current = current.getSuperclass();
@@ -167,23 +175,46 @@ public final class ParameterValueFactory {
     }
 
     private static ParameterValue createGitParameterValue(ParameterDefinition param, Object inputValue) {
+        return createParameterValueViaCli(param, String.valueOf(inputValue));
+    }
+
+    private static ParameterValue createExtendedChoiceParameterValue(ParameterDefinition param, Object inputValue) {
+        String valuesAsString;
+        if (inputValue instanceof List<?> l) {
+            valuesAsString = l.stream().map(Object::toString).collect(Collectors.joining(","));
+        } else {
+            valuesAsString = String.valueOf(inputValue);
+        }
+        return createParameterValueViaCli(param, valuesAsString);
+    }
+
+    private static ParameterValue createParameterValueViaCli(ParameterDefinition param, String inputValue) {
+        String paramTypeName = param.getClass().getSimpleName();
         try {
             if (inputValue == null) {
                 return param.getDefaultParameterValue();
             }
-
             var method = param.getClass().getMethod("createValue", hudson.cli.CLICommand.class, String.class);
             try {
-                return (ParameterValue) method.invoke(param, null, String.valueOf(inputValue));
+                return (ParameterValue) method.invoke(param, null, inputValue);
             } catch (java.lang.reflect.InvocationTargetException e) {
                 var cause = e.getTargetException();
-                log.warn("Git parameter '{}' rejected value '{}': {}", param.getName(), inputValue, cause.getMessage());
+                log.warn(
+                        "{} parameter '{}' rejected value '{}': {}",
+                        paramTypeName,
+                        param.getName(),
+                        inputValue,
+                        cause.getMessage());
                 return param.getDefaultParameterValue();
             }
         } catch (NoSuchMethodException e) {
-            log.warn("Git parameter '{}' missing CLI createValue method; falling back to default", param.getName());
+            log.warn(
+                    "{} parameter '{}' missing CLI createValue method; falling back to default",
+                    paramTypeName,
+                    param.getName());
         } catch (Exception e) {
-            log.warn("Failed to create Git parameter value for '{}': {}", param.getName(), e.getMessage());
+            log.warn(
+                    "Failed to create {} parameter value for '{}': {}", paramTypeName, param.getName(), e.getMessage());
         }
         return param.getDefaultParameterValue();
     }
