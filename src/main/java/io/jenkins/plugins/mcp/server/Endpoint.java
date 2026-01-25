@@ -125,9 +125,7 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
     HttpServletSseServerTransportProvider httpServletSseServerTransportProvider;
     HttpServletStreamableServerTransportProvider httpServletStreamableServerTransportProvider;
 
-    public Endpoint() throws ServletException {
-        init();
-    }
+    private boolean initialized = false;
 
     public static String getRequestedResourcePath(HttpServletRequest httpServletRequest) {
         return httpServletRequest
@@ -138,6 +136,9 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
     @Override
     public boolean process(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws IOException, ServletException {
+        if (!initialized) {
+            init();
+        }
         String requestedResource = getRequestedResourcePath(request);
         if (requestedResource.startsWith("/" + MCP_SERVER_MESSAGE)
                 && request.getMethod().equalsIgnoreCase("POST")) {
@@ -156,8 +157,11 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
         return false;
     }
 
-    protected void init() throws ServletException {
+    protected synchronized void init() throws ServletException {
 
+        if (initialized) {
+            return;
+        }
         McpSchema.ServerCapabilities serverCapabilities = McpSchema.ServerCapabilities.builder()
                 .tools(true)
                 .prompts(true)
@@ -196,7 +200,7 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
                 .jsonMapper(new JacksonMcpJsonMapper(objectMapper))
                 .baseUrl(rootUrl)
                 .sseEndpoint(SSE_ENDPOINT)
-                .messageEndpoint(MCP_SERVER_MESSAGE)
+                .messageEndpoint("/" + MCP_SERVER_MESSAGE)
                 .contextExtractor(createExtractor())
                 .keepAliveInterval(keepAliveInterval > 0 ? Duration.ofSeconds(keepAliveInterval) : null)
                 .build();
@@ -225,10 +229,14 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
                 .prompts(prompts)
                 .resources(resources)
                 .build();
+        initialized = true;
     }
 
     @Override
     public boolean handle(HttpServletRequest req, HttpServletResponse resp) throws IOException, ServletException {
+        if (!initialized) {
+            init();
+        }
         if (isSSERequest(req)) {
             handleSSE(req, resp);
             return true;
