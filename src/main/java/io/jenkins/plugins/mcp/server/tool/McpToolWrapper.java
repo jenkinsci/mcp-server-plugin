@@ -35,6 +35,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.github.victools.jsonschema.generator.Module;
 import com.github.victools.jsonschema.generator.Option;
 import com.github.victools.jsonschema.generator.OptionPreset;
 import com.github.victools.jsonschema.generator.SchemaGenerator;
@@ -44,6 +45,7 @@ import com.github.victools.jsonschema.generator.SchemaVersion;
 import com.github.victools.jsonschema.module.jackson.JacksonModule;
 import com.github.victools.jsonschema.module.jackson.JacksonOption;
 import com.github.victools.jsonschema.module.swagger2.Swagger2Module;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.model.User;
 import hudson.security.ACL;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
@@ -91,9 +93,8 @@ public class McpToolWrapper {
     }
 
     static {
-        com.github.victools.jsonschema.generator.Module jacksonModule =
-                new JacksonModule(JacksonOption.RESPECT_JSONPROPERTY_REQUIRED);
-        com.github.victools.jsonschema.generator.Module openApiModule = new Swagger2Module();
+        Module jacksonModule = new JacksonModule(JacksonOption.RESPECT_JSONPROPERTY_REQUIRED);
+        Module openApiModule = new Swagger2Module();
 
         SchemaGeneratorConfigBuilder schemaGeneratorConfigBuilder = new SchemaGeneratorConfigBuilder(
                         SchemaVersion.DRAFT_2020_12, OptionPreset.PLAIN_JSON)
@@ -303,6 +304,7 @@ public class McpToolWrapper {
                     res,
                     new Object() {
                         @SneakyThrows
+                        @SuppressFBWarnings
                         public void doInvoke(StaplerRequest2 req, StaplerResponse2 rsp) {
                             var result = method.invoke(target, methodArgs);
                             var mcpResult = toMcpResult(result);
