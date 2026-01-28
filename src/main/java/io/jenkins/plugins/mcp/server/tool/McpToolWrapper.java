@@ -47,8 +47,10 @@ import hudson.security.ACL;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
 import io.jenkins.plugins.mcp.server.jackson.JenkinsExportedBeanModule;
+import io.modelcontextprotocol.common.McpTransportContext;
 import io.modelcontextprotocol.json.jackson.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.server.McpServerFeatures;
+import io.modelcontextprotocol.server.McpStatelessServerFeatures;
 import io.modelcontextprotocol.server.McpSyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -376,5 +378,84 @@ public class McpToolWrapper {
         var type = this.method.getGenericReturnType();
         var schema = SUBTYPE_SCHEMA_GENERATOR.generateSchema(type);
         return schema.toPrettyString();
+    }
+
+    public McpStatelessServerFeatures.SyncToolSpecification asStatelessSyncToolSpecification() {
+        return McpStatelessServerFeatures.SyncToolSpecification.builder()
+                .tool(McpSchema.Tool.builder()
+                        .name(getToolName())
+                        .description(getToolDescription())
+                        .meta(_meta().get())
+                        .annotations(toolAnnotations().get())
+                        .inputSchema(new JacksonMcpJsonMapper(objectMapper), generateForMethodInput())
+                        .build())
+                .callHandler(this::callStatelessRequest)
+                .build();
+    }
+
+    McpSchema.CallToolResult callStatelessRequest(McpTransportContext context, McpSchema.CallToolRequest request) {
+        var args = request.arguments();
+        var oldUser = User.current();
+
+        try {
+            var user = tryGetUserFromContext(context);
+            if (user != null) {
+                ACL.as(user);
+            }
+            // need Jenkins.READ at least
+            Jenkins.get().checkPermission(Jenkins.READ);
+            if (log.isTraceEnabled()) {
+                log.trace(
+                        "Tool call: {} as user '{}', arguments: {}",
+                        request.name(),
+                        user == null ? "" : user.getId(),
+                        request.arguments());
+            }
+
+            var methodArgs = Arrays.stream(method.getParameters())
+                    .map(param -> {
+                        var arg = args.get(param.getName());
+                        if (arg != null) {
+                            return objectMapper.convertValue(arg, param.getType());
+                        } else {
+                            return null;
+                        }
+                    })
+                    .toArray();
+
+            var jenkinsMcpContext = JenkinsMcpContext.get();
+            jenkinsMcpContext.setHttpServletRequest((HttpServletRequest) context.get(HTTP_SERVLET_REQUEST));
+            var result = method.invoke(target, methodArgs);
+            return toMcpResult(result);
+
+        } catch (Exception e) {
+            var rootCauseMessage = ExceptionUtils.getRootCauseMessage(e);
+            if (rootCauseMessage.isEmpty()) {
+                rootCauseMessage = "Error invoking method: " + method.getName();
+            }
+            if (log.isDebugEnabled()) {
+                log.atError().setCause(e).log("Error invoking tool method: {}: {}", method.getName(), rootCauseMessage);
+            }
+            ToolResponse toolResponse = new ToolResponse.ToolResponseBuilder()
+                    .message(rootCauseMessage)
+                    .status(ToolResponse.Status.FAILED)
+                    .build();
+
+            return McpSchema.CallToolResult.builder()
+                    .isError(true)
+                    .addTextContent(toJson(toolResponse))
+                    .build();
+        } finally {
+            ACL.as(oldUser);
+            JenkinsMcpContext.clear();
+        }
+    }
+
+    private static User tryGetUserFromContext(McpTransportContext context) {
+        String userId = null;
+        if (context != null) {
+            userId = (String) context.get(USER_ID);
+        }
+        return User.get(userId, false, Map.of());
     }
 }
