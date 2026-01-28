@@ -66,7 +66,7 @@ Set to `0` to disable keep-alive messages (not recommended).
 
 A lightweight health endpoint is available for connection monitoring at:
 ```
-<jenkins-url>/mcp-server/health
+<jenkins-url>/mcp-health
 ```
 
 This endpoint:
@@ -94,7 +94,7 @@ Response format:
 
 A metrics endpoint is available for monitoring connection statistics at:
 ```
-<jenkins-url>/mcp-server/health/metrics
+<jenkins-url>/mcp-server/metrics
 ```
 
 This endpoint requires authentication (standard Jenkins permissions) and provides:

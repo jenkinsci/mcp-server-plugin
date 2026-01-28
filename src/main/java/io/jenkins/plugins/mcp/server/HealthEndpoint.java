@@ -28,6 +28,8 @@ package io.jenkins.plugins.mcp.server;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import hudson.Extension;
+import hudson.model.UnprotectedRootAction;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.time.Instant;
@@ -36,6 +38,8 @@ import jenkins.model.Jenkins;
 import lombok.extern.slf4j.Slf4j;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
+import org.kohsuke.stapler.StaplerRequest2;
+import org.kohsuke.stapler.StaplerResponse2;
 
 /**
  * Lightweight health endpoint for MCP Server connection monitoring.
@@ -47,7 +51,7 @@ import org.kohsuke.accmod.restrictions.NoExternalUse;
  * <p>The endpoint tracks shutdown state, allowing clients to detect when Jenkins is shutting down
  * and prepare for reconnection.</p>
  *
- * <p>Endpoint: {@code /mcp-server/health}</p>
+ * <p>Endpoint: {@code /mcp-health}</p>
  *
  * <p>Response format:</p>
  * <pre>
@@ -60,10 +64,11 @@ import org.kohsuke.accmod.restrictions.NoExternalUse;
  * </pre>
  */
 @Restricted(NoExternalUse.class)
+@Extension
 @Slf4j
-public class HealthEndpoint {
+public class HealthEndpoint implements UnprotectedRootAction {
 
-    public static final String URL_NAME = Endpoint.MCP_SERVER + "/health";
+    public static final String URL_NAME = "mcp-health";
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -78,9 +83,35 @@ public class HealthEndpoint {
      */
     public static final int SHUTDOWN_GRACE_PERIOD_SECONDS = 5;
 
+    @Override
+    public String getIconFileName() {
+        return null;
+    }
+
+    @Override
+    public String getDisplayName() {
+        return null;
+    }
+
+    @Override
+    public String getUrlName() {
+        return URL_NAME;
+    }
+
+    /**
+     * Handles GET requests via Stapler.
+     *
+     * @param req the Stapler request
+     * @param rsp the Stapler response
+     * @throws IOException if writing the response fails
+     */
+    public void doIndex(StaplerRequest2 req, StaplerResponse2 rsp) throws IOException {
+        handleHealthRequest(rsp);
+    }
+
     /**
      * Handles GET requests to the health endpoint.
-     * This method is called directly from the HttpServletFilter to bypass authentication.
+     * This method can be called directly or via Stapler.
      *
      * @param response the HTTP response to send
      * @throws IOException if writing the response fails

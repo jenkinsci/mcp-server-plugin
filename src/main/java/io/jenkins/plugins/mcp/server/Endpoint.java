@@ -97,7 +97,7 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
      * The endpoint path for metrics
      */
     public static final String METRICS_ENDPOINT = "/metrics";
-    public static final String MCP_SERVER_HEALTH_METRICS = MCP_SERVER_HEALTH + METRICS_ENDPOINT;
+    public static final String MCP_SERVER_METRICS = MCP_SERVER + METRICS_ENDPOINT;
     public static final String USER_ID = Endpoint.class.getName() + ".userId";
     public static final String HTTP_SERVLET_REQUEST = Endpoint.class.getName() + ".httpServletRequest";
 
@@ -154,15 +154,13 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
         }
         String requestedResource = getRequestedResourcePath(request);
 
-        // Handle health endpoint (no authentication required) in process()
-        // This bypasses Stapler authentication intentionally
-        if (isHealthRequest(request)) {
-            handleHealth(request, response);
+        // Note: health endpoint is now handled by HealthEndpoint UnprotectedRootAction at /mcp-health
+
+        // Handle metrics endpoint - auth check is done inside the handler
+        if (isMetricsRequest(request)) {
+            handleMetrics(request, response);
             return true;
         }
-
-        // Note: metrics endpoint is NOT handled here - it needs authentication
-        // and is handled in handle() after Stapler applies auth
 
         if (requestedResource.startsWith("/" + MCP_SERVER_MESSAGE)
                 && request.getMethod().equalsIgnoreCase("POST")) {
@@ -267,11 +265,7 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
             init();
         }
 
-        // Handle health endpoint (no authentication required)
-        if (isHealthRequest(req)) {
-            handleHealth(req, resp);
-            return true;
-        }
+        // Note: health endpoint is handled by HealthEndpoint UnprotectedRootAction at /mcp-health
 
         // Handle metrics endpoint (authentication checked in handler)
         if (isMetricsRequest(req)) {
@@ -444,21 +438,10 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
                         || (request.getMethod().equalsIgnoreCase("POST")));
     }
 
-    private boolean isHealthRequest(HttpServletRequest request) {
-        String requestedResource = getRequestedResourcePath(request);
-        // Match /mcp-server/health but not /mcp-server/health/metrics
-        return requestedResource.equals("/" + MCP_SERVER_HEALTH)
-                && request.getMethod().equalsIgnoreCase("GET");
-    }
-
     private boolean isMetricsRequest(HttpServletRequest request) {
         String requestedResource = getRequestedResourcePath(request);
-        return requestedResource.equals("/" + MCP_SERVER_HEALTH_METRICS)
+        return requestedResource.equals("/" + MCP_SERVER_METRICS)
                 && request.getMethod().equalsIgnoreCase("GET");
-    }
-
-    private void handleHealth(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        HealthEndpoint.handleHealthRequest(response);
     }
 
     private void handleMetrics(HttpServletRequest request, HttpServletResponse response) throws IOException {

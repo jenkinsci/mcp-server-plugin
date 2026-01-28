@@ -63,7 +63,7 @@ import org.kohsuke.accmod.restrictions.NoExternalUse;
 @Slf4j
 public class McpConnectionMetrics {
 
-    public static final String URL_NAME = Endpoint.MCP_SERVER + "/health/metrics";
+    public static final String URL_NAME = Endpoint.MCP_SERVER + "/metrics";
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
