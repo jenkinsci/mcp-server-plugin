@@ -33,6 +33,7 @@ The MCP Server plugin automatically sets up necessary endpoints and tools upon i
 The following system properties can be used to configure the MCP Server plugin:
 
 - hard limit on max number of log lines to return with `io.jenkins.plugins.mcp.server.extensions.BuildLogsExtension.limit.max=10000` (default 10000)
+- enable stateless MCP server mode with `io.jenkins.plugins.mcp.server.Endpoint.statelessMode=true` (default false, see [Stateless Mode](#stateless-mode) below)
 
 #### Origin header validation
 
@@ -42,10 +43,28 @@ You can enable different levels of validation, if the header is available with t
 the system property `io.jenkins.plugins.mcp.server.Endpoint.requireOriginMatch=true`
 When enforcing the validation, the header value must match the configured Jenkins root url.
 
-If receiving the header is mandatory the system property `io.jenkins.plugins.mcp.server.Endpoint.requireOriginHeader=true` 
+If receiving the header is mandatory the system property `io.jenkins.plugins.mcp.server.Endpoint.requireOriginHeader=true`
 will make it mandatory as well.
 
+#### Stateless Mode
 
+By default, the MCP server uses session-based transports that maintain client sessions. For simpler deployments
+that don't require session state, you can enable stateless mode:
+
+```
+-Dio.jenkins.plugins.mcp.server.Endpoint.statelessMode=true
+```
+
+In stateless mode:
+- The `/mcp-server/mcp` endpoint uses stateless transport instead of streamable
+- The `/mcp-server/sse` endpoint is disabled (returns 404)
+- The `/mcp-server/message` endpoint is disabled (returns 404)
+- Each request is handled independently without session state
+
+This mode is useful for:
+- Simple deployments where session management overhead is not needed
+- Environments where clients make independent requests without maintaining a persistent connection
+- Testing and debugging scenarios
 
 ## Usage
 
