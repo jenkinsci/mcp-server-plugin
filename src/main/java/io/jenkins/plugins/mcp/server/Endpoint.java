@@ -452,6 +452,8 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
             init();
         }
 
+        // Note: health endpoint is handled by HealthEndpoint UnprotectedRootAction at /mcp-health
+
         // Handle metrics endpoint (authentication checked in handler)
         if (isMetricsRequest(req)) {
             handleMetrics(req, resp);
