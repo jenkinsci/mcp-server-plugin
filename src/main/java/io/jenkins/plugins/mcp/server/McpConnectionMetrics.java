@@ -35,9 +35,9 @@ import java.time.Instant;
 import java.util.concurrent.atomic.AtomicLong;
 import jenkins.model.Jenkins;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.access.AccessDeniedException;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
+import org.springframework.security.access.AccessDeniedException;
 
 /**
  * Tracks and exposes MCP connection metrics.

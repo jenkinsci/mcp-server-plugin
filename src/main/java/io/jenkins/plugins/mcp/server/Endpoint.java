@@ -91,12 +91,14 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
      * The endpoint path for health checks
      */
     public static final String HEALTH_ENDPOINT = "/health";
+
     public static final String MCP_SERVER_HEALTH = MCP_SERVER + HEALTH_ENDPOINT;
 
     /**
      * The endpoint path for metrics
      */
     public static final String METRICS_ENDPOINT = "/metrics";
+
     public static final String MCP_SERVER_METRICS = MCP_SERVER + METRICS_ENDPOINT;
     public static final String USER_ID = Endpoint.class.getName() + ".userId";
     public static final String HTTP_SERVLET_REQUEST = Endpoint.class.getName() + ".httpServletRequest";
