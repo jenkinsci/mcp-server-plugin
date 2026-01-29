@@ -117,7 +117,41 @@ When Jenkins shuts down, the health endpoint will return `503 Service Unavailabl
 
 For better connection reliability, we recommend using **Streamable HTTP** (`/mcp-server/mcp`) instead of **SSE** (`/mcp-server/sse`). Streamable HTTP handles connection issues more gracefully and is the preferred transport for most MCP clients.
 
+#### Production Deployment
 
+When deploying behind a reverse proxy or in production environments, configure these timeout settings to prevent premature connection drops:
+
+**Jenkins/Jetty Configuration**
+
+Jenkins uses Winstone (embedded Jetty) which defaults `httpKeepAliveTimeout` to 30 seconds. Since MCP keep-alive pings are also sent every 30 seconds, this creates a race condition where Jetty may close the connection before the next ping arrives.
+
+Add this argument to your Jenkins startup command:
+```
+--httpKeepAliveTimeout=600000
+```
+
+For Docker deployments, add to your docker-compose.yml:
+```yaml
+services:
+  jenkins:
+    image: jenkins/jenkins:lts
+    command: ["--httpKeepAliveTimeout=600000"]
+```
+
+**Reverse Proxy Configuration (Nginx)**
+
+For Nginx, extend timeouts for MCP endpoints:
+```nginx
+location ~ ^/(mcp-server|mcp-health)/ {
+    proxy_pass http://jenkins;
+    proxy_http_version 1.1;
+    proxy_request_buffering off;
+    proxy_buffering off;
+    proxy_set_header Connection "";
+    proxy_read_timeout 600s;
+    proxy_send_timeout 600s;
+}
+```
 
 ## Usage
 
