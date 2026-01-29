@@ -69,10 +69,10 @@ class HealthEndpointTest {
             assertThat(response.getContentType()).contains("application/json");
 
             DocumentContext json = JsonPath.parse(response.getContentAsString());
-            assertThat(json.read("$.status", String.class)).isEqualTo("ok");
+            assertThat(json.read("$.mcpServerStatus", String.class)).isEqualTo("ok");
+            assertThat(json.read("$.activeConnections", Integer.class)).isNotNull();
             assertThat(json.read("$.shuttingDown", Boolean.class)).isFalse();
             assertThat(json.read("$.timestamp", String.class)).isNotEmpty();
-            assertThat(json.read("$.jenkinsVersion", String.class)).isNotEmpty();
         }
     }
 
@@ -95,7 +95,7 @@ class HealthEndpointTest {
                     .isEqualTo(String.valueOf(HealthEndpoint.SHUTDOWN_GRACE_PERIOD_SECONDS));
 
             DocumentContext json = JsonPath.parse(response.getContentAsString());
-            assertThat(json.read("$.status", String.class)).isEqualTo("shutting_down");
+            assertThat(json.read("$.mcpServerStatus", String.class)).isEqualTo("shutting_down");
             assertThat(json.read("$.shuttingDown", Boolean.class)).isTrue();
         }
     }

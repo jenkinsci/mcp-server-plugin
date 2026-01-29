@@ -34,7 +34,6 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.concurrent.atomic.AtomicBoolean;
-import jenkins.model.Jenkins;
 import lombok.extern.slf4j.Slf4j;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
@@ -42,24 +41,26 @@ import org.kohsuke.stapler.StaplerRequest2;
 import org.kohsuke.stapler.StaplerResponse2;
 
 /**
- * Lightweight health endpoint for MCP Server connection monitoring.
+ * Lightweight health endpoint specifically for MCP Server status monitoring.
  *
- * <p>This endpoint provides a quick way for clients to check if the MCP server is available
- * without the overhead of the full MCP protocol handshake. It's accessible without authentication
- * to enable maximum accessibility for health checking.</p>
+ * <p>This endpoint provides MCP clients a quick way to check if the MCP server is available
+ * and accepting connections, without the overhead of the full MCP protocol handshake.
+ * It's accessible without authentication to enable health checking from load balancers
+ * and monitoring systems.</p>
  *
- * <p>The endpoint tracks shutdown state, allowing clients to detect when Jenkins is shutting down
- * and prepare for reconnection.</p>
+ * <p>Unlike a generic Jenkins health endpoint, this endpoint returns MCP-specific information
+ * such as active connection counts and server shutdown state, allowing MCP clients to make
+ * informed decisions about connection management and reconnection.</p>
  *
  * <p>Endpoint: {@code /mcp-health}</p>
  *
  * <p>Response format:</p>
  * <pre>
  * {
- *   "status": "ok" | "shutting_down",
- *   "timestamp": "2025-01-28T10:30:00Z",
- *   "jenkinsVersion": "2.533",
- *   "shuttingDown": false
+ *   "mcpServerStatus": "ok" | "shutting_down",
+ *   "activeConnections": 5,
+ *   "shuttingDown": false,
+ *   "timestamp": "2025-01-28T10:30:00Z"
  * }
  * </pre>
  */
@@ -110,7 +111,8 @@ public class HealthEndpoint implements UnprotectedRootAction {
     }
 
     /**
-     * Handles GET requests to the health endpoint.
+     * Handles GET requests to the MCP health endpoint.
+     * Returns MCP-specific status information including active connection counts.
      * This method can be called directly or via Stapler.
      *
      * @param response the HTTP response to send
@@ -129,15 +131,10 @@ public class HealthEndpoint implements UnprotectedRootAction {
         }
 
         ObjectNode responseJson = objectMapper.createObjectNode();
-        responseJson.put("status", isShuttingDown ? "shutting_down" : "ok");
-        responseJson.put("timestamp", Instant.now().toString());
-
-        Jenkins jenkins = Jenkins.getInstanceOrNull();
-        if (jenkins != null) {
-            responseJson.put("jenkinsVersion", Jenkins.VERSION);
-        }
-
+        responseJson.put("mcpServerStatus", isShuttingDown ? "shutting_down" : "ok");
+        responseJson.put("activeConnections", McpConnectionMetrics.getActiveSseConnections());
         responseJson.put("shuttingDown", isShuttingDown);
+        responseJson.put("timestamp", Instant.now().toString());
 
         response.getWriter().write(objectMapper.writeValueAsString(responseJson));
         response.getWriter().flush();
