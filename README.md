@@ -64,12 +64,13 @@ Set to `0` to disable keep-alive messages (not recommended).
 
 #### Health Endpoint
 
-A lightweight health endpoint is available for connection monitoring at:
+A lightweight MCP-specific health endpoint is available for connection monitoring at:
 ```
 <jenkins-url>/mcp-health
 ```
 
 This endpoint:
+- Returns MCP server status and active connection counts
 - Requires no authentication for maximum accessibility
 - Returns immediately without MCP protocol overhead
 - Returns HTTP 200 when healthy, HTTP 503 during shutdown
@@ -78,10 +79,10 @@ This endpoint:
 Response format:
 ```json
 {
-  "status": "ok",
-  "timestamp": "2025-01-28T10:30:00Z",
-  "jenkinsVersion": "2.533",
-  "shuttingDown": false
+  "mcpServerStatus": "ok",
+  "activeConnections": 5,
+  "shuttingDown": false,
+  "timestamp": "2025-01-28T10:30:00Z"
 }
 ```
 
