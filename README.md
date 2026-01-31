@@ -224,7 +224,11 @@ The plugin provides the following built-in tools for interacting with Jenkins:
   - **Multi-select Parameters**: Supported as arrays or lists
   - **Custom Plugin Parameters**: Automatically attempted using reflection-based detection
   - **Fallback Behavior**: Unsupported parameters fall back to default values with logging
-#### Build Information
+  This tool returns a queue item if the job is successfully scheduled. You can use the returned queue item ID with the `getQueueItem` tool.
+
+- `getQueueItem`: Get information about a queued item using its ID.
+[
+]()#### Build Information
 - `getBuild`: Retrieve a specific build or the last build of a Jenkins job.
 - `updateBuild`: Update build display name and/or description.
 - `getBuildLog`: Retrieve log lines with pagination for a specific build or the last build.

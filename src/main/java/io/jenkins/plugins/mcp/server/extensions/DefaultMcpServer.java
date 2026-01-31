@@ -31,6 +31,7 @@ import static io.jenkins.plugins.mcp.server.extensions.util.ParameterValueFactor
 
 import hudson.Extension;
 import hudson.model.AbstractItem;
+import hudson.model.Action;
 import hudson.model.AdministrativeMonitor;
 import hudson.model.Cause;
 import hudson.model.CauseAction;
@@ -40,6 +41,7 @@ import hudson.model.ItemGroup;
 import hudson.model.Job;
 import hudson.model.ParametersAction;
 import hudson.model.ParametersDefinitionProperty;
+import hudson.model.Queue;
 import hudson.model.Run;
 import hudson.model.User;
 import hudson.slaves.Cloud;
@@ -48,6 +50,7 @@ import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
 import io.jenkins.plugins.mcp.server.tool.JenkinsMcpContext;
 import jakarta.annotation.Nullable;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -57,6 +60,7 @@ import java.util.Objects;
 import java.util.Optional;
 import jenkins.model.Jenkins;
 import jenkins.model.ParameterizedJobMixIn;
+import jenkins.model.queue.QueueItem;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.SneakyThrows;
@@ -114,8 +118,11 @@ public class DefaultMcpServer implements McpServerExtension {
         }
     }
 
-    @Tool(description = "Trigger a build for a Jenkins job") // keep the default value for destructive (true)
-    public boolean triggerBuild(
+    public record TriggerResult(boolean success, Queue.Item item) {}
+
+    @Tool(description = "Trigger a build for a Jenkins job")
+    // keep the default value for destructive (true)
+    public TriggerResult triggerBuild(
             @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
             @ToolParam(description = "Build parameters (optional, e.g., {key1=value1,key2=value2})", required = false)
                     Map<String, Object> parameters) {
@@ -125,6 +132,9 @@ public class DefaultMcpServer implements McpServerExtension {
             job.checkPermission(Item.BUILD);
             var remoteAddr = JenkinsMcpContext.get().getHttpServletRequest().getRemoteAddr();
             CauseAction action = new CauseAction(new MCPCause(remoteAddr), new Cause.UserIdCause());
+            List<Action> actions = new ArrayList<>();
+            actions.add(action);
+
             if (job.isParameterized() && job instanceof Job j) {
                 ParametersDefinitionProperty parametersDefinition =
                         (ParametersDefinitionProperty) j.getProperty(ParametersDefinitionProperty.class);
@@ -139,17 +149,18 @@ public class DefaultMcpServer implements McpServerExtension {
                         })
                         .filter(Objects::nonNull)
                         .toList();
-                if (!parameterValues.isEmpty()) {
-                    job.scheduleBuild2(0, new ParametersAction(parameterValues), action);
-                } else {
-                    job.scheduleBuild2(0, action);
-                }
-            } else {
-                job.scheduleBuild2(0, action);
+
+                actions.add(new ParametersAction(parameterValues));
             }
-            return true;
+
+            var scheduleResult = Jenkins.get().getQueue().schedule2(job, 0, actions);
+            if (scheduleResult.isRefused()) {
+                return new TriggerResult(false, null);
+            } else {
+                return new TriggerResult(true, scheduleResult.getItem());
+            }
         }
-        return false;
+        return new TriggerResult(false, null);
     }
 
     @Tool(
@@ -290,5 +301,13 @@ public class DefaultMcpServer implements McpServerExtension {
             map.put("Root URL Status", "OK");
         }
         return map;
+    }
+
+    @Tool(
+            description =
+                    "Get the queue item details by its ID. The caller can check the queue item's status, build details, and other relevant information.",
+            annotations = @Tool.Annotations(destructiveHint = false))
+    public QueueItem getQueueItem(@ToolParam(description = "The queue item id") long id) {
+        return Jenkins.get().getQueue().getItem(id);
     }
 }
