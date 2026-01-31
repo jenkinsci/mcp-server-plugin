@@ -258,25 +258,20 @@ public class McpToolWrapper {
         return resultBuilder.build();
     }
 
-    McpSchema.CallToolResult callRequest(McpSyncServerExchange exchange, McpSchema.CallToolRequest request) {
-        var args = request.arguments();
-        var oldUser = User.current();
-
-        try {
-            var user = tryGetUser(exchange);
-            if (user != null) {
-                ACL.as(user);
-            }
+    McpSchema.CallToolResult call(McpSyncServerExchange exchange, McpSchema.CallToolRequest request) {
+        var user = tryGetUser(exchange);
+        try (var ignored = switchTo(user);
+                var jenkinsMcpContext = JenkinsMcpContext.get()) {
             // need Jenkins.READ at least
             Jenkins.get().checkPermission(Jenkins.READ);
             if (log.isTraceEnabled()) {
                 log.trace(
                         "Tool call: {} as user '{}', arguments: {}",
                         request.name(),
-                        user == null ? "" : user.getId(),
+                        Jenkins.getAuthentication2().getName(),
                         request.arguments());
             }
-
+            var args = request.arguments();
             var methodArgs = Arrays.stream(method.getParameters())
                     .map(param -> {
                         var arg = args.get(param.getName());
@@ -289,7 +284,6 @@ public class McpToolWrapper {
                     .toArray();
 
             var transportContext = exchange.transportContext();
-            var jenkinsMcpContext = JenkinsMcpContext.get();
             jenkinsMcpContext.setHttpServletRequest((HttpServletRequest) transportContext.get(HTTP_SERVLET_REQUEST));
             var result = method.invoke(target, methodArgs);
             return toMcpResult(result);
@@ -311,9 +305,6 @@ public class McpToolWrapper {
                     .isError(true)
                     .addTextContent(toJson(toolResponse))
                     .build();
-        } finally {
-            ACL.as(oldUser);
-            JenkinsMcpContext.clear();
         }
     }
 
@@ -324,6 +315,17 @@ public class McpToolWrapper {
             userId = (String) context.get(USER_ID);
         }
         return User.get(userId, false, Map.of());
+    }
+
+    private static AutoCloseable switchTo(User user) {
+        if (user != null) {
+            user.impersonate2();
+            return ACL.as(user);
+        } else {
+            return () -> {
+                /* nothing to do */
+            };
+        }
     }
 
     private Supplier<Map<String, Object>> _meta() {
@@ -364,7 +366,7 @@ public class McpToolWrapper {
         }
         return McpServerFeatures.SyncToolSpecification.builder()
                 .tool(mcpSchemaToolBuilder.build())
-                .callHandler(this::callRequest)
+                .callHandler(this::call)
                 .build();
     }
 
