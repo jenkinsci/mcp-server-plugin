@@ -63,7 +63,9 @@ public class McpClientExtension implements TestTemplateInvocationContextProvider
     public Stream<TestTemplateInvocationContext> provideTestTemplateInvocationContexts(ExtensionContext context) {
 
         return Stream.<JenkinsMcpClientBuilder>of(
-                        new JenkinsSSEMcpClientBuilder(), new JenkinsStreamableMcpClientBuilder())
+                        new JenkinsSSEMcpClientBuilder(),
+                        new JenkinsStreamableMcpClientBuilder(),
+                        new JenkinsStatelessMcpClientBuilder())
                 .map(this::invocationContext);
     }
 
