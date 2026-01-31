@@ -26,42 +26,22 @@
 
 package io.jenkins.plugins.mcp.server;
 
-import static io.jenkins.plugins.mcp.server.Endpoint.MCP_SERVER_SSE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.jenkins.plugins.mcp.server.junit.StatelessMcpTestClient;
 import io.modelcontextprotocol.spec.McpSchema;
-import jakarta.servlet.http.HttpServletResponse;
-import java.net.URL;
 import java.util.Map;
-import org.htmlunit.HttpMethod;
-import org.htmlunit.WebRequest;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
 /**
- * Tests for the stateless MCP server mode.
+ * Tests for the stateless MCP server endpoint.
+ * The stateless endpoint is always available at /mcp-server/stateless alongside
+ * the SSE and streamable endpoints.
  */
 @WithJenkins
 public class StatelessEndpointTest {
-
-    private boolean originalStatelessMode;
-
-    @BeforeEach
-    void setUp() {
-        // Save original value and enable stateless mode for tests
-        originalStatelessMode = Endpoint.STATELESS_MODE;
-        Endpoint.STATELESS_MODE = true;
-    }
-
-    @AfterEach
-    void tearDown() {
-        // Restore original value
-        Endpoint.STATELESS_MODE = originalStatelessMode;
-    }
 
     @Test
     void testStatelessMcpEndpointWorksWithToolsList(JenkinsRule jenkins) throws Exception {
@@ -89,34 +69,6 @@ public class StatelessEndpointTest {
             assertThat(response).isNotNull();
             assertThat(response.isError()).isFalse();
             assertThat(response.content()).isNotEmpty();
-        }
-    }
-
-    @Test
-    void testSSEEndpointReturns404InStatelessMode(JenkinsRule jenkins) throws Exception {
-        var url = jenkins.getURL();
-        var baseUrl = url.toString();
-        var sseUrl = baseUrl + MCP_SERVER_SSE;
-        try (JenkinsRule.WebClient webClient = jenkins.createWebClient()) {
-            webClient.getOptions().setThrowExceptionOnFailingStatusCode(false);
-            var request = new WebRequest(new URL(sseUrl), HttpMethod.GET);
-            var response = webClient.loadWebResponse(request);
-            assertThat(response.getStatusCode()).isEqualTo(HttpServletResponse.SC_NOT_FOUND);
-        }
-    }
-
-    @Test
-    void testMessageEndpointReturns404InStatelessMode(JenkinsRule jenkins) throws Exception {
-        var url = jenkins.getURL();
-        var baseUrl = url.toString();
-        var messageUrl = baseUrl + Endpoint.MCP_SERVER_MESSAGE;
-        try (JenkinsRule.WebClient webClient = jenkins.createWebClient()) {
-            webClient.getOptions().setThrowExceptionOnFailingStatusCode(false);
-            var request = new WebRequest(new URL(messageUrl), HttpMethod.POST);
-            request.setAdditionalHeader("Content-Type", "application/json");
-            request.setRequestBody("{\"jsonrpc\":\"2.0\",\"method\":\"test\",\"id\":1}");
-            var response = webClient.loadWebResponse(request);
-            assertThat(response.getStatusCode()).isEqualTo(HttpServletResponse.SC_NOT_FOUND);
         }
     }
 

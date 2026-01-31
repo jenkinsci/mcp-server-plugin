@@ -84,6 +84,10 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
 
     public static final String MCP_SERVER_STREAMABLE = MCP_SERVER + STREAMABLE_ENDPOINT;
 
+    public static final String STATELESS_ENDPOINT = "/stateless";
+
+    public static final String MCP_SERVER_STATELESS = MCP_SERVER + STATELESS_ENDPOINT;
+
     /**
      * The endpoint path for handling client messages
      */
@@ -122,14 +126,28 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
             SystemProperties.getBoolean(Endpoint.class.getName() + ".requireOriginMatch", true);
 
     /**
-     * Whether to use stateless MCP server mode. Default is false (session-based).
-     * In stateless mode:
-     * - The /mcp-server/mcp endpoint uses stateless transport instead of streamable
-     * - SSE transport at /mcp-server/sse is disabled (stateless doesn't support SSE push)
+     * Whether to disable the stateless MCP endpoint. Default is false (enabled).
+     * The stateless endpoint is available at /mcp-server/stateless
      */
     @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "Accessible via System Groovy Scripts")
-    public static boolean STATELESS_MODE =
-            SystemProperties.getBoolean(Endpoint.class.getName() + ".statelessMode", false);
+    public static boolean DISABLE_MCP_STATELESS =
+            SystemProperties.getBoolean(Endpoint.class.getName() + ".disableMcpStateless", false);
+
+    /**
+     * Whether to disable the SSE MCP endpoint. Default is false (enabled).
+     * The SSE endpoint is available at /mcp-server/sse
+     */
+    @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "Accessible via System Groovy Scripts")
+    public static boolean DISABLE_MCP_SSE =
+            SystemProperties.getBoolean(Endpoint.class.getName() + ".disableMcpSse", false);
+
+    /**
+     * Whether to disable the streamable HTTP MCP endpoint. Default is false (enabled).
+     * The streamable endpoint is available at /mcp-server/mcp
+     */
+    @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "Accessible via System Groovy Scripts")
+    public static boolean DISABLE_MCP_STREAMABLE =
+            SystemProperties.getBoolean(Endpoint.class.getName() + ".disableMcpStreamable", false);
 
     /**
      * JSON object mapper for serialization/deserialization
@@ -155,35 +173,46 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
             init();
         }
 
-        if (STATELESS_MODE) {
-            // In stateless mode, SSE endpoints are not supported
-            String requestedResource = getRequestedResourcePath(request);
-            if (requestedResource.startsWith("/" + MCP_SERVER_MESSAGE)
-                    || requestedResource.startsWith("/" + MCP_SERVER_SSE)) {
-                response.sendError(HttpServletResponse.SC_NOT_FOUND, "SSE not available in stateless mode");
+        String requestedResource = getRequestedResourcePath(request);
+
+        // Handle stateless endpoint
+        if (isStatelessRequest(request)) {
+            if (DISABLE_MCP_STATELESS) {
+                response.sendError(HttpServletResponse.SC_NOT_FOUND, "Stateless endpoint is disabled");
                 return true;
             }
-            if (isStreamableRequest(request)) {
-                handleStatelessMessage(request, response);
-                return true;
-            }
-        } else {
-            String requestedResource = getRequestedResourcePath(request);
-            if (requestedResource.startsWith("/" + MCP_SERVER_MESSAGE)
-                    && request.getMethod().equalsIgnoreCase("POST")) {
-                handleMessage(request, response, httpServletSseServerTransportProvider);
-                return true; // Do not allow this request on to Stapler
-            }
-            if (requestedResource.startsWith("/" + MCP_SERVER_SSE)
-                    && request.getMethod().equalsIgnoreCase("POST")) {
-                response.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
-                return true;
-            }
-            if (isStreamableRequest(request)) {
-                handleMessage(request, response, httpServletStreamableServerTransportProvider);
-                return true;
-            }
+            handleStatelessMessage(request, response);
+            return true;
         }
+
+        // Handle SSE message endpoint
+        if (requestedResource.startsWith("/" + MCP_SERVER_MESSAGE)
+                && request.getMethod().equalsIgnoreCase("POST")) {
+            if (DISABLE_MCP_SSE) {
+                response.sendError(HttpServletResponse.SC_NOT_FOUND, "SSE endpoint is disabled");
+                return true;
+            }
+            handleMessage(request, response, httpServletSseServerTransportProvider);
+            return true;
+        }
+
+        // Reject POST to SSE endpoint
+        if (requestedResource.startsWith("/" + MCP_SERVER_SSE)
+                && request.getMethod().equalsIgnoreCase("POST")) {
+            response.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+            return true;
+        }
+
+        // Handle streamable endpoint
+        if (isStreamableRequest(request)) {
+            if (DISABLE_MCP_STREAMABLE) {
+                response.sendError(HttpServletResponse.SC_NOT_FOUND, "Streamable endpoint is disabled");
+                return true;
+            }
+            handleMessage(request, response, httpServletStreamableServerTransportProvider);
+            return true;
+        }
+
         return false;
     }
 
@@ -225,11 +254,16 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
             rootUrl = "";
         }
 
-        if (STATELESS_MODE) {
-            initStateless(serverCapabilities, extensions, prompts, resources, pluginName, pluginVersion);
-        } else {
+        // Initialize session-based transports if SSE or Streamable enabled
+        if (!DISABLE_MCP_SSE || !DISABLE_MCP_STREAMABLE) {
             initSessionBased(serverCapabilities, extensions, prompts, resources, rootUrl, pluginName, pluginVersion);
         }
+
+        // Initialize stateless transport if enabled
+        if (!DISABLE_MCP_STATELESS) {
+            initStateless(serverCapabilities, extensions, prompts, resources, pluginName, pluginVersion);
+        }
+
         initialized = true;
     }
 
@@ -309,7 +343,7 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
 
         httpServletStatelessServerTransport = HttpServletStatelessServerTransport.builder()
                 .jsonMapper(new JacksonMcpJsonMapper(objectMapper))
-                .messageEndpoint(STREAMABLE_ENDPOINT)
+                .messageEndpoint(STATELESS_ENDPOINT)
                 .contextExtractor(createExtractor())
                 .build();
 
@@ -387,48 +421,55 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
             init();
         }
 
-        if (STATELESS_MODE) {
-            // In stateless mode, SSE is not supported
-            if (isSSERequest(req)) {
-                resp.sendError(HttpServletResponse.SC_NOT_FOUND, "SSE not available in stateless mode");
+        // Handle stateless endpoint
+        if (isStatelessRequest(req)) {
+            if (DISABLE_MCP_STATELESS) {
+                resp.sendError(HttpServletResponse.SC_NOT_FOUND, "Stateless endpoint is disabled");
                 return true;
             }
-            if (isStreamableRequest(req)) {
-                if (isBrowserRequest(req)) {
-                    // Serve friendly error page for GET requests to /mcp-server/mcp
-                    resp.setStatus(HttpServletResponse.SC_BAD_REQUEST);
-                    resp.setContentType("text/html;charset=UTF-8");
-                    resp.getWriter()
-                            .write(
-                                    "<html><head><title>Model Context Protocol Endpoint</title></head>"
-                                            + "<body><h2>This endpoint is designed for an AI agent using the Model Context Protocol.</h2></body></html>");
-                    resp.getWriter().flush();
-                } else {
-                    handleStatelessMessage(req, resp);
-                }
-                return true;
+            if (isBrowserRequest(req)) {
+                serveBrowserPage(resp);
+            } else {
+                handleStatelessMessage(req, resp);
             }
-        } else {
-            if (isSSERequest(req)) {
-                handleSSE(req, resp);
-                return true;
-            } else if (isStreamableRequest(req)) {
-                if (isBrowserRequest(req)) {
-                    // Serve friendly error page for GET requests to /mcp-server/mcp
-                    resp.setStatus(HttpServletResponse.SC_BAD_REQUEST);
-                    resp.setContentType("text/html;charset=UTF-8");
-                    resp.getWriter()
-                            .write(
-                                    "<html><head><title>Model Context Protocol Endpoint</title></head>"
-                                            + "<body><h2>This endpoint is designed for an AI agent using the Model Context Protocol.</h2></body></html>");
-                    resp.getWriter().flush();
-                } else {
-                    handleMessage(req, resp, httpServletStreamableServerTransportProvider);
-                }
-                return true;
-            }
+            return true;
         }
+
+        // Handle SSE endpoint
+        if (isSSERequest(req)) {
+            if (DISABLE_MCP_SSE) {
+                resp.sendError(HttpServletResponse.SC_NOT_FOUND, "SSE endpoint is disabled");
+                return true;
+            }
+            handleSSE(req, resp);
+            return true;
+        }
+
+        // Handle streamable endpoint
+        if (isStreamableRequest(req)) {
+            if (DISABLE_MCP_STREAMABLE) {
+                resp.sendError(HttpServletResponse.SC_NOT_FOUND, "Streamable endpoint is disabled");
+                return true;
+            }
+            if (isBrowserRequest(req)) {
+                serveBrowserPage(resp);
+            } else {
+                handleMessage(req, resp, httpServletStreamableServerTransportProvider);
+            }
+            return true;
+        }
+
         return false;
+    }
+
+    private void serveBrowserPage(HttpServletResponse resp) throws IOException {
+        resp.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+        resp.setContentType("text/html;charset=UTF-8");
+        resp.getWriter()
+                .write(
+                        "<html><head><title>Model Context Protocol Endpoint</title></head>"
+                                + "<body><h2>This endpoint is designed for an AI agent using the Model Context Protocol.</h2></body></html>");
+        resp.getWriter().flush();
     }
 
     private boolean isBrowserRequest(HttpServletRequest req) {
@@ -569,6 +610,13 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
     private boolean isStreamableRequest(HttpServletRequest request) {
         String requestedResource = getRequestedResourcePath(request);
         return requestedResource.startsWith("/" + MCP_SERVER_STREAMABLE)
+                && (request.getMethod().equalsIgnoreCase("GET")
+                        || (request.getMethod().equalsIgnoreCase("POST")));
+    }
+
+    private boolean isStatelessRequest(HttpServletRequest request) {
+        String requestedResource = getRequestedResourcePath(request);
+        return requestedResource.startsWith("/" + MCP_SERVER_STATELESS)
                 && (request.getMethod().equalsIgnoreCase("GET")
                         || (request.getMethod().equalsIgnoreCase("POST")));
     }

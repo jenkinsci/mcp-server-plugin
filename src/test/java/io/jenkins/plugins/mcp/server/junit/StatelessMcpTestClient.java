@@ -26,7 +26,7 @@
 
 package io.jenkins.plugins.mcp.server.junit;
 
-import static io.jenkins.plugins.mcp.server.Endpoint.MCP_SERVER_STREAMABLE;
+import static io.jenkins.plugins.mcp.server.Endpoint.MCP_SERVER_STATELESS;
 
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
@@ -52,7 +52,7 @@ public class StatelessMcpTestClient implements Closeable {
         var baseUrl = url.toString();
 
         HttpClientStreamableHttpTransport transport = HttpClientStreamableHttpTransport.builder(baseUrl)
-                .endpoint(MCP_SERVER_STREAMABLE)
+                .endpoint(MCP_SERVER_STATELESS)
                 .build();
 
         this.client = McpClient.sync(transport)
