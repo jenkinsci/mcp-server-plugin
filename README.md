@@ -33,6 +33,9 @@ The MCP Server plugin automatically sets up necessary endpoints and tools upon i
 The following system properties can be used to configure the MCP Server plugin:
 
 - hard limit on max number of log lines to return with `io.jenkins.plugins.mcp.server.extensions.BuildLogsExtension.limit.max=10000` (default 10000)
+- disable stateless endpoint with `io.jenkins.plugins.mcp.server.Endpoint.disableMcpStateless=true` (default false)
+- disable SSE endpoint with `io.jenkins.plugins.mcp.server.Endpoint.disableMcpSse=true` (default false)
+- disable streamable HTTP endpoint with `io.jenkins.plugins.mcp.server.Endpoint.disableMcpStreamable=true` (default false)
 
 #### Origin header validation
 
@@ -42,10 +45,34 @@ You can enable different levels of validation, if the header is available with t
 the system property `io.jenkins.plugins.mcp.server.Endpoint.requireOriginMatch=true`
 When enforcing the validation, the header value must match the configured Jenkins root url.
 
-If receiving the header is mandatory the system property `io.jenkins.plugins.mcp.server.Endpoint.requireOriginHeader=true` 
+If receiving the header is mandatory the system property `io.jenkins.plugins.mcp.server.Endpoint.requireOriginHeader=true`
 will make it mandatory as well.
 
+#### Transport Endpoints
 
+The MCP Server plugin provides three transport endpoints, all enabled by default:
+
+| Transport | Endpoint | Description |
+|-----------|----------|-------------|
+| **SSE** | `/mcp-server/sse` + `/mcp-server/message` | Server-Sent Events transport with session management |
+| **Streamable HTTP** | `/mcp-server/mcp` | Streamable HTTP transport with session management |
+| **Stateless** | `/mcp-server/stateless` | Stateless HTTP transport without session management |
+
+Each transport can be disabled independently using system properties:
+
+```
+-Dio.jenkins.plugins.mcp.server.Endpoint.disableMcpSse=true
+-Dio.jenkins.plugins.mcp.server.Endpoint.disableMcpStreamable=true
+-Dio.jenkins.plugins.mcp.server.Endpoint.disableMcpStateless=true
+```
+
+##### When to use Stateless transport
+
+The stateless endpoint (`/mcp-server/stateless`) is useful for:
+- Simple deployments where session management overhead is not needed
+- Environments where clients make independent requests without maintaining a persistent connection
+- Testing and debugging scenarios
+- Clients that don't support session-based protocols
 
 ## Usage
 
@@ -55,6 +82,7 @@ MCP clients can connect to the server using:
 - Streamable HTTP Endpoint: `<jenkins-url>/mcp-server/mcp`
 - SSE Endpoint: `<jenkins-url>/mcp-server/sse`
 - Message Endpoint: `<jenkins-url>/mcp-server/message`
+- Stateless Endpoint: `<jenkins-url>/mcp-server/stateless`
 
 ### Authentication and Credentials
 
@@ -184,6 +212,24 @@ Streamable example:
 #### Claude
 ```bash
 claude mcp add http://jenkins-host/mcp-server/mcp --transport http --header "Authorization: Basic <user:token base64>"
+```
+
+#### Stateless Configuration Example
+For clients that prefer stateless communication without session management:
+```json
+{
+  "servers": {
+    "jenkins": {
+      "type": "http",
+      "url": "http://jenkins-host/mcp-server/stateless",
+      "requestInit": {
+        "headers": {
+          "Authorization": "Basic <user:token base64>"
+        }
+      }
+    }
+  }
+}
 ```
 
 #### Goose

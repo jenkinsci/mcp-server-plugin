@@ -39,9 +39,12 @@ import io.jenkins.plugins.mcp.server.tool.McpToolWrapper;
 import io.modelcontextprotocol.common.McpTransportContext;
 import io.modelcontextprotocol.json.jackson.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.json.schema.jackson.DefaultJsonSchemaValidator;
+import io.modelcontextprotocol.server.McpServer;
 import io.modelcontextprotocol.server.McpServerFeatures;
+import io.modelcontextprotocol.server.McpStatelessServerFeatures;
 import io.modelcontextprotocol.server.McpTransportContextExtractor;
 import io.modelcontextprotocol.server.transport.HttpServletSseServerTransportProvider;
+import io.modelcontextprotocol.server.transport.HttpServletStatelessServerTransport;
 import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema;
 import jakarta.servlet.FilterChain;
@@ -81,6 +84,10 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
 
     public static final String MCP_SERVER_STREAMABLE = MCP_SERVER + STREAMABLE_ENDPOINT;
 
+    public static final String STATELESS_ENDPOINT = "/stateless";
+
+    public static final String MCP_SERVER_STATELESS = MCP_SERVER + STATELESS_ENDPOINT;
+
     /**
      * The endpoint path for handling client messages
      */
@@ -119,12 +126,37 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
             SystemProperties.getBoolean(Endpoint.class.getName() + ".requireOriginMatch", true);
 
     /**
+     * Whether to disable the stateless MCP endpoint. Default is false (enabled).
+     * The stateless endpoint is available at /mcp-server/stateless
+     */
+    @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "Accessible via System Groovy Scripts")
+    public static boolean DISABLE_MCP_STATELESS =
+            SystemProperties.getBoolean(Endpoint.class.getName() + ".disableMcpStateless", false);
+
+    /**
+     * Whether to disable the SSE MCP endpoint. Default is false (enabled).
+     * The SSE endpoint is available at /mcp-server/sse
+     */
+    @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "Accessible via System Groovy Scripts")
+    public static boolean DISABLE_MCP_SSE =
+            SystemProperties.getBoolean(Endpoint.class.getName() + ".disableMcpSse", false);
+
+    /**
+     * Whether to disable the streamable HTTP MCP endpoint. Default is false (enabled).
+     * The streamable endpoint is available at /mcp-server/mcp
+     */
+    @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "Accessible via System Groovy Scripts")
+    public static boolean DISABLE_MCP_STREAMABLE =
+            SystemProperties.getBoolean(Endpoint.class.getName() + ".disableMcpStreamable", false);
+
+    /**
      * JSON object mapper for serialization/deserialization
      */
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     HttpServletSseServerTransportProvider httpServletSseServerTransportProvider;
     HttpServletStreamableServerTransportProvider httpServletStreamableServerTransportProvider;
+    HttpServletStatelessServerTransport httpServletStatelessServerTransport;
 
     private boolean initialized = false;
 
@@ -140,21 +172,47 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
         if (!initialized) {
             init();
         }
+
         String requestedResource = getRequestedResourcePath(request);
+
+        // Handle stateless endpoint
+        if (isStatelessRequest(request)) {
+            if (DISABLE_MCP_STATELESS) {
+                response.sendError(HttpServletResponse.SC_NOT_FOUND, "Stateless endpoint is disabled");
+                return true;
+            }
+            handleStatelessMessage(request, response);
+            return true;
+        }
+
+        // Handle SSE message endpoint
         if (requestedResource.startsWith("/" + MCP_SERVER_MESSAGE)
                 && request.getMethod().equalsIgnoreCase("POST")) {
+            if (DISABLE_MCP_SSE) {
+                response.sendError(HttpServletResponse.SC_NOT_FOUND, "SSE endpoint is disabled");
+                return true;
+            }
             handleMessage(request, response, httpServletSseServerTransportProvider);
-            return true; // Do not allow this request on to Stapler
+            return true;
         }
+
+        // Reject POST to SSE endpoint
         if (requestedResource.startsWith("/" + MCP_SERVER_SSE)
                 && request.getMethod().equalsIgnoreCase("POST")) {
             response.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
             return true;
         }
+
+        // Handle streamable endpoint
         if (isStreamableRequest(request)) {
+            if (DISABLE_MCP_STREAMABLE) {
+                response.sendError(HttpServletResponse.SC_NOT_FOUND, "Streamable endpoint is disabled");
+                return true;
+            }
             handleMessage(request, response, httpServletStreamableServerTransportProvider);
             return true;
         }
+
         return false;
     }
 
@@ -182,16 +240,44 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
                 .build();
         var extensions = McpServerExtension.all();
 
-        var tools = extensions.stream()
-                .map(McpServerExtension::getSyncTools)
-                .flatMap(List::stream)
-                .toList();
         var prompts = extensions.stream()
                 .map(McpServerExtension::getSyncPrompts)
                 .flatMap(List::stream)
                 .toList();
         var resources = extensions.stream()
                 .map(McpServerExtension::getSyncResources)
+                .flatMap(List::stream)
+                .toList();
+
+        var rootUrl = jenkins.model.JenkinsLocationConfiguration.get().getUrl();
+        if (rootUrl == null) {
+            rootUrl = "";
+        }
+
+        // Initialize session-based transports if SSE or Streamable enabled
+        if (!DISABLE_MCP_SSE || !DISABLE_MCP_STREAMABLE) {
+            initSessionBased(serverCapabilities, extensions, prompts, resources, rootUrl, pluginName, pluginVersion);
+        }
+
+        // Initialize stateless transport if enabled
+        if (!DISABLE_MCP_STATELESS) {
+            initStateless(serverCapabilities, extensions, prompts, resources, pluginName, pluginVersion);
+        }
+
+        initialized = true;
+    }
+
+    private void initSessionBased(
+            McpSchema.ServerCapabilities serverCapabilities,
+            List<McpServerExtension> extensions,
+            List<McpServerFeatures.SyncPromptSpecification> prompts,
+            List<McpServerFeatures.SyncResourceSpecification> resources,
+            String rootUrl,
+            String pluginName,
+            String pluginVersion) {
+
+        var tools = extensions.stream()
+                .map(McpServerExtension::getSyncTools)
                 .flatMap(List::stream)
                 .toList();
 
@@ -205,10 +291,6 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
         allTools.addAll(tools);
         allTools.addAll(annotationTools);
 
-        var rootUrl = jenkins.model.JenkinsLocationConfiguration.get().getUrl();
-        if (rootUrl == null) {
-            rootUrl = "";
-        }
         httpServletSseServerTransportProvider = HttpServletSseServerTransportProvider.builder()
                 .jsonMapper(new JacksonMcpJsonMapper(objectMapper))
                 .baseUrl(rootUrl)
@@ -244,7 +326,93 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
                 .prompts(prompts)
                 .resources(resources)
                 .build();
-        initialized = true;
+    }
+
+    private void initStateless(
+            McpSchema.ServerCapabilities serverCapabilities,
+            List<McpServerExtension> extensions,
+            List<McpServerFeatures.SyncPromptSpecification> prompts,
+            List<McpServerFeatures.SyncResourceSpecification> resources,
+            String pluginName,
+            String pluginVersion) {
+
+        // Convert session-based tool specs to stateless tool specs
+        var statelessTools = convertToStatelessTools(extensions);
+        var statelessPrompts = convertToStatelessPrompts(prompts);
+        var statelessResources = convertToStatelessResources(resources);
+
+        httpServletStatelessServerTransport = HttpServletStatelessServerTransport.builder()
+                .jsonMapper(new JacksonMcpJsonMapper(objectMapper))
+                .messageEndpoint(STATELESS_ENDPOINT)
+                .contextExtractor(createExtractor())
+                .build();
+
+        McpServer.sync(httpServletStatelessServerTransport)
+                .serverInfo(pluginName, pluginVersion)
+                .jsonMapper(new JacksonMcpJsonMapper(objectMapper))
+                .jsonSchemaValidator(new DefaultJsonSchemaValidator(objectMapper))
+                .capabilities(serverCapabilities)
+                .tools(statelessTools)
+                .prompts(statelessPrompts)
+                .resources(statelessResources)
+                .build();
+    }
+
+    private List<McpStatelessServerFeatures.SyncToolSpecification> convertToStatelessTools(
+            List<McpServerExtension> extensions) {
+        // Collect tools from getSyncTools() - these need conversion
+        var sessionTools = extensions.stream()
+                .map(McpServerExtension::getSyncTools)
+                .flatMap(List::stream)
+                .map(this::convertToolToStateless)
+                .toList();
+
+        // Collect annotation-based tools - use McpToolWrapper.asStatelessSyncToolSpecification()
+        var annotationTools = extensions.stream()
+                .flatMap(extension -> Arrays.stream(extension.getClass().getMethods())
+                        .filter(method -> method.isAnnotationPresent(Tool.class))
+                        .map(method ->
+                                new McpToolWrapper(objectMapper, extension, method).asStatelessSyncToolSpecification()))
+                .toList();
+
+        List<McpStatelessServerFeatures.SyncToolSpecification> allTools = new ArrayList<>();
+        allTools.addAll(sessionTools);
+        allTools.addAll(annotationTools);
+        return allTools;
+    }
+
+    private McpStatelessServerFeatures.SyncToolSpecification convertToolToStateless(
+            McpServerFeatures.SyncToolSpecification sessionTool) {
+        return McpStatelessServerFeatures.SyncToolSpecification.builder()
+                .tool(sessionTool.tool())
+                .callHandler((context, request) -> sessionTool.callHandler().apply(null, request))
+                .build();
+    }
+
+    private Map<String, McpStatelessServerFeatures.SyncPromptSpecification> convertToStatelessPrompts(
+            List<McpServerFeatures.SyncPromptSpecification> sessionPrompts) {
+        Map<String, McpStatelessServerFeatures.SyncPromptSpecification> result = new HashMap<>();
+        for (var prompt : sessionPrompts) {
+            result.put(
+                    prompt.prompt().name(),
+                    new McpStatelessServerFeatures.SyncPromptSpecification(
+                            prompt.prompt(),
+                            (context, request) -> prompt.promptHandler().apply(null, request)));
+        }
+        return result;
+    }
+
+    private Map<String, McpStatelessServerFeatures.SyncResourceSpecification> convertToStatelessResources(
+            List<McpServerFeatures.SyncResourceSpecification> sessionResources) {
+        Map<String, McpStatelessServerFeatures.SyncResourceSpecification> result = new HashMap<>();
+        for (var resource : sessionResources) {
+            result.put(
+                    resource.resource().uri(),
+                    new McpStatelessServerFeatures.SyncResourceSpecification(
+                            resource.resource(),
+                            (context, request) -> resource.readHandler().apply(null, request)));
+        }
+        return result;
     }
 
     @Override
@@ -252,26 +420,56 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
         if (!initialized) {
             init();
         }
+
+        // Handle stateless endpoint
+        if (isStatelessRequest(req)) {
+            if (DISABLE_MCP_STATELESS) {
+                resp.sendError(HttpServletResponse.SC_NOT_FOUND, "Stateless endpoint is disabled");
+                return true;
+            }
+            if (isBrowserRequest(req)) {
+                serveBrowserPage(resp);
+            } else {
+                handleStatelessMessage(req, resp);
+            }
+            return true;
+        }
+
+        // Handle SSE endpoint
         if (isSSERequest(req)) {
+            if (DISABLE_MCP_SSE) {
+                resp.sendError(HttpServletResponse.SC_NOT_FOUND, "SSE endpoint is disabled");
+                return true;
+            }
             handleSSE(req, resp);
             return true;
-        } else if (isStreamableRequest(req)) {
+        }
+
+        // Handle streamable endpoint
+        if (isStreamableRequest(req)) {
+            if (DISABLE_MCP_STREAMABLE) {
+                resp.sendError(HttpServletResponse.SC_NOT_FOUND, "Streamable endpoint is disabled");
+                return true;
+            }
             if (isBrowserRequest(req)) {
-                // Serve friendly error page for GET requests to /mcp-server/mcp
-                resp.setStatus(HttpServletResponse.SC_BAD_REQUEST);
-                resp.setContentType("text/html;charset=UTF-8");
-                resp.getWriter()
-                        .write(
-                                "<html><head><title>Model Context Protocol Endpoint</title></head>"
-                                        + "<body><h2>This endpoint is designed for an AI agent using the Model Context Protocol.</h2></body></html>");
-                resp.getWriter().flush();
+                serveBrowserPage(resp);
             } else {
                 handleMessage(req, resp, httpServletStreamableServerTransportProvider);
             }
             return true;
-        } else {
-            return false;
         }
+
+        return false;
+    }
+
+    private void serveBrowserPage(HttpServletResponse resp) throws IOException {
+        resp.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+        resp.setContentType("text/html;charset=UTF-8");
+        resp.getWriter()
+                .write(
+                        "<html><head><title>Model Context Protocol Endpoint</title></head>"
+                                + "<body><h2>This endpoint is designed for an AI agent using the Model Context Protocol.</h2></body></html>");
+        resp.getWriter().flush();
     }
 
     private boolean isBrowserRequest(HttpServletRequest req) {
@@ -416,6 +614,13 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
                         || (request.getMethod().equalsIgnoreCase("POST")));
     }
 
+    private boolean isStatelessRequest(HttpServletRequest request) {
+        String requestedResource = getRequestedResourcePath(request);
+        return requestedResource.startsWith("/" + MCP_SERVER_STATELESS)
+                && (request.getMethod().equalsIgnoreCase("GET")
+                        || (request.getMethod().equalsIgnoreCase("POST")));
+    }
+
     private void handleSSE(HttpServletRequest request, HttpServletResponse response)
             throws IOException, ServletException {
         httpServletSseServerTransportProvider.service(request, response);
@@ -428,6 +633,15 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
         }
         prepareMcpContext(request);
         httpServlet.service(request, response);
+    }
+
+    private void handleStatelessMessage(HttpServletRequest request, HttpServletResponse response)
+            throws IOException, ServletException {
+        if (!validOriginHeader(request, response)) {
+            return;
+        }
+        prepareMcpContext(request);
+        httpServletStatelessServerTransport.service(request, response);
     }
 
     private static void prepareMcpContext(HttpServletRequest request) {
