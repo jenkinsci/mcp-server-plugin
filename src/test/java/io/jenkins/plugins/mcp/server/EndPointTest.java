@@ -50,6 +50,7 @@ public class EndPointTest {
     void testMcpToolCallSimpleJson(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder) {
 
         try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+
             client.getServerCapabilities();
             var tools = client.listTools();
             assertThat(tools.tools())
@@ -72,7 +73,8 @@ public class EndPointTest {
                             "getBuildChangeSets",
                             "getStatus",
                             "getTestResults",
-                            "getFlakyFailures");
+                            "getFlakyFailures",
+                            "getQueueItem");
 
             var sayHelloTool = tools.tools().stream()
                     .filter(tool -> "sayHello".equals(tool.name()))

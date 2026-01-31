@@ -30,6 +30,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.Extension;
+import hudson.PluginWrapper;
 import hudson.model.RootAction;
 import hudson.model.User;
 import hudson.security.csrf.CrumbExclusion;
@@ -162,6 +163,18 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
         if (initialized) {
             return;
         }
+        PluginWrapper wrapper = Jenkins.get().getPluginManager().whichPlugin(Endpoint.class);
+        // should not be null here in production. Only for testing purposes
+        String pluginName;
+        String pluginVersion;
+        if (wrapper == null) {
+            pluginName = "Jenkins MCP Server Plugin";
+            pluginVersion = "Unknown Version";
+        } else {
+            pluginName = "Jenkins " + wrapper.getDisplayName();
+            pluginVersion = wrapper.getVersion();
+        }
+
         McpSchema.ServerCapabilities serverCapabilities = McpSchema.ServerCapabilities.builder()
                 .tools(true)
                 .prompts(true)
@@ -206,6 +219,7 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
                 .build();
 
         io.modelcontextprotocol.server.McpServer.sync(httpServletSseServerTransportProvider)
+                .serverInfo(pluginName, pluginVersion)
                 .jsonMapper(new JacksonMcpJsonMapper(objectMapper))
                 .jsonSchemaValidator(new DefaultJsonSchemaValidator(objectMapper))
                 .capabilities(serverCapabilities)
@@ -222,6 +236,7 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
                 .build();
 
         io.modelcontextprotocol.server.McpServer.sync(httpServletStreamableServerTransportProvider)
+                .serverInfo(pluginName, pluginVersion)
                 .jsonMapper(new JacksonMcpJsonMapper(objectMapper))
                 .jsonSchemaValidator(new DefaultJsonSchemaValidator(objectMapper))
                 .capabilities(serverCapabilities)
