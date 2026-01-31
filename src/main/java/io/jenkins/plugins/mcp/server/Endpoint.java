@@ -226,9 +226,9 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
         }
 
         if (STATELESS_MODE) {
-            initStateless(serverCapabilities, extensions, prompts, resources);
+            initStateless(serverCapabilities, extensions, prompts, resources, pluginName, pluginVersion);
         } else {
-            initSessionBased(serverCapabilities, extensions, prompts, resources, rootUrl);
+            initSessionBased(serverCapabilities, extensions, prompts, resources, rootUrl, pluginName, pluginVersion);
         }
         initialized = true;
     }
@@ -238,7 +238,9 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
             List<McpServerExtension> extensions,
             List<McpServerFeatures.SyncPromptSpecification> prompts,
             List<McpServerFeatures.SyncResourceSpecification> resources,
-            String rootUrl) {
+            String rootUrl,
+            String pluginName,
+            String pluginVersion) {
 
         var tools = extensions.stream()
                 .map(McpServerExtension::getSyncTools)
@@ -296,7 +298,9 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
             McpSchema.ServerCapabilities serverCapabilities,
             List<McpServerExtension> extensions,
             List<McpServerFeatures.SyncPromptSpecification> prompts,
-            List<McpServerFeatures.SyncResourceSpecification> resources) {
+            List<McpServerFeatures.SyncResourceSpecification> resources,
+            String pluginName,
+            String pluginVersion) {
 
         // Convert session-based tool specs to stateless tool specs
         var statelessTools = convertToStatelessTools(extensions);
@@ -310,6 +314,7 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
                 .build();
 
         McpServer.sync(httpServletStatelessServerTransport)
+                .serverInfo(pluginName, pluginVersion)
                 .jsonMapper(new JacksonMcpJsonMapper(objectMapper))
                 .jsonSchemaValidator(new DefaultJsonSchemaValidator(objectMapper))
                 .capabilities(serverCapabilities)
