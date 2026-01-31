@@ -28,11 +28,14 @@ package io.jenkins.plugins.mcp.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.jenkins.plugins.mcp.server.annotation.Tool;
+import io.jenkins.plugins.mcp.server.annotation.ToolParam;
 import io.jenkins.plugins.mcp.server.junit.StatelessMcpTestClient;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.jvnet.hudson.test.JenkinsRule;
+import org.jvnet.hudson.test.TestExtension;
 import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
 /**
@@ -85,6 +88,26 @@ public class StatelessEndpointTest {
             McpSchema.TextContent textContent =
                     (McpSchema.TextContent) response.content().get(0);
             assertThat(textContent.text()).contains("Hello, World!");
+        }
+    }
+
+    @TestExtension
+    public static class SampleMcpServer implements McpServerExtension {
+        @Tool(
+                annotations =
+                        @Tool.Annotations(
+                                title = "Beta tool",
+                                readOnlyHint = true,
+                                destructiveHint = false,
+                                idempotentHint = true,
+                                openWorldHint = false,
+                                returnDirect = false),
+                metas = {
+                    @Tool.Meta(property = "version", parameter = "1.0"),
+                    @Tool.Meta(property = "author", parameter = "Someone")
+                })
+        public Map sayHello(@ToolParam(description = "The name to greet") String name) {
+            return Map.of("message", "Hello, " + name + "!");
         }
     }
 }

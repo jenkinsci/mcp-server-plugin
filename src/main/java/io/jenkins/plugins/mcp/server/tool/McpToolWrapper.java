@@ -261,7 +261,12 @@ public class McpToolWrapper {
     }
 
     McpSchema.CallToolResult call(McpSyncServerExchange exchange, McpSchema.CallToolRequest request) {
-        var user = tryGetUser(exchange);
+        McpTransportContext context = exchange.transportContext();
+        return call(context, request);
+    }
+
+    private McpSchema.CallToolResult call(McpTransportContext mcpTransportContext, McpSchema.CallToolRequest request) {
+        var user = tryGetUser(mcpTransportContext);
         try (var ignored = switchTo(user);
                 var jenkinsMcpContext = JenkinsMcpContext.get()) {
             // need Jenkins.READ at least
@@ -285,8 +290,7 @@ public class McpToolWrapper {
                     })
                     .toArray();
 
-            var transportContext = exchange.transportContext();
-            jenkinsMcpContext.setHttpServletRequest((HttpServletRequest) transportContext.get(HTTP_SERVLET_REQUEST));
+            jenkinsMcpContext.setHttpServletRequest((HttpServletRequest) mcpTransportContext.get(HTTP_SERVLET_REQUEST));
             var result = method.invoke(target, methodArgs);
             return toMcpResult(result);
 
@@ -310,9 +314,8 @@ public class McpToolWrapper {
         }
     }
 
-    private static User tryGetUser(McpSyncServerExchange exchange) {
+    private static User tryGetUser(McpTransportContext context) {
         String userId = null;
-        var context = exchange.transportContext();
         if (context != null) {
             userId = (String) context.get(USER_ID);
         }
@@ -321,7 +324,6 @@ public class McpToolWrapper {
 
     private static AutoCloseable switchTo(User user) {
         if (user != null) {
-            user.impersonate2();
             return ACL.as(user);
         } else {
             return () -> {
@@ -357,6 +359,14 @@ public class McpToolWrapper {
     }
 
     public McpServerFeatures.SyncToolSpecification asSyncToolSpecification() {
+        McpSchema.Tool.Builder mcpSchemaToolBuilder = createToolBuilder();
+        return McpServerFeatures.SyncToolSpecification.builder()
+                .tool(mcpSchemaToolBuilder.build())
+                .callHandler(this::call)
+                .build();
+    }
+
+    private McpSchema.Tool.Builder createToolBuilder() {
         McpSchema.Tool.Builder mcpSchemaToolBuilder = McpSchema.Tool.builder()
                 .name(getToolName())
                 .description(getToolDescription())
@@ -366,10 +376,7 @@ public class McpToolWrapper {
         if (isStructuredOutput()) {
             mcpSchemaToolBuilder.outputSchema(new JacksonMcpJsonMapper(objectMapper), generateForOutput());
         }
-        return McpServerFeatures.SyncToolSpecification.builder()
-                .tool(mcpSchemaToolBuilder.build())
-                .callHandler(this::call)
-                .build();
+        return mcpSchemaToolBuilder;
     }
 
     @SneakyThrows
@@ -381,79 +388,10 @@ public class McpToolWrapper {
     }
 
     public McpStatelessServerFeatures.SyncToolSpecification asStatelessSyncToolSpecification() {
+        McpSchema.Tool.Builder toolBuilder = createToolBuilder();
         return McpStatelessServerFeatures.SyncToolSpecification.builder()
-                .tool(McpSchema.Tool.builder()
-                        .name(getToolName())
-                        .description(getToolDescription())
-                        .meta(_meta().get())
-                        .annotations(toolAnnotations().get())
-                        .inputSchema(new JacksonMcpJsonMapper(objectMapper), generateForMethodInput())
-                        .build())
-                .callHandler(this::callStatelessRequest)
+                .tool(toolBuilder.build())
+                .callHandler(this::call)
                 .build();
-    }
-
-    McpSchema.CallToolResult callStatelessRequest(McpTransportContext context, McpSchema.CallToolRequest request) {
-        var args = request.arguments();
-        var oldUser = User.current();
-
-        try (var jenkinsMcpContext = JenkinsMcpContext.get()) {
-            var user = tryGetUserFromContext(context);
-            if (user != null) {
-                ACL.as(user);
-            }
-            // need Jenkins.READ at least
-            Jenkins.get().checkPermission(Jenkins.READ);
-            if (log.isTraceEnabled()) {
-                log.trace(
-                        "Tool call: {} as user '{}', arguments: {}",
-                        request.name(),
-                        user == null ? "" : user.getId(),
-                        request.arguments());
-            }
-
-            var methodArgs = Arrays.stream(method.getParameters())
-                    .map(param -> {
-                        var arg = args.get(param.getName());
-                        if (arg != null) {
-                            return objectMapper.convertValue(arg, param.getType());
-                        } else {
-                            return null;
-                        }
-                    })
-                    .toArray();
-
-            jenkinsMcpContext.setHttpServletRequest((HttpServletRequest) context.get(HTTP_SERVLET_REQUEST));
-            var result = method.invoke(target, methodArgs);
-            return toMcpResult(result);
-
-        } catch (Exception e) {
-            var rootCauseMessage = ExceptionUtils.getRootCauseMessage(e);
-            if (rootCauseMessage.isEmpty()) {
-                rootCauseMessage = "Error invoking method: " + method.getName();
-            }
-            if (log.isDebugEnabled()) {
-                log.atError().setCause(e).log("Error invoking tool method: {}: {}", method.getName(), rootCauseMessage);
-            }
-            ToolResponse toolResponse = new ToolResponse.ToolResponseBuilder()
-                    .message(rootCauseMessage)
-                    .status(ToolResponse.Status.FAILED)
-                    .build();
-
-            return McpSchema.CallToolResult.builder()
-                    .isError(true)
-                    .addTextContent(toJson(toolResponse))
-                    .build();
-        } finally {
-            ACL.as(oldUser);
-        }
-    }
-
-    private static User tryGetUserFromContext(McpTransportContext context) {
-        String userId = null;
-        if (context != null) {
-            userId = (String) context.get(USER_ID);
-        }
-        return User.get(userId, false, Map.of());
     }
 }
