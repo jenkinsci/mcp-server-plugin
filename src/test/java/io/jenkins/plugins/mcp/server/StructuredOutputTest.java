@@ -29,12 +29,16 @@ package io.jenkins.plugins.mcp.server;
 import static io.jenkins.plugins.mcp.server.junit.TestUtils.findToolByName;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder;
 import io.jenkins.plugins.mcp.server.junit.McpClientTest;
 import io.modelcontextprotocol.spec.McpSchema;
+import jakarta.annotation.Nullable;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import org.jvnet.hudson.test.JenkinsRule;
+import org.jvnet.hudson.test.TestExtension;
 import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
 @WithJenkins
@@ -194,5 +198,68 @@ public class StructuredOutputTest {
             var childObject = (Map<String, Object>) nestedObject.get("ref");
             assertThat(childObject).containsEntry("name", "item2").containsEntry("ref", null);
         }
+    }
+
+    @TestExtension
+    public static class StructuredOutputMcpServer implements McpServerExtension {
+
+        @Tool(structuredOutput = true)
+        public int intWithStructuredOutput() {
+            return 1;
+        }
+
+        @Tool(structuredOutput = true)
+        public Map mapWithStructuredOutput() {
+            return Map.of("key1", "value1");
+        }
+
+        @Tool(structuredOutput = true)
+        public Map mapAsNullWithStructuredOutput() {
+            return null;
+        }
+
+        @Tool(structuredOutput = true)
+        public Collection<String> collectionWithStructuredOutput() {
+            return List.of("item1", "item2");
+        }
+
+        @Tool(structuredOutput = true)
+        public Collection<String> collectionAsNullWithStructuredOutput() {
+            return null;
+        }
+
+        @Tool(structuredOutput = true)
+        public Object genericObjectWithStructuredOutput() {
+            return new CustomObject("John Doe", 30);
+        }
+
+        @Tool(structuredOutput = true)
+        public CustomObject customObjectWithStructuredOutput() {
+            return new CustomObject("John Doe", 30);
+        }
+
+        @Tool(structuredOutput = true)
+        public ParentObject nestedObjectWithStructuredOutput() {
+            return new ParentObject("John Doe", 30, new ChildObject("Child", 20));
+        }
+
+        @Tool(structuredOutput = true)
+        public ParentObject nestedObjectChildNullWithStructuredOutput() {
+            return new ParentObject("John Doe", 30, null);
+        }
+
+        @Tool(structuredOutput = true)
+        public SelfNestedObject selfNestedObjectWithStructuredOutput() {
+            return new SelfNestedObject("item1", new SelfNestedObject("item2", null));
+        }
+
+        public record CustomObject(String name, int age) {}
+
+        public record ChildObject(String name, int age) {}
+
+        public record ParentObject(String name, int age, ChildObject child) {}
+
+        public record SelfNestedObject(
+                String name, @Nullable SelfNestedObject ref) {}
     }
 }
