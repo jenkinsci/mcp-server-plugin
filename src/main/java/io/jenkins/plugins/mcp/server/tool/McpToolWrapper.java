@@ -397,7 +397,7 @@ public class McpToolWrapper {
         var args = request.arguments();
         var oldUser = User.current();
 
-        try {
+        try (var jenkinsMcpContext = JenkinsMcpContext.get()) {
             var user = tryGetUserFromContext(context);
             if (user != null) {
                 ACL.as(user);
@@ -423,7 +423,6 @@ public class McpToolWrapper {
                     })
                     .toArray();
 
-            var jenkinsMcpContext = JenkinsMcpContext.get();
             jenkinsMcpContext.setHttpServletRequest((HttpServletRequest) context.get(HTTP_SERVLET_REQUEST));
             var result = method.invoke(target, methodArgs);
             return toMcpResult(result);
@@ -447,7 +446,6 @@ public class McpToolWrapper {
                     .build();
         } finally {
             ACL.as(oldUser);
-            JenkinsMcpContext.clear();
         }
     }
 
