@@ -58,6 +58,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
+import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -70,6 +71,7 @@ import jenkins.model.Jenkins;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
+import org.kohsuke.stapler.export.ExportedBean;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
@@ -80,6 +82,7 @@ public class McpToolWrapper {
     private static final SchemaGenerator SUBTYPE_SCHEMA_GENERATOR;
     private static final boolean PROPERTY_REQUIRED_BY_DEFAULT = true;
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    public static final String DESCRIPTION = "description";
 
     static {
         OBJECT_MAPPER.registerModule(new JenkinsExportedBeanModule());
@@ -168,8 +171,12 @@ public class McpToolWrapper {
     }
 
     private static String toJson(Object item) {
+        return toJson(item, null);
+    }
+
+    private static String toJson(Object item, String tree) {
         try {
-            return OBJECT_MAPPER.writeValueAsString(item);
+            return OBJECT_MAPPER.writer().withAttribute("tree", tree).writeValueAsString(item);
         } catch (IOException e) {
             log.atError().setCause(e).log("This error should not happen");
             throw new RuntimeException(e);
@@ -194,15 +201,46 @@ public class McpToolWrapper {
             ObjectNode parameterNode = SUBTYPE_SCHEMA_GENERATOR.generateSchema(parameterType);
             String parameterDescription = getMethodParameterDescription(method, i);
             if (StringUtils.hasText(parameterDescription)) {
-                parameterNode.put("description", parameterDescription);
+                parameterNode.put(DESCRIPTION, parameterDescription);
             }
             properties.set(parameterName, parameterNode);
+        }
+
+        if (isTreePruneSupported()) {
+            ObjectNode parameterNode = SUBTYPE_SCHEMA_GENERATOR.generateSchema(String.class);
+            parameterNode.put(
+                    DESCRIPTION,
+                    "Field selection expression using the Jenkins Remote REST API tree syntax.\n"
+                            + "Allows limiting returned fields and nested objects (for example executable[number,url]) to reduce response size, especially for polling workflows.");
+            properties.set("tree", parameterNode);
         }
 
         var requiredArray = schema.putArray("required");
         required.forEach(requiredArray::add);
 
         return schema.toPrettyString();
+    }
+
+    private boolean isTreePruneSupported() {
+        Type typeToCheck = method.getGenericReturnType();
+
+        var classToCheck = method.getReturnType();
+        if (typeToCheck instanceof ParameterizedType parameterizedType) {
+            // For example, if return type is List<String>, rawType is List.class
+            Type rawType = parameterizedType.getRawType();
+            if (rawType instanceof Class<?> rawClass && Collection.class.isAssignableFrom(rawClass)) {
+                // And typeArguments will be [String.class]
+                Type[] typeArguments = parameterizedType.getActualTypeArguments();
+                if (typeArguments.length > 0 && typeArguments[0] instanceof Class) {
+                    classToCheck = (Class) typeArguments[0];
+                    // Now you have the generic type, e.g., String.class
+                    // You can add your logic here.
+                }
+            }
+        }
+
+        return method.getAnnotation(Tool.class).treePruneSupported()
+                || classToCheck.isAnnotationPresent(ExportedBean.class);
     }
 
     String getToolName() {
@@ -228,7 +266,7 @@ public class McpToolWrapper {
         return getToolName();
     }
 
-    McpSchema.CallToolResult toMcpResult(Object result) {
+    McpSchema.CallToolResult toMcpResult(Object result, String tree) {
 
         var builder = new ToolResponse.ToolResponseBuilder().status(ToolResponse.Status.COMPLETED);
 
@@ -252,8 +290,9 @@ public class McpToolWrapper {
                 builder.message(ToolResponse.DATA_MSG).result(result);
             }
         }
+
         McpSchema.CallToolResult.Builder resultBuilder =
-                McpSchema.CallToolResult.builder().isError(false).addTextContent(toJson(builder.build()));
+                McpSchema.CallToolResult.builder().isError(false).addTextContent(toJson(builder.build(), tree));
         if (isStructuredOutput()) {
             resultBuilder.structuredContent(result);
         }
@@ -292,7 +331,11 @@ public class McpToolWrapper {
 
             jenkinsMcpContext.setHttpServletRequest((HttpServletRequest) mcpTransportContext.get(HTTP_SERVLET_REQUEST));
             var result = method.invoke(target, methodArgs);
-            return toMcpResult(result);
+            String pruneTreeExpress = "";
+            if (isTreePruneSupported()) {
+                pruneTreeExpress = (String) args.get("tree");
+            }
+            return toMcpResult(result, pruneTreeExpress);
 
         } catch (Exception e) {
             var rootCauseMessage = ExceptionUtils.getRootCauseMessage(e);

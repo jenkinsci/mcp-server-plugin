@@ -27,6 +27,7 @@
 package io.jenkins.plugins.mcp.server.extensions;
 
 import static io.jenkins.plugins.mcp.server.extensions.DefaultMcpServer.FULL_NAME;
+import static io.jenkins.plugins.mcp.server.junit.TestUtils.MIN_1;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
@@ -59,7 +60,6 @@ import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
 @WithJenkins
 class DefaultMcpServerTest {
-    static final int MIN_1 = 60 * 1000;
 
     public static Stream<Arguments> whoAmITestParameters() {
         Stream<Arguments> baseArgs = Stream.of(Arguments.of(true, "admin"), Arguments.of(false, "anonymous"));

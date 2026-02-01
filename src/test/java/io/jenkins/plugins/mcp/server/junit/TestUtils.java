@@ -32,6 +32,9 @@ import java.util.stream.Stream;
 import org.junit.jupiter.params.provider.Arguments;
 
 public class TestUtils {
+
+    public static final int MIN_1 = 60 * 1000;
+
     public static Stream<Arguments> appendMcpClientArgs(Stream<Arguments> baseArgs) {
         return baseArgs.flatMap(args -> Stream.of(
                 Arguments.of(append(args.get(), new JenkinsSSEMcpClientBuilder())),
