@@ -236,8 +236,6 @@ public class McpToolWrapper {
     }
 
     McpSchema.CallToolResult toMcpResult(Object result) {
-        ensureRootUrlConfigured();
-
         var builder = new ToolResponse.ToolResponseBuilder().status(ToolResponse.Status.COMPLETED);
 
         if (result == null) {
@@ -279,6 +277,7 @@ public class McpToolWrapper {
                 var jenkinsMcpContext = JenkinsMcpContext.get()) {
             // need Jenkins.READ at least
             Jenkins.get().checkPermission(Jenkins.READ);
+            ensureRootUrlConfigured();
             if (log.isTraceEnabled()) {
                 log.trace(
                         "Tool call: {} as user '{}', arguments: {}",
