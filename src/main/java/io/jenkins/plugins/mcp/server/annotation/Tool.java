@@ -53,6 +53,11 @@ public @interface Tool {
     boolean structuredOutput() default false;
 
     /**
+     * If true, the tool's output will be filtered follow Jenkins rest api tree pruning feature.
+     * Any elements marked with @ExportedBean support tree pruning automatically.
+     */
+    boolean treePruneSupported() default false;
+    /**
      * To add some _meta content to the tool.
      */
     Meta[] metas() default @Meta;

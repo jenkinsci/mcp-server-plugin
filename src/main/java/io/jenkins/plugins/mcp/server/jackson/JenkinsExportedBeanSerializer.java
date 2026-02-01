@@ -32,14 +32,16 @@ import com.fasterxml.jackson.databind.SerializerProvider;
 import java.io.IOException;
 import java.io.StringWriter;
 import java.util.List;
+import org.apache.commons.lang3.StringUtils;
 import org.kohsuke.stapler.export.Flavor;
 import org.kohsuke.stapler.export.Model;
 import org.kohsuke.stapler.export.ModelBuilder;
+import org.kohsuke.stapler.export.NamedPathPruner;
 import org.kohsuke.stapler.export.TreePruner;
 
-public class JenkinsExportedBeanSerializer extends JsonSerializer<Object> {
-    private static final ModelBuilder MODEL_BUILDER = new ModelBuilder();
+public class JenkinsExportedBeanSerializer extends JsonSerializer {
 
+    private static final ModelBuilder MODEL_BUILDER = new ModelBuilder();
     // remove some values which are not useful in the JSON output
     private static final List<String> EXCLUDED_PROPERTIES = List.of("enclosingBlocks", "nodeId");
 
@@ -52,10 +54,20 @@ public class JenkinsExportedBeanSerializer extends JsonSerializer<Object> {
 
     @Override
     public void serialize(Object value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
+        String tree = (String) serializers.getAttribute("tree");
+
         StringWriter sw = new StringWriter();
         var dw = Flavor.JSON.createDataWriter(value, sw);
         Model p = MODEL_BUILDER.get(value.getClass());
-        p.writeTo(value, CLEANER_PRUNER, dw);
+
+        TreePruner treePruner;
+        if (StringUtils.isEmpty(tree)) {
+            treePruner = CLEANER_PRUNER;
+        } else {
+            treePruner = new NamedPathPruner(tree);
+        }
+
+        p.writeTo(value, treePruner, dw);
         gen.writeRawValue(sw.toString());
     }
 }
