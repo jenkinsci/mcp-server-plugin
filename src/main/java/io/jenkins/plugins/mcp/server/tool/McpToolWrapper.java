@@ -228,7 +228,15 @@ public class McpToolWrapper {
         return getToolName();
     }
 
+    private static void ensureRootUrlConfigured() {
+        if (Jenkins.get().getRootUrl() == null) {
+            throw new IllegalStateException(
+                    "The Jenkins root URL is not configured. Please set it in 'Manage Jenkins -> Configure System' to use MCP tools.");
+        }
+    }
+
     McpSchema.CallToolResult toMcpResult(Object result) {
+        ensureRootUrlConfigured();
 
         var builder = new ToolResponse.ToolResponseBuilder().status(ToolResponse.Status.COMPLETED);
 
