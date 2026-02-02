@@ -172,7 +172,7 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
 
         String requestedResource = getRequestedResourcePath(request);
 
-        if(!requestedResource.startsWith("/" + MCP_SERVER)) {
+        if (!requestedResource.startsWith("/" + MCP_SERVER)) {
             // Not a MCP server request, continue the filter chain
             return false;
         }
