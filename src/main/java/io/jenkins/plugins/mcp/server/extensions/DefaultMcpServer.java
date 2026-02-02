@@ -41,7 +41,6 @@ import hudson.model.ItemGroup;
 import hudson.model.Job;
 import hudson.model.ParametersAction;
 import hudson.model.ParametersDefinitionProperty;
-import hudson.model.Queue;
 import hudson.model.Run;
 import hudson.model.User;
 import hudson.slaves.Cloud;
@@ -118,11 +117,9 @@ public class DefaultMcpServer implements McpServerExtension {
         }
     }
 
-    public record TriggerResult(boolean success, Queue.Item item) {}
-
-    @Tool(description = "Trigger a build for a Jenkins job")
+    @Tool(description = "Trigger a build for a Jenkins job", treePruneSupported = true)
     // keep the default value for destructive (true)
-    public TriggerResult triggerBuild(
+    public QueueItem triggerBuild(
             @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
             @ToolParam(description = "Build parameters (optional, e.g., {key1=value1,key2=value2})", required = false)
                     Map<String, Object> parameters) {
@@ -154,13 +151,9 @@ public class DefaultMcpServer implements McpServerExtension {
             }
 
             var scheduleResult = Jenkins.get().getQueue().schedule2(job, 0, actions);
-            if (scheduleResult.isRefused()) {
-                return new TriggerResult(false, null);
-            } else {
-                return new TriggerResult(true, scheduleResult.getItem());
-            }
+            return scheduleResult.getItem();
         }
-        return new TriggerResult(false, null);
+        return null;
     }
 
     @Tool(
@@ -238,15 +231,18 @@ public class DefaultMcpServer implements McpServerExtension {
         return updated;
     }
 
+    public record WhoAmIResponse(String fullName) {}
+
     @Tool(
             description =
                     "Get information about the currently authenticated user, including their full name or 'anonymous' if not authenticated",
+            structuredOutput = true,
             annotations = @Tool.Annotations(destructiveHint = false))
     @SneakyThrows
-    public Map<String, String> whoAmI() {
+    public WhoAmIResponse whoAmI() {
         return Optional.ofNullable(User.current())
-                .map(user -> Map.of(FULL_NAME, user.getFullName()))
-                .orElse(Map.of(FULL_NAME, "anonymous"));
+                .map(user -> new WhoAmIResponse(user.getFullName()))
+                .orElse(new WhoAmIResponse("anonymous"));
     }
 
     @Tool(
@@ -306,6 +302,7 @@ public class DefaultMcpServer implements McpServerExtension {
     @Tool(
             description =
                     "Get the queue item details by its ID. The caller can check the queue item's status, build details, and other relevant information.",
+            treePruneSupported = true,
             annotations = @Tool.Annotations(destructiveHint = false))
     public QueueItem getQueueItem(@ToolParam(description = "The queue item id") long id) {
         return Jenkins.get().getQueue().getItem(id);
