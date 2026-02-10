@@ -169,12 +169,17 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
     @Override
     public boolean process(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws IOException, ServletException {
-        if (!initialized) {
-            init();
-        }
 
         String requestedResource = getRequestedResourcePath(request);
 
+        if (!requestedResource.startsWith("/" + MCP_SERVER)) {
+            // Not a MCP server request, continue the filter chain
+            return false;
+        }
+
+        if (!initialized) {
+            init();
+        }
         // Handle stateless endpoint
         if (isStatelessRequest(request)) {
             if (DISABLE_MCP_STATELESS) {
