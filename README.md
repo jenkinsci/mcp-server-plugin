@@ -48,6 +48,20 @@ When enforcing the validation, the header value must match the configured Jenkin
 If receiving the header is mandatory the system property `io.jenkins.plugins.mcp.server.Endpoint.requireOriginHeader=true`
 will make it mandatory as well.
 
+#### Jenkins Root URL Configuration
+
+MCP tools rely on the Jenkins root URL being correctly configured. This is required for generating accurate links within tool responses and for the proper functioning of certain features (for example, origin header validation).
+
+If the Jenkins root URL is not configured, MCP tool invocations will fail immediately with a clear error message explaining how to resolve the issue.
+
+To configure the Jenkins root URL:
+
+1. Navigate to **Manage Jenkins** in your Jenkins instance.
+2. Go to **Configure System**.
+3. Locate the **Jenkins URL** field and enter the full URL of your Jenkins instance (for example, `http://your-jenkins.example.com/`).
+4. Click **Save**.
+
+
 #### Transport Endpoints
 
 The MCP Server plugin provides three transport endpoints, all enabled by default:
