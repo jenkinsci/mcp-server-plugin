@@ -333,8 +333,8 @@ public class DefaultMcpServer implements McpServerExtension {
 
         ReplayAction replayAction = run.getAction(ReplayAction.class);
         if (replayAction != null && replayAction.isRebuildEnabled()) {
-            Queue.Item item = replayAction.run2(
-                    replayAction.getOriginalScript(), replayAction.getOriginalLoadedScripts());
+            Queue.Item item =
+                    replayAction.run2(replayAction.getOriginalScript(), replayAction.getOriginalLoadedScripts());
             return item != null ? (QueueItem) item : null;
         }
 
