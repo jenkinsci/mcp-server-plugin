@@ -87,12 +87,12 @@ class ReplayRebuildTest {
             JenkinsRule jenkins, io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
             throws Exception {
         WorkflowJob project = jenkins.createProject(WorkflowJob.class, "rebuild-param");
-        project.addProperty(new ParametersDefinitionProperty(
-                new StringParameterDefinition("GREETING", "default", "Greeting")));
+        project.addProperty(
+                new ParametersDefinitionProperty(new StringParameterDefinition("GREETING", "default", "Greeting")));
         project.setDefinition(new CpsFlowDefinition("echo \"${params.GREETING}\"", true));
 
-        var firstBuild = project
-                .scheduleBuild2(0, new ParametersAction(new StringParameterValue("GREETING", "first-run")))
+        var firstBuild = project.scheduleBuild2(
+                        0, new ParametersAction(new StringParameterValue("GREETING", "first-run")))
                 .get();
         assertThat(firstBuild.getResult()).isEqualTo(Result.SUCCESS);
         assertThat(firstBuild.getLog()).contains("first-run");
@@ -125,8 +125,8 @@ class ReplayRebuildTest {
         project.scheduleBuild2(0).get();
 
         try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
-            var request = new McpSchema.CallToolRequest(
-                    "getReplayScripts", Map.of("jobFullName", project.getFullName()));
+            var request =
+                    new McpSchema.CallToolRequest("getReplayScripts", Map.of("jobFullName", project.getFullName()));
             var response = client.callTool(request);
             assertThat(response.isError()).isFalse();
             assertThat(response.content()).hasSize(1);
@@ -150,8 +150,8 @@ class ReplayRebuildTest {
         project.scheduleBuild2(0).get();
 
         try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
-            var request = new McpSchema.CallToolRequest(
-                    "getReplayScripts", Map.of("jobFullName", project.getFullName()));
+            var request =
+                    new McpSchema.CallToolRequest("getReplayScripts", Map.of("jobFullName", project.getFullName()));
             var response = client.callTool(request);
             assertThat(response.isError()).isTrue();
             assertThat(response.content()).hasSize(1);
@@ -171,10 +171,7 @@ class ReplayRebuildTest {
         String modifiedScript = "echo 'replayed-with-change'";
         try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
             var request = new McpSchema.CallToolRequest(
-                    "replayBuild",
-                    Map.of(
-                            "jobFullName", project.getFullName(),
-                            "mainScript", modifiedScript));
+                    "replayBuild", Map.of("jobFullName", project.getFullName(), "mainScript", modifiedScript));
             var response = client.callTool(request);
             assertThat(response.isError()).isFalse();
             assertThat(response.content()).hasSize(1);
