@@ -41,6 +41,7 @@ import hudson.model.ItemGroup;
 import hudson.model.Job;
 import hudson.model.ParametersAction;
 import hudson.model.ParametersDefinitionProperty;
+import hudson.model.Queue;
 import hudson.model.Run;
 import hudson.model.User;
 import hudson.slaves.Cloud;
@@ -64,6 +65,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.jenkinsci.plugins.workflow.cps.replay.ReplayAction;
 import org.kohsuke.stapler.export.Exported;
 
 @Extension
@@ -233,6 +235,8 @@ public class DefaultMcpServer implements McpServerExtension {
 
     public record WhoAmIResponse(String fullName) {}
 
+    public record GetReplayScriptsResult(String mainScript, Map<String, String> loadedScripts) {}
+
     @Tool(
             description =
                     "Get information about the currently authenticated user, including their full name or 'anonymous' if not authenticated",
@@ -306,5 +310,113 @@ public class DefaultMcpServer implements McpServerExtension {
             annotations = @Tool.Annotations(destructiveHint = false))
     public QueueItem getQueueItem(@ToolParam(description = "The queue item id") long id) {
         return Jenkins.get().getQueue().getItem(id);
+    }
+
+    @Tool(
+            description =
+                    "Rebuild a Jenkins build: re-run with the same parameters (and for Pipeline jobs, the same script when possible). Returns the queue item for the new build.",
+            treePruneSupported = true)
+    public QueueItem rebuildBuild(
+            @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
+            @Nullable
+                    @ToolParam(
+                            description = "Build number (optional, if not provided, rebuilds the last build)",
+                            required = false)
+                    Integer buildNumber) {
+        var optBuild = getBuildByNumberOrLast(jobFullName, buildNumber);
+        if (optBuild.isEmpty()) {
+            return null;
+        }
+        Run<?, ?> run = optBuild.get();
+        Job<?, ?> job = run.getParent();
+        job.checkPermission(Item.BUILD);
+
+        ReplayAction replayAction = run.getAction(ReplayAction.class);
+        if (replayAction != null && replayAction.isRebuildEnabled()) {
+            Queue.Item item = replayAction.run2(
+                    replayAction.getOriginalScript(), replayAction.getOriginalLoadedScripts());
+            return item != null ? (QueueItem) item : null;
+        }
+
+        List<Action> actions = new ArrayList<>();
+        var remoteAddr = JenkinsMcpContext.get().getHttpServletRequest().getRemoteAddr();
+        actions.add(new CauseAction(new MCPCause(remoteAddr), new Cause.UserIdCause()));
+        ParametersAction paramsAction = run.getAction(ParametersAction.class);
+        if (paramsAction != null) {
+            actions.add(paramsAction);
+        }
+        var jobParam = Jenkins.get().getItemByFullName(jobFullName, ParameterizedJobMixIn.ParameterizedJob.class);
+        if (jobParam == null) {
+            return null;
+        }
+        var scheduleResult = Jenkins.get().getQueue().schedule2(jobParam, 0, actions);
+        return scheduleResult.getItem();
+    }
+
+    @Tool(
+            description =
+                    "Get the pipeline script(s) of a build for replay. Returns the main script and loaded scripts. Only available for Pipeline (replayable) builds.",
+            structuredOutput = true,
+            annotations = @Tool.Annotations(destructiveHint = false))
+    public GetReplayScriptsResult getReplayScripts(
+            @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
+            @Nullable
+                    @ToolParam(
+                            description = "Build number (optional, if not provided, uses the last build)",
+                            required = false)
+                    Integer buildNumber) {
+        var optBuild = getBuildByNumberOrLast(jobFullName, buildNumber);
+        if (optBuild.isEmpty()) {
+            throw new IllegalArgumentException("Build not found for job " + jobFullName);
+        }
+        Run<?, ?> run = optBuild.get();
+        ReplayAction replayAction = run.getAction(ReplayAction.class);
+        if (replayAction == null) {
+            throw new IllegalArgumentException(
+                    "Not a replayable Pipeline build. Replay is only available for Pipeline jobs (workflow-cps).");
+        }
+        String mainScript = replayAction.getOriginalScript();
+        Map<String, String> loadedScripts = replayAction.getOriginalLoadedScripts();
+        return new GetReplayScriptsResult(mainScript, loadedScripts != null ? loadedScripts : Map.of());
+    }
+
+    @Tool(
+            description =
+                    "Replay a Pipeline build with optionally modified script(s). Runs the job again with the given main script and optional loaded scripts. Only available for Pipeline jobs.",
+            treePruneSupported = true)
+    public QueueItem replayBuild(
+            @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
+            @Nullable
+                    @ToolParam(
+                            description = "Build number (optional, if not provided, uses the last build)",
+                            required = false)
+                    Integer buildNumber,
+            @ToolParam(description = "Main pipeline script content") String mainScript,
+            @Nullable
+                    @ToolParam(
+                            description =
+                                    "Loaded scripts map (optional): script name to content. If not provided, original loaded scripts are used.",
+                            required = false)
+                    Map<String, String> loadedScripts) {
+        var optBuild = getBuildByNumberOrLast(jobFullName, buildNumber);
+        if (optBuild.isEmpty()) {
+            return null;
+        }
+        Run<?, ?> run = optBuild.get();
+        ReplayAction replayAction = run.getAction(ReplayAction.class);
+        if (replayAction == null) {
+            throw new IllegalArgumentException(
+                    "Not a replayable Pipeline build. Replay is only available for Pipeline jobs (workflow-cps).");
+        }
+        if (!replayAction.isEnabled() || !replayAction.isReplayableSandboxTest()) {
+            throw new IllegalStateException("Replay not allowed for this build (permission or script approval).");
+        }
+        Map<String, String> scriptsToUse =
+                loadedScripts != null ? loadedScripts : replayAction.getOriginalLoadedScripts();
+        if (scriptsToUse == null) {
+            scriptsToUse = Map.of();
+        }
+        Queue.Item item = replayAction.run2(mainScript, scriptsToUse);
+        return item != null ? (QueueItem) item : null;
     }
 }
