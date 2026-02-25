@@ -66,7 +66,7 @@
       <dependency>
         <groupId>com.networknt</groupId>
         <artifactId>json-schema-validator</artifactId>
-        <version>3.0.0</version>
+        <version>2.0.0</version>
       </dependency>
       <!-- Workaround until in the bom as 1.81 is using some bad version range -->
       <dependency>
@@ -127,6 +127,10 @@
         <exclusion>
           <groupId>com.fasterxml.jackson.core</groupId>
           <artifactId>*</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>io.modelcontextprotocol.sdk</groupId>
+          <artifactId>mcp-json-jackson3</artifactId>
         </exclusion>
         <exclusion>
           <groupId>org.slf4j</groupId>
