@@ -63,6 +63,11 @@
         <type>pom</type>
         <scope>import</scope>
       </dependency>
+      <dependency>
+        <groupId>com.networknt</groupId>
+        <artifactId>json-schema-validator</artifactId>
+        <version>3.0.0</version>
+      </dependency>
       <!-- Workaround until in the bom as 1.81 is using some bad version range -->
       <dependency>
         <groupId>org.jenkins-ci.plugins</groupId>
