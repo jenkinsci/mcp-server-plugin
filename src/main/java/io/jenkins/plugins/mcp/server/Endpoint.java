@@ -59,6 +59,15 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import jenkins.model.Jenkins;
 import jenkins.util.HttpServletFilter;
 import jenkins.util.SystemProperties;
@@ -150,9 +159,45 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
             SystemProperties.getBoolean(Endpoint.class.getName() + ".disableMcpStreamable", false);
 
     /**
+     * Maximum time in seconds to wait for an SSE message to be processed before
+     * releasing the Jetty handler thread. The MCP Java SDK's
+     * {@code HttpServletSseServerTransportProvider.doPost()} calls {@code Mono.block()}
+     * without a timeout, which can permanently leak Jetty threads if the reactive
+     * publisher never completes (e.g., due to unclean SSE client disconnects).
+     * Set to 0 to disable the timeout (not recommended).
+     */
+    @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "Accessible via System Groovy Scripts")
+    public static int SSE_MESSAGE_TIMEOUT_SECONDS =
+            SystemProperties.getInteger(Endpoint.class.getName() + ".sseMessageTimeoutSeconds", 30);
+
+    /**
+     * Maximum number of threads dedicated to processing SSE messages. This bounds the
+     * impact of hung {@code Mono.block()} calls to this pool rather than the Jetty
+     * thread pool.
+     */
+    @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "Accessible via System Groovy Scripts")
+    public static int SSE_MESSAGE_MAX_THREADS =
+            SystemProperties.getInteger(Endpoint.class.getName() + ".sseMessageMaxThreads", 50);
+
+    /**
      * JSON object mapper for serialization/deserialization
      */
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    private final ExecutorService sseMessageExecutor = createSseMessageExecutor();
+
+    private static ExecutorService createSseMessageExecutor() {
+        AtomicInteger threadCount = new AtomicInteger(0);
+        ThreadFactory factory = r -> {
+            Thread t = new Thread(r, "mcp-sse-handler-" + threadCount.incrementAndGet());
+            t.setDaemon(true);
+            return t;
+        };
+        ThreadPoolExecutor executor = new ThreadPoolExecutor(
+                4, SSE_MESSAGE_MAX_THREADS, 60L, TimeUnit.SECONDS, new LinkedBlockingQueue<>(), factory);
+        executor.allowCoreThreadTimeOut(true);
+        return executor;
+    }
 
     HttpServletSseServerTransportProvider httpServletSseServerTransportProvider;
     HttpServletStreamableServerTransportProvider httpServletStreamableServerTransportProvider;
@@ -637,7 +682,61 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
             return;
         }
         prepareMcpContext(request);
-        httpServlet.service(request, response);
+
+        if (httpServlet == httpServletSseServerTransportProvider && SSE_MESSAGE_TIMEOUT_SECONDS > 0) {
+            handleSseMessageWithTimeout(request, response, httpServlet);
+        } else {
+            httpServlet.service(request, response);
+        }
+    }
+
+    /**
+     * Wraps SSE message handling with a bounded timeout to prevent permanent Jetty
+     * thread leaks. The MCP SDK's {@code HttpServletSseServerTransportProvider.doPost()}
+     * calls {@code Mono.block()} on the servlet thread, which blocks indefinitely if
+     * the reactive publisher never completes. This method offloads the blocking call
+     * to a dedicated executor and waits with a timeout. On timeout, the executor
+     * thread is interrupted, which causes {@code CountDownLatch.await()} inside
+     * {@code Mono.block()} to throw {@code InterruptedException}, releasing the thread.
+     */
+    private void handleSseMessageWithTimeout(
+            HttpServletRequest request, HttpServletResponse response, HttpServlet httpServlet)
+            throws IOException, ServletException {
+
+        Future<?> future = sseMessageExecutor.submit(() -> {
+            try {
+                httpServlet.service(request, response);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
+
+        try {
+            future.get(SSE_MESSAGE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (TimeoutException e) {
+            future.cancel(true);
+            log.warn(
+                    "MCP SSE message handling timed out after {}s for request from {}",
+                    SSE_MESSAGE_TIMEOUT_SECONDS,
+                    request.getRemoteAddr());
+            if (!response.isCommitted()) {
+                response.sendError(
+                        HttpServletResponse.SC_SERVICE_UNAVAILABLE,
+                        "MCP message handling timed out");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new ServletException("Interrupted while handling MCP SSE message", e);
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof RuntimeException re && re.getCause() instanceof ServletException se) {
+                throw se;
+            }
+            if (cause instanceof RuntimeException re && re.getCause() instanceof IOException ioe) {
+                throw ioe;
+            }
+            throw new ServletException("Error handling MCP SSE message", cause);
+        }
     }
 
     private void handleStatelessMessage(HttpServletRequest request, HttpServletResponse response)
