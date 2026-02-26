@@ -720,9 +720,7 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
                     SSE_MESSAGE_TIMEOUT_SECONDS,
                     request.getRemoteAddr());
             if (!response.isCommitted()) {
-                response.sendError(
-                        HttpServletResponse.SC_SERVICE_UNAVAILABLE,
-                        "MCP message handling timed out");
+                response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE, "MCP message handling timed out");
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
