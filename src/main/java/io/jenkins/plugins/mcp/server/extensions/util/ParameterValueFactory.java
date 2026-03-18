@@ -50,6 +50,8 @@ public final class ParameterValueFactory {
             "net.uaznia.lukanus.hudson.plugins.gitparameter.GitParameterDefinition";
     public static final String EXTENDED_CHOICE_PARAMETER_DEFINITION =
             "com.cwctravel.hudson.plugins.extended_choice_parameter.ExtendedChoiceParameterDefinition";
+    public static final String VALIDATING_STRING_PARAMETER_DEFINITION =
+            "hudson.plugins.validating_string_parameter.ValidatingStringParameterDefinition";
 
     /**
      * Creates a parameter value from a parameter definition and input value.
@@ -65,6 +67,8 @@ public final class ParameterValueFactory {
                 return createGitParameterValue(param, inputValue);
             } else if (isParameterDefinitionOf(param, EXTENDED_CHOICE_PARAMETER_DEFINITION)) {
                 return createExtendedChoiceParameterValue(param, inputValue);
+            } else if (isParameterDefinitionOf(param, VALIDATING_STRING_PARAMETER_DEFINITION)) {
+                return createParameterValueViaCli(param, String.valueOf(inputValue));
             } else if (param instanceof StringParameterDefinition) {
                 return createStringParameterValue((StringParameterDefinition) param, inputValue);
             } else if (param instanceof BooleanParameterDefinition) {
