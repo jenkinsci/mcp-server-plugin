@@ -277,6 +277,9 @@ The plugin provides the following built-in tools for interacting with Jenkins:
 - `updateBuild`: Update build display name and/or description.
 - `getBuildLog`: Retrieve log lines with pagination for a specific build or the last build.
 - `searchBuildLog`: Search for log lines matching a pattern (string or regex) in build logs.
+- `rebuildBuild`: Re-run a build with the same parameters. For Pipeline jobs with Replay support, uses the original script; for other parameterized jobs, schedules a new build with the same parameters. Optional `buildNumber`; defaults to the last build. Returns the queue item for the new build.
+- `getReplayScripts`: Return the main script and loaded scripts of a replayable Pipeline build. Use this to inspect or modify script before calling `replayBuild`. Fails for non-Pipeline jobs. Optional `buildNumber`; defaults to the last build.
+- `replayBuild`: Run a Pipeline build again with a modified script. Provide `mainScript` (required) and optionally `loadedScripts`. Optional `buildNumber`; defaults to the last build. Fails if the build is not replayable or replay is not allowed (e.g. permissions or sandbox).
 
 #### SCM Integration
 - `getJobScm`: Retrieve SCM configurations of a Jenkins job.
