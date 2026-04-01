@@ -271,8 +271,8 @@ The plugin provides the following built-in tools for interacting with Jenkins:
   This tool returns a queue item if the job is successfully scheduled. You can use the returned queue item ID with the `getQueueItem` tool.
 
 - `getQueueItem`: Get information about a queued item using its ID.
-[
-]()#### Build Information
+
+#### Build Information
 - `getBuild`: Retrieve a specific build or the last build of a Jenkins job.
 - `updateBuild`: Update build display name and/or description.
 - `getBuildLog`: Retrieve log lines with pagination for a specific build or the last build.
