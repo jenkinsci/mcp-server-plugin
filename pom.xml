@@ -66,7 +66,7 @@
       <dependency>
         <groupId>com.networknt</groupId>
         <artifactId>json-schema-validator</artifactId>
-        <version>2.0.0</version>
+        <version>2.0.1</version>
       </dependency>
       <!-- Workaround until in the bom as 1.81 is using some bad version range -->
       <dependency>
