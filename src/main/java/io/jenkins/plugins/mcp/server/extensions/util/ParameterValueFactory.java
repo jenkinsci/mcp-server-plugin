@@ -48,6 +48,8 @@ public final class ParameterValueFactory {
 
     public static final String GIT_PARAMETER_DEFINITION =
             "net.uaznia.lukanus.hudson.plugins.gitparameter.GitParameterDefinition";
+    public static final String LIST_GIT_BRANCHES_PARAMETER_DEFINITION =
+            "com.syhuang.hudson.plugins.listgitbranchesparameter.ListGitBranchesParameterDefinition";
     public static final String EXTENDED_CHOICE_PARAMETER_DEFINITION =
             "com.cwctravel.hudson.plugins.extended_choice_parameter.ExtendedChoiceParameterDefinition";
 
@@ -63,6 +65,8 @@ public final class ParameterValueFactory {
         try {
             if (isParameterDefinitionOf(param, GIT_PARAMETER_DEFINITION)) {
                 return createGitParameterValue(param, inputValue);
+            } else if (isParameterDefinitionOf(param, LIST_GIT_BRANCHES_PARAMETER_DEFINITION)) {
+                return createListGitBranchesParameterValue(param, inputValue);
             } else if (isParameterDefinitionOf(param, EXTENDED_CHOICE_PARAMETER_DEFINITION)) {
                 return createExtendedChoiceParameterValue(param, inputValue);
             } else if (param instanceof StringParameterDefinition) {
@@ -175,6 +179,10 @@ public final class ParameterValueFactory {
     }
 
     private static ParameterValue createGitParameterValue(ParameterDefinition param, Object inputValue) {
+        return createParameterValueViaCli(param, String.valueOf(inputValue));
+    }
+
+    private static ParameterValue createListGitBranchesParameterValue(ParameterDefinition param, Object inputValue) {
         return createParameterValueViaCli(param, String.valueOf(inputValue));
     }
 
