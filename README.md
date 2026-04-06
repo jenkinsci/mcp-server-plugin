@@ -277,6 +277,8 @@ The plugin provides the following built-in tools for interacting with Jenkins:
 - `updateBuild`: Update build display name and/or description.
 - `getBuildLog`: Retrieve log lines with pagination for a specific build or the last build.
 - `searchBuildLog`: Search for log lines matching a pattern (string or regex) in build logs.
+- `getTestResults`: Retrieve test results of a specific build or the last build.
+- `getWarnings`: Retrieve warnings of a specific build or the last build.
 
 #### SCM Integration
 - `getJobScm`: Retrieve SCM configurations of a Jenkins job.
