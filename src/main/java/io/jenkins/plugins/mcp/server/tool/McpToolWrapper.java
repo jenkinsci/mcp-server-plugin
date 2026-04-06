@@ -48,7 +48,7 @@ import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
 import io.jenkins.plugins.mcp.server.jackson.JenkinsExportedBeanModule;
 import io.modelcontextprotocol.common.McpTransportContext;
-import io.modelcontextprotocol.json.jackson.JacksonMcpJsonMapper;
+import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.server.McpStatelessServerFeatures;
 import io.modelcontextprotocol.server.McpSyncServerExchange;

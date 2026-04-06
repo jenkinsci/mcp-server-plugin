@@ -68,7 +68,8 @@ public class EndPointTest {
                             "getStatus",
                             "getTestResults",
                             "getFlakyFailures",
-                            "getQueueItem");
+                            "getQueueItem",
+                            "getWarnings");
         }
     }
 
