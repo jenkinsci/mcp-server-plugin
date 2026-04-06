@@ -103,6 +103,20 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
     private static final String MESSAGE_ENDPOINT = "/message";
 
     public static final String MCP_SERVER_MESSAGE = MCP_SERVER + MESSAGE_ENDPOINT;
+
+    /**
+     * The endpoint path for health checks
+     */
+    public static final String HEALTH_ENDPOINT = "/health";
+
+    public static final String MCP_SERVER_HEALTH = MCP_SERVER + HEALTH_ENDPOINT;
+
+    /**
+     * The endpoint path for metrics
+     */
+    public static final String METRICS_ENDPOINT = "/metrics";
+
+    public static final String MCP_SERVER_METRICS = MCP_SERVER + METRICS_ENDPOINT;
     public static final String USER_ID = Endpoint.class.getName() + ".userId";
     public static final String HTTP_SERVLET_REQUEST = Endpoint.class.getName() + ".httpServletRequest";
 
@@ -110,11 +124,12 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
 
     /**
      * The interval in seconds for sending keep-alive messages to the client.
-     * Default is 0 seconds (so disabled per default), can be overridden by setting the system property
-     * it's not static final on purpose to allow dynamic configuration via script console.
+     * Default is 30 seconds, can be overridden by setting the system property.
+     * Set to 0 to disable keep-alive messages.
+     * It's not static final on purpose to allow dynamic configuration via script console.
      */
     private static int keepAliveInterval =
-            SystemProperties.getInteger(Endpoint.class.getName() + ".keepAliveInterval", 0);
+            SystemProperties.getInteger(Endpoint.class.getName() + ".keepAliveInterval", 30);
 
     /**
      * Whether to require the Origin header in requests. Default is false, can be overridden by setting the system
@@ -225,6 +240,7 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
         if (!initialized) {
             init();
         }
+
         // Handle stateless endpoint
         if (isStatelessRequest(request)) {
             if (DISABLE_MCP_STATELESS) {
@@ -234,6 +250,9 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
             handleStatelessMessage(request, response);
             return true;
         }
+
+        // Note: Health endpoint is now handled by HealthEndpoint UnprotectedRootAction at /mcp-health
+        // Metrics endpoint is handled in handle() method below after Stapler applies auth
 
         // Handle SSE message endpoint
         if (requestedResource.startsWith("/" + MCP_SERVER_MESSAGE)
@@ -259,6 +278,7 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
                 response.sendError(HttpServletResponse.SC_NOT_FOUND, "Streamable endpoint is disabled");
                 return true;
             }
+            McpConnectionMetrics.recordStreamableRequest();
             handleMessage(request, response, httpServletStreamableServerTransportProvider);
             return true;
         }
@@ -376,6 +396,12 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
                 .prompts(prompts)
                 .resources(resources)
                 .build();
+
+        initialized = true;
+        log.info(
+                "MCP Server initialized with {} tools, keep-alive interval: {} seconds",
+                allTools.size(),
+                keepAliveInterval);
     }
 
     private void initStateless(
@@ -471,6 +497,14 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
             init();
         }
 
+        // Note: health endpoint is handled by HealthEndpoint UnprotectedRootAction at /mcp-health
+
+        // Handle metrics endpoint (authentication checked in handler)
+        if (isMetricsRequest(req)) {
+            handleMetrics(req, resp);
+            return true;
+        }
+
         // Handle stateless endpoint
         if (isStatelessRequest(req)) {
             if (DISABLE_MCP_STATELESS) {
@@ -504,6 +538,7 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
             if (isBrowserRequest(req)) {
                 serveBrowserPage(resp);
             } else {
+                McpConnectionMetrics.recordStreamableRequest();
                 handleMessage(req, resp, httpServletStreamableServerTransportProvider);
             }
             return true;
@@ -671,15 +706,42 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
                         || (request.getMethod().equalsIgnoreCase("POST")));
     }
 
+    private boolean isMetricsRequest(HttpServletRequest request) {
+        String requestedResource = getRequestedResourcePath(request);
+        return requestedResource.equals("/" + MCP_SERVER_METRICS)
+                && request.getMethod().equalsIgnoreCase("GET");
+    }
+
+    private void handleMetrics(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        McpConnectionMetrics.handleMetricsRequest(response);
+    }
+
     private void handleSSE(HttpServletRequest request, HttpServletResponse response)
             throws IOException, ServletException {
-        httpServletSseServerTransportProvider.service(request, response);
+        String clientInfo = getClientInfo(request);
+        log.info("SSE connection started from {}", clientInfo);
+        McpConnectionMetrics.recordSseConnectionStart();
+        try {
+            httpServletSseServerTransportProvider.service(request, response);
+        } catch (IOException e) {
+            log.warn("SSE connection error from {}: {}", clientInfo, e.getMessage());
+            McpConnectionMetrics.recordConnectionError();
+            throw e;
+        } finally {
+            McpConnectionMetrics.recordSseConnectionEnd();
+            log.info("SSE connection ended from {}", clientInfo);
+        }
     }
 
     private void handleMessage(HttpServletRequest request, HttpServletResponse response, HttpServlet httpServlet)
             throws IOException, ServletException {
         if (!validOriginHeader(request, response)) {
+            String clientInfo = getClientInfo(request);
+            log.warn("MCP message rejected due to invalid origin from {}", clientInfo);
             return;
+        }
+        if (log.isDebugEnabled()) {
+            log.debug("MCP message received from {}", getClientInfo(request));
         }
         prepareMcpContext(request);
 
@@ -758,5 +820,32 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
         }
         contextMap.put(HTTP_SERVLET_REQUEST, request);
         request.setAttribute(MCP_CONTEXT_KEY, McpTransportContext.create(contextMap));
+    }
+
+    /**
+     * Extracts client identification information from an HTTP request for logging purposes.
+     *
+     * @param request the HTTP request
+     * @return a string containing client IP, X-Forwarded-For header (if present), and User-Agent
+     */
+    private static String getClientInfo(HttpServletRequest request) {
+        StringBuilder info = new StringBuilder();
+        info.append("ip=").append(request.getRemoteAddr());
+
+        String forwardedFor = request.getHeader("X-Forwarded-For");
+        if (forwardedFor != null && !forwardedFor.isEmpty()) {
+            info.append(", forwarded-for=").append(forwardedFor);
+        }
+
+        String userAgent = request.getHeader("User-Agent");
+        if (userAgent != null && !userAgent.isEmpty()) {
+            // Truncate long user agents for readability
+            if (userAgent.length() > 100) {
+                userAgent = userAgent.substring(0, 100) + "...";
+            }
+            info.append(", user-agent=").append(userAgent);
+        }
+
+        return info.toString();
     }
 }
