@@ -121,11 +121,6 @@
       <artifactId>commons-lang3-api</artifactId>
     </dependency>
     <dependency>
-      <groupId>io.jenkins.plugins</groupId>
-      <artifactId>warnings-ng</artifactId>
-      <optional>true</optional>
-    </dependency>
-    <dependency>
       <groupId>io.modelcontextprotocol.sdk</groupId>
       <artifactId>mcp</artifactId>
       <exclusions>
