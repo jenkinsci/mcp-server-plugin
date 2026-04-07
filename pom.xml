@@ -31,8 +31,8 @@
     <changelist>999999-SNAPSHOT</changelist>
     <revision>0</revision>
     <!-- https://www.jenkins.io/doc/developer/plugin-development/choosing-jenkins-baseline/ -->
-    <jenkins.baseline>2.516</jenkins.baseline>
-    <jenkins.version>2.533</jenkins.version>
+    <jenkins.baseline>2.541</jenkins.baseline>
+    <jenkins.version>${jenkins.baseline}.1</jenkins.version>
     <gitHubRepo>jenkinsci/${project.artifactId}-plugin</gitHubRepo>
     <spotless.check.skip>false</spotless.check.skip>
     <ban-junit4-imports.skip>false</ban-junit4-imports.skip>
@@ -51,11 +51,10 @@
         <!-- Pick up common dependencies for the selected LTS line: https://github.com/jenkinsci/bom#usage -->
         <groupId>io.jenkins.tools.bom</groupId>
         <artifactId>bom-${jenkins.baseline}.x</artifactId>
-        <version>6210.v69ea_fd8a_f010</version>
+        <version>6237.v4da_61a_4a_19e5</version>
         <type>pom</type>
         <scope>import</scope>
       </dependency>
-
       <dependency>
         <groupId>io.modelcontextprotocol.sdk</groupId>
         <artifactId>mcp-bom</artifactId>
@@ -174,7 +173,6 @@
     <dependency>
       <groupId>org.jenkins-ci.plugins</groupId>
       <artifactId>junit</artifactId>
-      <version>1403.vd9d1413fd205</version>
       <optional>true</optional>
     </dependency>
     <dependency>
@@ -189,9 +187,8 @@
       <scope>provided</scope>
     </dependency>
     <dependency>
-      <groupId>com.jayway.jsonpath</groupId>
-      <artifactId>json-path</artifactId>
-      <version>2.10.0</version>
+      <groupId>io.jenkins.plugins</groupId>
+      <artifactId>json-path-api</artifactId>
       <scope>test</scope>
     </dependency>
     <dependency>
@@ -253,8 +250,6 @@
     <dependency>
       <groupId>org.jenkins-ci.tools</groupId>
       <artifactId>git-parameter</artifactId>
-      <version>460.v71e7583a_c099</version>
-      <type>jar</type>
       <scope>test</scope>
     </dependency>
     <dependency>
