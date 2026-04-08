@@ -388,7 +388,6 @@ The plugin provides the following built-in tools for interacting with Jenkins:
 - `getReplayScripts`: Return the main script and loaded scripts of a replayable Pipeline build. Use this to inspect or modify script before calling `replayBuild`. Fails for non-Pipeline jobs. Optional `buildNumber`; defaults to the last build.
 - `replayBuild`: Run a Pipeline build again with a modified script. Provide `mainScript` (required) and optionally `loadedScripts`. Optional `buildNumber`; defaults to the last build. Fails if the build is not replayable or replay is not allowed (e.g. permissions or sandbox).
 - `getTestResults`: Retrieve test results of a specific build or the last build.
-- `getWarnings`: Retrieve warnings of a specific build or the last build.
 
 #### SCM Integration
 - `getJobScm`: Retrieve SCM configurations of a Jenkins job.
