@@ -57,7 +57,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import jenkins.model.Jenkins;
 import jenkins.model.ParameterizedJobMixIn;
 import jenkins.model.queue.QueueItem;
@@ -239,14 +238,14 @@ public class DefaultMcpServer implements McpServerExtension {
 
     @Tool(
             description =
-                    "Get information about the currently authenticated user, including their full name or 'anonymous' if not authenticated",
+                    "Get information about the currently authenticated user/principal, including their full name or 'anonymous' if not authenticated",
             structuredOutput = true,
             annotations = @Tool.Annotations(destructiveHint = false))
     @SneakyThrows
     public WhoAmIResponse whoAmI() {
-        return Optional.ofNullable(User.current())
-                .map(user -> new WhoAmIResponse(user.getFullName()))
-                .orElse(new WhoAmIResponse("anonymous"));
+        var name = Jenkins.getAuthentication2().getName();
+        var user = User.getById(name, false);
+        return new WhoAmIResponse(user != null ? user.getFullName() : name);
     }
 
     @Tool(

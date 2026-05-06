@@ -32,7 +32,6 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.Extension;
 import hudson.PluginWrapper;
 import hudson.model.RootAction;
-import hudson.model.User;
 import hudson.security.csrf.CrumbExclusion;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.tool.McpToolWrapper;
@@ -117,7 +116,7 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
     public static final String METRICS_ENDPOINT = "/metrics";
 
     public static final String MCP_SERVER_METRICS = MCP_SERVER + METRICS_ENDPOINT;
-    public static final String USER_ID = Endpoint.class.getName() + ".userId";
+    public static final String AUTHENTICATION = Endpoint.class.getName() + ".authentication";
     public static final String HTTP_SERVLET_REQUEST = Endpoint.class.getName() + ".httpServletRequest";
 
     private static final String MCP_CONTEXT_KEY = Endpoint.class.getName() + ".mcpContext";
@@ -810,14 +809,7 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
 
     private static void prepareMcpContext(HttpServletRequest request) {
         Map<String, Object> contextMap = new HashMap<>();
-        var currentUser = User.current();
-        String userId = null;
-        if (currentUser != null) {
-            userId = currentUser.getId();
-        }
-        if (userId != null) {
-            contextMap.put(USER_ID, userId);
-        }
+        contextMap.put(AUTHENTICATION, Jenkins.getAuthentication2());
         contextMap.put(HTTP_SERVLET_REQUEST, request);
         request.setAttribute(MCP_CONTEXT_KEY, McpTransportContext.create(contextMap));
     }

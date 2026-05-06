@@ -26,8 +26,8 @@
 
 package io.jenkins.plugins.mcp.server.tool;
 
+import static io.jenkins.plugins.mcp.server.Endpoint.AUTHENTICATION;
 import static io.jenkins.plugins.mcp.server.Endpoint.HTTP_SERVLET_REQUEST;
-import static io.jenkins.plugins.mcp.server.Endpoint.USER_ID;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
@@ -42,7 +42,6 @@ import com.github.victools.jsonschema.generator.SchemaVersion;
 import com.github.victools.jsonschema.module.jackson.JacksonModule;
 import com.github.victools.jsonschema.module.jackson.JacksonOption;
 import com.github.victools.jsonschema.module.swagger2.Swagger2Module;
-import hudson.model.User;
 import hudson.security.ACL;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
@@ -73,6 +72,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.kohsuke.stapler.export.ExportedBean;
 import org.springframework.lang.Nullable;
+import org.springframework.security.core.Authentication;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
 
@@ -305,8 +305,8 @@ public class McpToolWrapper {
     }
 
     private McpSchema.CallToolResult call(McpTransportContext mcpTransportContext, McpSchema.CallToolRequest request) {
-        var user = tryGetUser(mcpTransportContext);
-        try (var ignored = switchTo(user);
+        var authn = tryGetAuthentication(mcpTransportContext);
+        try (var ignored = switchTo(authn);
                 var jenkinsMcpContext = JenkinsMcpContext.get()) {
             // need Jenkins.READ at least
             Jenkins.get().checkPermission(Jenkins.READ);
@@ -357,17 +357,13 @@ public class McpToolWrapper {
         }
     }
 
-    private static User tryGetUser(McpTransportContext context) {
-        String userId = null;
-        if (context != null) {
-            userId = (String) context.get(USER_ID);
-        }
-        return User.get(userId, false, Map.of());
+    private static Authentication tryGetAuthentication(McpTransportContext context) {
+        return context != null ? (Authentication) context.get(AUTHENTICATION) : null;
     }
 
-    private static AutoCloseable switchTo(User user) {
-        if (user != null) {
-            return ACL.as(user);
+    private static AutoCloseable switchTo(Authentication authn) {
+        if (authn != null) {
+            return ACL.as2(authn);
         } else {
             return () -> {
                 /* nothing to do */
