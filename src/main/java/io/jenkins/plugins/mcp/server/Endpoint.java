@@ -277,7 +277,8 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
                 response.sendError(HttpServletResponse.SC_NOT_FOUND, "Streamable endpoint is disabled");
                 return true;
             }
-            McpConnectionMetrics.recordStreamableRequest(Jenkins.getAuthentication2().getName());
+            McpConnectionMetrics.recordStreamableRequest(
+                    Jenkins.getAuthentication2().getName());
             handleMessage(request, response, httpServletStreamableServerTransportProvider);
             return true;
         }
@@ -537,7 +538,8 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
             if (isBrowserRequest(req)) {
                 serveBrowserPage(resp);
             } else {
-                McpConnectionMetrics.recordStreamableRequest(Jenkins.getAuthentication2().getName());
+                McpConnectionMetrics.recordStreamableRequest(
+                        Jenkins.getAuthentication2().getName());
                 handleMessage(req, resp, httpServletStreamableServerTransportProvider);
             }
             return true;

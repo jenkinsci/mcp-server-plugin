@@ -254,11 +254,16 @@ class McpConnectionMetricsTest {
 
             DocumentContext json = JsonPath.parse(response.getContentAsString());
             assertThat(json.read("$.users", Object.class)).isNotNull();
-            assertThat(json.read("$.users.alice.sseConnectionsTotal", Long.class)).isEqualTo(1L);
-            assertThat(json.read("$.users.alice.sseConnectionsActive", Long.class)).isEqualTo(1L);
-            assertThat(json.read("$.users.alice.streamableRequestsTotal", Long.class)).isEqualTo(1L);
-            assertThat(json.read("$.users.alice.connectionErrorsTotal", Long.class)).isZero();
-            assertThat(json.read("$.users.bob.streamableRequestsTotal", Long.class)).isEqualTo(1L);
+            assertThat(json.read("$.users.alice.sseConnectionsTotal", Long.class))
+                    .isEqualTo(1L);
+            assertThat(json.read("$.users.alice.sseConnectionsActive", Long.class))
+                    .isEqualTo(1L);
+            assertThat(json.read("$.users.alice.streamableRequestsTotal", Long.class))
+                    .isEqualTo(1L);
+            assertThat(json.read("$.users.alice.connectionErrorsTotal", Long.class))
+                    .isZero();
+            assertThat(json.read("$.users.bob.streamableRequestsTotal", Long.class))
+                    .isEqualTo(1L);
         }
     }
 }
