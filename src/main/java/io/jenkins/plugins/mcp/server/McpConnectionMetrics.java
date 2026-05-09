@@ -32,6 +32,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import jenkins.model.Jenkins;
 import lombok.extern.slf4j.Slf4j;
@@ -55,7 +56,15 @@ import org.springframework.security.access.AccessDeniedException;
  *   "streamableRequestsTotal": 150,
  *   "connectionErrorsTotal": 2,
  *   "uptimeSeconds": 3600,
- *   "startTime": "2025-01-28T10:00:00Z"
+ *   "startTime": "2025-01-28T10:00:00Z",
+ *   "users": {
+ *     "alice": {
+ *       "sseConnectionsTotal": 10,
+ *       "sseConnectionsActive": 1,
+ *       "streamableRequestsTotal": 50,
+ *       "connectionErrorsTotal": 0
+ *     }
+ *   }
  * }
  * </pre>
  */
@@ -93,6 +102,22 @@ public class McpConnectionMetrics {
     private static final Instant startTime = Instant.now();
 
     /**
+     * Per-user metrics, keyed by Jenkins username (including "anonymous" and "SYSTEM").
+     */
+    static final ConcurrentHashMap<String, UserMetrics> userMetrics = new ConcurrentHashMap<>();
+
+    private static UserMetrics userMetricsFor(String username) {
+        return userMetrics.computeIfAbsent(username, k -> new UserMetrics());
+    }
+
+    static final class UserMetrics {
+        final AtomicLong sseConnectionsTotal = new AtomicLong(0);
+        final AtomicLong sseConnectionsActive = new AtomicLong(0);
+        final AtomicLong streamableRequestsTotal = new AtomicLong(0);
+        final AtomicLong connectionErrorsTotal = new AtomicLong(0);
+    }
+
+    /**
      * Handles GET requests to the metrics endpoint.
      * Requires authentication (checks Jenkins.READ permission).
      * This method is called directly from the HttpServletFilter.
@@ -128,6 +153,17 @@ public class McpConnectionMetrics {
         responseJson.put("uptimeSeconds", uptime.getSeconds());
         responseJson.put("startTime", startTime.toString());
 
+        ObjectNode usersNode = objectMapper.createObjectNode();
+        userMetrics.forEach((username, metrics) -> {
+            ObjectNode userNode = objectMapper.createObjectNode();
+            userNode.put("sseConnectionsTotal", metrics.sseConnectionsTotal.get());
+            userNode.put("sseConnectionsActive", metrics.sseConnectionsActive.get());
+            userNode.put("streamableRequestsTotal", metrics.streamableRequestsTotal.get());
+            userNode.put("connectionErrorsTotal", metrics.connectionErrorsTotal.get());
+            usersNode.set(username, userNode);
+        });
+        responseJson.set("users", usersNode);
+
         response.getWriter().write(objectMapper.writeValueAsString(responseJson));
         response.getWriter().flush();
     }
@@ -141,10 +177,28 @@ public class McpConnectionMetrics {
     }
 
     /**
+     * Records a new SSE connection starting for the given user.
+     */
+    public static void recordSseConnectionStart(String username) {
+        recordSseConnectionStart();
+        UserMetrics u = userMetricsFor(username);
+        u.sseConnectionsTotal.incrementAndGet();
+        u.sseConnectionsActive.incrementAndGet();
+    }
+
+    /**
      * Records an SSE connection ending.
      */
     public static void recordSseConnectionEnd() {
         sseConnectionsActive.decrementAndGet();
+    }
+
+    /**
+     * Records an SSE connection ending for the given user.
+     */
+    public static void recordSseConnectionEnd(String username) {
+        recordSseConnectionEnd();
+        userMetricsFor(username).sseConnectionsActive.decrementAndGet();
     }
 
     /**
@@ -155,10 +209,26 @@ public class McpConnectionMetrics {
     }
 
     /**
+     * Records a Streamable HTTP request for the given user.
+     */
+    public static void recordStreamableRequest(String username) {
+        recordStreamableRequest();
+        userMetricsFor(username).streamableRequestsTotal.incrementAndGet();
+    }
+
+    /**
      * Records a connection error.
      */
     public static void recordConnectionError() {
         connectionErrorsTotal.incrementAndGet();
+    }
+
+    /**
+     * Records a connection error for the given user.
+     */
+    public static void recordConnectionError(String username) {
+        recordConnectionError();
+        userMetricsFor(username).connectionErrorsTotal.incrementAndGet();
     }
 
     /**
@@ -205,5 +275,6 @@ public class McpConnectionMetrics {
         sseConnectionsActive.set(0);
         streamableRequestsTotal.set(0);
         connectionErrorsTotal.set(0);
+        userMetrics.clear();
     }
 }
