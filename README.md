@@ -316,6 +316,22 @@ Streamable example:
 }
 ```
 
+#### Cursor Configuration
+
+```json
+{
+  "mcpServers": {
+    "jenkins": {
+      "type": "http",
+      "url": "https://jenkins-host/mcp-server/mcp",
+      "headers": {
+        "Authorization": "Basic <user:token base64>"
+      }
+    }
+  }
+}
+```
+
 #### Claude
 ```bash
 claude mcp add jenkins http://jenkins-host/mcp-server/mcp --transport http --header "Authorization: Basic <user:token base64>"
