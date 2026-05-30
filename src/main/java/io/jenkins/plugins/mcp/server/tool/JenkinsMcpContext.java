@@ -2,7 +2,7 @@
  *
  * The MIT License
  *
- * Copyright (c) 2025, Gong Yi.
+ * Copyright (c) 2026, Gong Yi.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -24,33 +24,31 @@
  *
  */
 
-package io.jenkins.plugins.mcp.server.junit;
+package io.jenkins.plugins.mcp.server.tool;
 
-import io.modelcontextprotocol.spec.McpSchema;
-import java.util.Arrays;
-import java.util.stream.Stream;
-import org.junit.jupiter.params.provider.Arguments;
+import jakarta.servlet.http.HttpServletRequest;
+import lombok.Data;
 
-public class TestUtils {
+@Data
+public class JenkinsMcpContext implements AutoCloseable {
+    private static final ThreadLocal<JenkinsMcpContext> CONTEXT = ThreadLocal.withInitial(JenkinsMcpContext::new);
 
-    public static final int MIN_1 = 60 * 1000;
+    HttpServletRequest httpServletRequest;
 
-    public static Stream<Arguments> appendMcpClientArgs(Stream<Arguments> baseArgs) {
-        return baseArgs.flatMap(args -> Stream.of(
-                Arguments.of(append(args.get(), new JenkinsSSEMcpClientBuilder())),
-                Arguments.of(append(args.get(), new JenkinsStreamableMcpClientBuilder()))));
+    /**
+     * Gets the JenkinsMcpContext for the current thread. Creates a new one if it doesn't exist.
+     *
+     * @return The thread-local JenkinsMcpContext instance.
+     */
+    public static JenkinsMcpContext get() {
+        return CONTEXT.get();
     }
 
-    private static Object[] append(Object[] original, Object extra) {
-        Object[] combined = Arrays.copyOf(original, original.length + 1);
-        combined[original.length] = extra;
-        return combined;
-    }
-
-    public static McpSchema.Tool findToolByName(McpSchema.ListToolsResult listToolsResult, String name) {
-        return listToolsResult.tools().stream()
-                .filter(tool -> name.equals(tool.name()))
-                .findFirst()
-                .orElse(null);
+    /**
+     * Clears the JenkinsMcpContext for the current thread to prevent memory leaks.
+     */
+    @Override
+    public void close() throws Exception {
+        CONTEXT.remove();
     }
 }

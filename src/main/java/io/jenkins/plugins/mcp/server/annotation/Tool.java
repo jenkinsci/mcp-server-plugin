@@ -48,6 +48,16 @@ public @interface Tool {
     String description() default "";
 
     /**
+     * If true, the tool's output will be treated as a structured object and serialized into the `structuredContent` field.
+     */
+    boolean structuredOutput() default false;
+
+    /**
+     * If true, the tool's output will be filtered follow Jenkins rest api tree pruning feature.
+     * Any elements marked with @ExportedBean support tree pruning automatically.
+     */
+    boolean treePruneSupported() default false;
+    /**
      * To add some _meta content to the tool.
      */
     Meta[] metas() default @Meta;

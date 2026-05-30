@@ -45,6 +45,7 @@ public interface JenkinsMcpClientBuilder {
         protected JenkinsRule jenkins;
         protected Consumer<HttpRequest.Builder> requestCustomizer;
         protected int requestTimeoutSeconds = 300;
+        protected int initializationTimeoutSeconds = 300;
 
         @Override
         public JenkinsMcpClientBuilder jenkins(JenkinsRule jenkinsRule) {

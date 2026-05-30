@@ -26,7 +26,8 @@
 
 package io.jenkins.plugins.mcp.server.tool;
 
-import static io.jenkins.plugins.mcp.server.Endpoint.USER_ID;
+import static io.jenkins.plugins.mcp.server.Endpoint.AUTHENTICATION;
+import static io.jenkins.plugins.mcp.server.Endpoint.HTTP_SERVLET_REQUEST;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
@@ -41,29 +42,37 @@ import com.github.victools.jsonschema.generator.SchemaVersion;
 import com.github.victools.jsonschema.module.jackson.JacksonModule;
 import com.github.victools.jsonschema.module.jackson.JacksonOption;
 import com.github.victools.jsonschema.module.swagger2.Swagger2Module;
-import hudson.model.User;
 import hudson.security.ACL;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
 import io.jenkins.plugins.mcp.server.jackson.JenkinsExportedBeanModule;
-import io.modelcontextprotocol.json.jackson.JacksonMcpJsonMapper;
+import io.modelcontextprotocol.common.McpTransportContext;
+import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.server.McpServerFeatures;
+import io.modelcontextprotocol.server.McpStatelessServerFeatures;
 import io.modelcontextprotocol.server.McpSyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
+import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import jenkins.model.Jenkins;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
+import org.kohsuke.stapler.export.ExportedBean;
 import org.springframework.lang.Nullable;
+import org.springframework.security.core.Authentication;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
 
@@ -73,6 +82,7 @@ public class McpToolWrapper {
     private static final SchemaGenerator SUBTYPE_SCHEMA_GENERATOR;
     private static final boolean PROPERTY_REQUIRED_BY_DEFAULT = true;
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    public static final String DESCRIPTION = "description";
 
     static {
         OBJECT_MAPPER.registerModule(new JenkinsExportedBeanModule());
@@ -82,17 +92,17 @@ public class McpToolWrapper {
         com.github.victools.jsonschema.generator.Module jacksonModule =
                 new JacksonModule(JacksonOption.RESPECT_JSONPROPERTY_REQUIRED);
         com.github.victools.jsonschema.generator.Module openApiModule = new Swagger2Module();
-
         SchemaGeneratorConfigBuilder schemaGeneratorConfigBuilder = new SchemaGeneratorConfigBuilder(
                         SchemaVersion.DRAFT_2020_12, OptionPreset.PLAIN_JSON)
                 .with(jacksonModule)
                 .with(openApiModule)
                 .with(Option.EXTRA_OPEN_API_FORMAT_VALUES)
-                .with(Option.PLAIN_DEFINITION_KEYS);
+                .with(Option.PLAIN_DEFINITION_KEYS)
+                .with(Option.MAP_VALUES_AS_ADDITIONAL_PROPERTIES)
+                .with(Option.NULLABLE_FIELDS_BY_DEFAULT)
+                .without(Option.SCHEMA_VERSION_INDICATOR);
 
-        SchemaGeneratorConfig subtypeSchemaGeneratorConfig = schemaGeneratorConfigBuilder
-                .without(Option.SCHEMA_VERSION_INDICATOR)
-                .build();
+        SchemaGeneratorConfig subtypeSchemaGeneratorConfig = schemaGeneratorConfigBuilder.build();
         SUBTYPE_SCHEMA_GENERATOR = new SchemaGenerator(subtypeSchemaGeneratorConfig);
     }
 
@@ -160,8 +170,17 @@ public class McpToolWrapper {
         return null;
     }
 
-    private static String toJson(Object item) throws IOException {
-        return OBJECT_MAPPER.writeValueAsString(item);
+    private static String toJson(Object item) {
+        return toJson(item, null);
+    }
+
+    private static String toJson(Object item, String tree) {
+        try {
+            return OBJECT_MAPPER.writer().withAttribute("tree", tree).writeValueAsString(item);
+        } catch (IOException e) {
+            log.atError().setCause(e).log("This error should not happen");
+            throw new RuntimeException(e);
+        }
     }
 
     String generateForMethodInput() {
@@ -182,15 +201,46 @@ public class McpToolWrapper {
             ObjectNode parameterNode = SUBTYPE_SCHEMA_GENERATOR.generateSchema(parameterType);
             String parameterDescription = getMethodParameterDescription(method, i);
             if (StringUtils.hasText(parameterDescription)) {
-                parameterNode.put("description", parameterDescription);
+                parameterNode.put(DESCRIPTION, parameterDescription);
             }
             properties.set(parameterName, parameterNode);
+        }
+
+        if (isTreePruneSupported()) {
+            ObjectNode parameterNode = SUBTYPE_SCHEMA_GENERATOR.generateSchema(String.class);
+            parameterNode.put(
+                    DESCRIPTION,
+                    "Field selection expression using the Jenkins Remote REST API tree syntax.\n"
+                            + "Allows limiting returned fields and nested objects (for example executable[number,url]) to reduce response size, especially for polling workflows.");
+            properties.set("tree", parameterNode);
         }
 
         var requiredArray = schema.putArray("required");
         required.forEach(requiredArray::add);
 
         return schema.toPrettyString();
+    }
+
+    private boolean isTreePruneSupported() {
+        Type typeToCheck = method.getGenericReturnType();
+
+        var classToCheck = method.getReturnType();
+        if (typeToCheck instanceof ParameterizedType parameterizedType) {
+            // For example, if return type is List<String>, rawType is List.class
+            Type rawType = parameterizedType.getRawType();
+            if (rawType instanceof Class<?> rawClass && Collection.class.isAssignableFrom(rawClass)) {
+                // And typeArguments will be [String.class]
+                Type[] typeArguments = parameterizedType.getActualTypeArguments();
+                if (typeArguments.length > 0 && typeArguments[0] instanceof Class) {
+                    classToCheck = (Class) typeArguments[0];
+                    // Now you have the generic type, e.g., String.class
+                    // You can add your logic here.
+                }
+            }
+        }
+
+        return method.getAnnotation(Tool.class).treePruneSupported()
+                || classToCheck.isAnnotationPresent(ExportedBean.class);
     }
 
     String getToolName() {
@@ -202,6 +252,11 @@ public class McpToolWrapper {
         return StringUtils.hasText(tool.name()) ? tool.name() : method.getName();
     }
 
+    boolean isStructuredOutput() {
+        var tool = method.getAnnotation(Tool.class);
+        return tool != null && tool.structuredOutput();
+    }
+
     String getToolDescription() {
         Assert.notNull(method, "method cannot be null");
         var tool = method.getAnnotation(Tool.class);
@@ -211,43 +266,58 @@ public class McpToolWrapper {
         return getToolName();
     }
 
-    McpSchema.CallToolResult toMcpResult(Object result) {
+    McpSchema.CallToolResult toMcpResult(Object result, String tree) {
+
+        var builder = new ToolResponse.ToolResponseBuilder().status(ToolResponse.Status.COMPLETED);
 
         if (result == null) {
-            return McpSchema.CallToolResult.builder()
-                    .addTextContent("Result is null")
-                    .isError(false)
-                    .build();
-        }
-        try {
+            builder.message(ToolResponse.NO_DATA_MSG);
 
-            var resultBuilder = McpSchema.CallToolResult.builder().isError(false);
-            // Serialize all results the same way - this fixes the JSON concatenation issue
-            // for top-level lists while maintaining proper JSON structure
-            resultBuilder.addTextContent(toJson(result));
-            return resultBuilder.build();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
+        } else {
+            if (result instanceof Collection collection) {
+                if (collection.isEmpty()) {
+                    builder.message(ToolResponse.NO_DATA_MSG);
+                } else {
+                    builder.message(ToolResponse.DATA_MSG).result(collection);
+                }
+            } else if (result instanceof Map map) {
+                if (map.isEmpty()) {
+                    builder.message(ToolResponse.NO_DATA_MSG);
+                } else {
+                    builder.message(ToolResponse.DATA_MSG).result(map);
+                }
+            } else {
+                builder.message(ToolResponse.DATA_MSG).result(result);
+            }
         }
+
+        McpSchema.CallToolResult.Builder resultBuilder =
+                McpSchema.CallToolResult.builder().isError(false).addTextContent(toJson(builder.build(), tree));
+        if (isStructuredOutput()) {
+            resultBuilder.structuredContent(result);
+        }
+        return resultBuilder.build();
     }
 
-    McpSchema.CallToolResult callRequest(McpSyncServerExchange exchange, McpSchema.CallToolRequest request) {
-        var args = request.arguments();
-        var oldUser = User.current();
+    McpSchema.CallToolResult call(McpSyncServerExchange exchange, McpSchema.CallToolRequest request) {
+        McpTransportContext context = exchange.transportContext();
+        return call(context, request);
+    }
 
-        try {
-            var user = tryGetUser(exchange);
-            if (user != null) {
-                ACL.as(user);
-            }
+    private McpSchema.CallToolResult call(McpTransportContext mcpTransportContext, McpSchema.CallToolRequest request) {
+        var authn = tryGetAuthentication(mcpTransportContext);
+        try (var ignored = switchTo(authn);
+                var jenkinsMcpContext = JenkinsMcpContext.get()) {
+            // need Jenkins.READ at least
+            Jenkins.get().checkPermission(Jenkins.READ);
             if (log.isTraceEnabled()) {
                 log.trace(
                         "Tool call: {} as user '{}', arguments: {}",
                         request.name(),
-                        user == null ? "" : user.getId(),
+                        Jenkins.getAuthentication2().getName(),
                         request.arguments());
             }
-
+            var args = request.arguments();
             var methodArgs = Arrays.stream(method.getParameters())
                     .map(param -> {
                         var arg = args.get(param.getName());
@@ -259,29 +329,46 @@ public class McpToolWrapper {
                     })
                     .toArray();
 
+            jenkinsMcpContext.setHttpServletRequest((HttpServletRequest) mcpTransportContext.get(HTTP_SERVLET_REQUEST));
             var result = method.invoke(target, methodArgs);
-            return toMcpResult(result);
+            String pruneTreeExpress = "";
+            if (isTreePruneSupported()) {
+                pruneTreeExpress = (String) args.get("tree");
+            }
+            return toMcpResult(result, pruneTreeExpress);
+
         } catch (Exception e) {
             var rootCauseMessage = ExceptionUtils.getRootCauseMessage(e);
             if (rootCauseMessage.isEmpty()) {
                 rootCauseMessage = "Error invoking method: " + method.getName();
             }
+            if (log.isDebugEnabled()) {
+                log.atError().setCause(e).log("Error invoking tool method: {}: {}", method.getName(), rootCauseMessage);
+            }
+            ToolResponse toolResponse = new ToolResponse.ToolResponseBuilder()
+                    .message(rootCauseMessage)
+                    .status(ToolResponse.Status.FAILED)
+                    .build();
+
             return McpSchema.CallToolResult.builder()
                     .isError(true)
-                    .addTextContent(rootCauseMessage)
+                    .addTextContent(toJson(toolResponse))
                     .build();
-        } finally {
-            ACL.as(oldUser);
         }
     }
 
-    private static User tryGetUser(McpSyncServerExchange exchange) {
-        String userId = null;
-        var context = exchange.transportContext();
-        if (context != null) {
-            userId = (String) context.get(USER_ID);
+    private static Authentication tryGetAuthentication(McpTransportContext context) {
+        return context != null ? (Authentication) context.get(AUTHENTICATION) : null;
+    }
+
+    private static AutoCloseable switchTo(Authentication authn) {
+        if (authn != null) {
+            return ACL.as2(authn);
+        } else {
+            return () -> {
+                /* nothing to do */
+            };
         }
-        return User.get(userId, false, Map.of());
     }
 
     private Supplier<Map<String, Object>> _meta() {
@@ -311,15 +398,39 @@ public class McpToolWrapper {
     }
 
     public McpServerFeatures.SyncToolSpecification asSyncToolSpecification() {
+        McpSchema.Tool.Builder mcpSchemaToolBuilder = createToolBuilder();
         return McpServerFeatures.SyncToolSpecification.builder()
-                .tool(McpSchema.Tool.builder()
-                        .name(getToolName())
-                        .description(getToolDescription())
-                        .meta(_meta().get())
-                        .annotations(toolAnnotations().get())
-                        .inputSchema(new JacksonMcpJsonMapper(objectMapper), generateForMethodInput())
-                        .build())
-                .callHandler(this::callRequest)
+                .tool(mcpSchemaToolBuilder.build())
+                .callHandler(this::call)
+                .build();
+    }
+
+    private McpSchema.Tool.Builder createToolBuilder() {
+        McpSchema.Tool.Builder mcpSchemaToolBuilder = McpSchema.Tool.builder()
+                .name(getToolName())
+                .description(getToolDescription())
+                .meta(_meta().get())
+                .annotations(toolAnnotations().get())
+                .inputSchema(new JacksonMcpJsonMapper(objectMapper), generateForMethodInput());
+        if (isStructuredOutput()) {
+            mcpSchemaToolBuilder.outputSchema(new JacksonMcpJsonMapper(objectMapper), generateForOutput());
+        }
+        return mcpSchemaToolBuilder;
+    }
+
+    @SneakyThrows
+    String generateForOutput() {
+
+        var type = this.method.getGenericReturnType();
+        var schema = SUBTYPE_SCHEMA_GENERATOR.generateSchema(type);
+        return schema.toPrettyString();
+    }
+
+    public McpStatelessServerFeatures.SyncToolSpecification asStatelessSyncToolSpecification() {
+        McpSchema.Tool.Builder toolBuilder = createToolBuilder();
+        return McpStatelessServerFeatures.SyncToolSpecification.builder()
+                .tool(toolBuilder.build())
+                .callHandler(this::call)
                 .build();
     }
 }

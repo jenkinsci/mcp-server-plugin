@@ -1,5 +1,4 @@
 # MCP Server Plugin for Jenkins
-
 The MCP (Model Context Protocol) Server Plugin for Jenkins implements the server-side component of the Model Context Protocol. This plugin enables Jenkins to act as an MCP server, providing context, tools, and capabilities to MCP clients, such as LLM-powered applications or IDEs.
 
 ## Features
@@ -17,13 +16,13 @@ The MCP (Model Context Protocol) Server Plugin for Jenkins implements the server
 
 ## MCP SDK Version
 
-This MCP Server is based on the MCP Java SDK version 0.13.1, which implements the MCP specification version 2025-06-18.
+This MCP Server is based on the MCP Java SDK version 0.17.2, which implements the MCP specification version 2025-06-18.
 
 ## Getting Started
 
 ### Prerequisites
 
-- Jenkins (version 2.479 or higher)
+- Jenkins (version 2.533 or higher)
 
 ### Configuration
 
@@ -34,19 +33,153 @@ The MCP Server plugin automatically sets up necessary endpoints and tools upon i
 The following system properties can be used to configure the MCP Server plugin:
 
 - hard limit on max number of log lines to return with `io.jenkins.plugins.mcp.server.extensions.BuildLogsExtension.limit.max=10000` (default 10000)
+- disable stateless endpoint with `io.jenkins.plugins.mcp.server.Endpoint.disableMcpStateless=true` (default false)
+- disable SSE endpoint with `io.jenkins.plugins.mcp.server.Endpoint.disableMcpSse=true` (default false)
+- disable streamable HTTP endpoint with `io.jenkins.plugins.mcp.server.Endpoint.disableMcpStreamable=true` (default false)
 
 #### Origin header validation
 
-The MCP specification mark as `MUST` validate the `Origin` header of incoming requests. 
+The MCP specification mark as `MUST` validate the `Origin` header of incoming requests.
 By default, the MCP Server plugin does not enforce this validation to facilitate usage by AI Agent not providing the header.
-You can enable different levels of validation, if the header is available with the request you can enforce his validation using 
+You can enable different levels of validation, if the header is available with the request you can enforce his validation using
 the system property `io.jenkins.plugins.mcp.server.Endpoint.requireOriginMatch=true`
 When enforcing the validation, the header value must match the configured Jenkins root url.
 
-If receiving the header is mandatory the system property `io.jenkins.plugins.mcp.server.Endpoint.requireOriginHeader=true` 
+If receiving the header is mandatory the system property `io.jenkins.plugins.mcp.server.Endpoint.requireOriginHeader=true`
 will make it mandatory as well.
 
+### Connection Resilience
 
+The MCP Server plugin includes several features to improve connection reliability:
+
+#### Keep-Alive Messages
+
+The server sends periodic keep-alive messages to detect broken connections. By default, keep-alive messages are sent every 30 seconds.
+
+You can configure this interval with the system property:
+```
+io.jenkins.plugins.mcp.server.Endpoint.keepAliveInterval=30
+```
+
+Set to `0` to disable keep-alive messages (not recommended).
+
+#### Health Endpoint
+
+A lightweight MCP-specific health endpoint is available for connection monitoring at:
+```
+<jenkins-url>/mcp-health
+```
+
+This endpoint:
+- Returns MCP server status and active connection counts
+- Requires no authentication for maximum accessibility
+- Returns immediately without MCP protocol overhead
+- Returns HTTP 200 when healthy, HTTP 503 during shutdown
+- Includes `Retry-After` header during shutdown
+
+Response format:
+```json
+{
+  "mcpServerStatus": "ok",
+  "activeConnections": 5,
+  "shuttingDown": false,
+  "timestamp": "2025-01-28T10:30:00Z"
+}
+```
+
+**Recommended client usage:**
+- Poll the health endpoint periodically (e.g., every 10-30 seconds)
+- When the endpoint returns 503 or becomes unreachable, prepare for reconnection
+- Use the `Retry-After` header value when available
+
+#### Metrics Endpoint
+
+A metrics endpoint is available for monitoring connection statistics at:
+```
+<jenkins-url>/mcp-server/metrics
+```
+
+This endpoint requires authentication (standard Jenkins permissions) and provides:
+```json
+{
+  "sseConnectionsTotal": 42,
+  "sseConnectionsActive": 3,
+  "streamableRequestsTotal": 150,
+  "connectionErrorsTotal": 2,
+  "uptimeSeconds": 3600,
+  "startTime": "2025-01-28T10:00:00Z"
+}
+```
+
+#### Graceful Shutdown
+
+When Jenkins shuts down, the health endpoint will return `503 Service Unavailable` with a brief grace period before full termination. This allows clients to detect the shutdown and prepare for reconnection.
+
+#### Transport Recommendation
+
+For better connection reliability, we recommend using **Streamable HTTP** (`/mcp-server/mcp`) instead of **SSE** (`/mcp-server/sse`). Streamable HTTP handles connection issues more gracefully and is the preferred transport for most MCP clients.
+
+#### Production Deployment
+
+When deploying behind a reverse proxy or in production environments, configure these timeout settings to prevent premature connection drops:
+
+**Jenkins/Jetty Configuration**
+
+Jenkins uses Winstone (embedded Jetty) which defaults `httpKeepAliveTimeout` to 30 seconds. Since MCP keep-alive pings are also sent every 30 seconds, this creates a race condition where Jetty may close the connection before the next ping arrives.
+
+Add this argument to your Jenkins startup command:
+```
+--httpKeepAliveTimeout=600000
+```
+
+For Docker deployments, add to your docker-compose.yml:
+```yaml
+services:
+  jenkins:
+    image: jenkins/jenkins:lts
+    command: ["--httpKeepAliveTimeout=600000"]
+```
+
+**Reverse Proxy Configuration (Nginx)**
+
+For Nginx, extend timeouts for MCP endpoints:
+```nginx
+location ~ ^/(mcp-server|mcp-health)/ {
+    proxy_pass http://jenkins;
+    proxy_http_version 1.1;
+    proxy_request_buffering off;
+    proxy_buffering off;
+    proxy_set_header Connection "";
+    proxy_read_timeout 600s;
+    proxy_send_timeout 600s;
+}
+```
+
+#### Transport Endpoints
+
+The MCP Server plugin provides three transport endpoints, all enabled by default:
+
+| Transport | Endpoint | Description |
+|-----------|----------|-------------|
+| **SSE** | `/mcp-server/sse` + `/mcp-server/message` | Server-Sent Events transport with session management |
+| **Streamable HTTP** | `/mcp-server/mcp` | Streamable HTTP transport with session management |
+| **Stateless** | `/mcp-server/stateless` | Stateless HTTP transport without session management |
+
+Each transport can be disabled independently using system properties:
+
+```
+-Dio.jenkins.plugins.mcp.server.Endpoint.disableMcpSse=true
+-Dio.jenkins.plugins.mcp.server.Endpoint.disableMcpStreamable=true
+-Dio.jenkins.plugins.mcp.server.Endpoint.disableMcpStateless=true
+```
+
+##### When to use Stateless transport
+
+The stateless endpoint (`/mcp-server/stateless`) is useful for:
+- Simple deployments where session management overhead is not needed
+- Environments where clients make independent requests without maintaining a persistent connection
+- Testing and debugging scenarios
+- Clients that don't support session-based protocols
 
 ## Usage
 
@@ -56,6 +189,7 @@ MCP clients can connect to the server using:
 - Streamable HTTP Endpoint: `<jenkins-url>/mcp-server/mcp`
 - SSE Endpoint: `<jenkins-url>/mcp-server/sse`
 - Message Endpoint: `<jenkins-url>/mcp-server/message`
+- Stateless Endpoint: `<jenkins-url>/mcp-server/stateless`
 
 ### Authentication and Credentials
 
@@ -182,9 +316,43 @@ Streamable example:
 }
 ```
 
+#### Cursor Configuration
+
+```json
+{
+  "mcpServers": {
+    "jenkins": {
+      "type": "http",
+      "url": "https://jenkins-host/mcp-server/mcp",
+      "headers": {
+        "Authorization": "Basic <user:token base64>"
+      }
+    }
+  }
+}
+```
+
 #### Claude
 ```bash
-claude mcp add http://jenkins-host/mcp-server/mcp --transport http --header "Authorization: Basic <user:token base64>"
+claude mcp add jenkins http://jenkins-host/mcp-server/mcp --transport http --header "Authorization: Basic <user:token base64>"
+```
+
+#### Stateless Configuration Example
+For clients that prefer stateless communication without session management:
+```json
+{
+  "servers": {
+    "jenkins": {
+      "type": "http",
+      "url": "http://jenkins-host/mcp-server/stateless",
+      "requestInit": {
+        "headers": {
+          "Authorization": "Basic <user:token base64>"
+        }
+      }
+    }
+  }
+}
 ```
 
 #### Goose
@@ -223,11 +391,22 @@ The plugin provides the following built-in tools for interacting with Jenkins:
   - **Multi-select Parameters**: Supported as arrays or lists
   - **Custom Plugin Parameters**: Automatically attempted using reflection-based detection
   - **Fallback Behavior**: Unsupported parameters fall back to default values with logging
+  This tool returns a queue item if the job is successfully scheduled. You can use the returned queue item ID with the `getQueueItem` tool.
+
+- `getQueueItem`: Get information about a queued item using its ID.
+
 #### Build Information
 - `getBuild`: Retrieve a specific build or the last build of a Jenkins job.
 - `updateBuild`: Update build display name and/or description.
 - `getBuildLog`: Retrieve log lines with pagination for a specific build or the last build.
 - `searchBuildLog`: Search for log lines matching a pattern (string or regex) in build logs.
+- `rebuildBuild`: Re-run a build with the same parameters. For Pipeline jobs with Replay support, uses the original script; for other parameterized jobs, schedules a new build with the same parameters. Optional `buildNumber`; defaults to the last build. Returns the queue item for the new build.
+- `getReplayScripts`: Return the main script and loaded scripts of a replayable Pipeline build. Use this to inspect or modify script before calling `replayBuild`. Fails for non-Pipeline jobs. Optional `buildNumber`; defaults to the last build.
+- `replayBuild`: Run a Pipeline build again with a modified script. Provide `mainScript` (required) and optionally `loadedScripts`. Optional `buildNumber`; defaults to the last build. Fails if the build is not replayable or replay is not allowed (e.g. permissions or sandbox).
+- `getTestResults`: Retrieve test results of a specific build or the last build.
+
+#### Artifacts
+- `getBuildArtifacts`: Retrieve the list of artifacts for a specific build or the last build of a Jenkins job. Returns each artifact's file name, relative path, and display path. Optional `buildNumber`; defaults to the last build.
 - `getBuildArtifact`: Get the content of a specific build artifact with pagination support.
   This tool retrieves the actual content of an artifact file as text with information about whether there is more content to retrieve:
 
@@ -246,25 +425,11 @@ The plugin provides the following built-in tools for interacting with Jenkins:
   - Returns content as text with metadata about file size and whether more content is available.
   - Ideal for reading log files, configuration files, or other text-based artifacts.
 
-- `getBuildArtifacts`: Retrieve build artifacts for a specific build or the last build of a Jenkins job.
-  This tool supports artifact filtering and exclusion patterns. You can provide parameters to control which artifacts are returned:
-
-  ```json
-  {
-    "jobFullName": "my-job",
-    "buildNumber": 123,
-    "excludePatterns": ["*.tmp", "logs/*"]
-  }
-  ```
-  Note on Artifact Filtering:
-  - Use `excludePatterns` to filter out unwanted artifacts using glob patterns.
-  - Artifacts are returned with their relative paths, file sizes, and download URLs.
-  - Large artifact lists are automatically paginated for performance.
-
 #### SCM Integration
 - `getJobScm`: Retrieve SCM configurations of a Jenkins job.
 - `getBuildScm`: Retrieve SCM configurations of a specific build.
 - `getBuildChangeSets`: Retrieve change log sets of a specific build.
+- `findJobsWithScmUrl`: Find jobs using a specific SCM (git) repository URL
 
 #### Management Information
 - `whoAmI`: Get information about the current user.

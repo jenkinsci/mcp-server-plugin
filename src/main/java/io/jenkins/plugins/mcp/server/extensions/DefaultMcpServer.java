@@ -31,6 +31,7 @@ import static io.jenkins.plugins.mcp.server.extensions.util.ParameterValueFactor
 
 import hudson.Extension;
 import hudson.model.AbstractItem;
+import hudson.model.Action;
 import hudson.model.AdministrativeMonitor;
 import hudson.model.Cause;
 import hudson.model.CauseAction;
@@ -40,24 +41,31 @@ import hudson.model.ItemGroup;
 import hudson.model.Job;
 import hudson.model.ParametersAction;
 import hudson.model.ParametersDefinitionProperty;
+import hudson.model.Queue;
 import hudson.model.Run;
 import hudson.model.User;
 import hudson.slaves.Cloud;
 import io.jenkins.plugins.mcp.server.McpServerExtension;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
+import io.jenkins.plugins.mcp.server.tool.JenkinsMcpContext;
 import jakarta.annotation.Nullable;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import jenkins.model.Jenkins;
 import jenkins.model.ParameterizedJobMixIn;
+import jenkins.model.queue.QueueItem;
+import lombok.AllArgsConstructor;
+import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.jenkinsci.plugins.workflow.cps.replay.ReplayAction;
+import org.kohsuke.stapler.export.Exported;
 
 @Extension
 @Slf4j
@@ -84,8 +92,35 @@ public class DefaultMcpServer implements McpServerExtension {
         return Jenkins.get().getItemByFullName(jobFullName, Job.class);
     }
 
-    @Tool(description = "Trigger a build for a Jenkins job") // keep the default value for destructive (true)
-    public boolean triggerBuild(
+    /**
+     * A {@link Cause} that indicates a Jenkins build was triggered via MCP call.
+     * <p>
+     * This is useful for the end user to understand that the call was trigger through this plugin's code
+     * and not some manual user intervention.</p>
+     * <p>And among others, it allows plugins like
+     * <a href="https://plugins.jenkins.io/buildtriggerbadge/">...</a> to offer custom badges</p>
+     *
+     * @see #triggerBuild(String, Map)
+     */
+    @Data
+    @AllArgsConstructor
+    public static class MCPCause extends Cause {
+        private String addr;
+
+        @Exported(visibility = 3)
+        public String getAddr() {
+            return this.addr;
+        }
+
+        @Override
+        public String getShortDescription() {
+            return "Triggered via MCP Client from " + addr;
+        }
+    }
+
+    @Tool(description = "Trigger a build for a Jenkins job", treePruneSupported = true)
+    // keep the default value for destructive (true)
+    public QueueItem triggerBuild(
             @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
             @ToolParam(description = "Build parameters (optional, e.g., {key1=value1,key2=value2})", required = false)
                     Map<String, Object> parameters) {
@@ -93,8 +128,11 @@ public class DefaultMcpServer implements McpServerExtension {
 
         if (job != null) {
             job.checkPermission(Item.BUILD);
-            Cause.UserIdCause userIdCause = new Cause.UserIdCause();
-            CauseAction action = new CauseAction(userIdCause);
+            var remoteAddr = JenkinsMcpContext.get().getHttpServletRequest().getRemoteAddr();
+            CauseAction action = new CauseAction(new MCPCause(remoteAddr), new Cause.UserIdCause());
+            List<Action> actions = new ArrayList<>();
+            actions.add(action);
+
             if (job.isParameterized() && job instanceof Job j) {
                 ParametersDefinitionProperty parametersDefinition =
                         (ParametersDefinitionProperty) j.getProperty(ParametersDefinitionProperty.class);
@@ -109,17 +147,14 @@ public class DefaultMcpServer implements McpServerExtension {
                         })
                         .filter(Objects::nonNull)
                         .toList();
-                if (!parameterValues.isEmpty()) {
-                    job.scheduleBuild2(0, new ParametersAction(parameterValues), action);
-                } else {
-                    job.scheduleBuild2(0, action);
-                }
-            } else {
-                job.scheduleBuild2(0, action);
+
+                actions.add(new ParametersAction(parameterValues));
             }
-            return true;
+
+            var scheduleResult = Jenkins.get().getQueue().schedule2(job, 0, actions);
+            return scheduleResult.getItem();
         }
-        return false;
+        return null;
     }
 
     @Tool(
@@ -197,15 +232,20 @@ public class DefaultMcpServer implements McpServerExtension {
         return updated;
     }
 
+    public record WhoAmIResponse(String fullName) {}
+
+    public record GetReplayScriptsResult(String mainScript, Map<String, String> loadedScripts) {}
+
     @Tool(
             description =
-                    "Get information about the currently authenticated user, including their full name or 'anonymous' if not authenticated",
+                    "Get information about the currently authenticated user/principal, including their full name or 'anonymous' if not authenticated",
+            structuredOutput = true,
             annotations = @Tool.Annotations(destructiveHint = false))
     @SneakyThrows
-    public Map<String, String> whoAmI() {
-        return Optional.ofNullable(User.current())
-                .map(user -> Map.of(FULL_NAME, user.getFullName()))
-                .orElse(Map.of(FULL_NAME, "anonymous"));
+    public WhoAmIResponse whoAmI() {
+        var name = Jenkins.getAuthentication2().getName();
+        var user = User.getById(name, false);
+        return new WhoAmIResponse(user != null ? user.getFullName() : name);
     }
 
     @Tool(
@@ -260,5 +300,122 @@ public class DefaultMcpServer implements McpServerExtension {
             map.put("Root URL Status", "OK");
         }
         return map;
+    }
+
+    @Tool(
+            description =
+                    "Get the queue item details by its ID. The caller can check the queue item's status, build details, and other relevant information.",
+            treePruneSupported = true,
+            annotations = @Tool.Annotations(destructiveHint = false))
+    public QueueItem getQueueItem(@ToolParam(description = "The queue item id") long id) {
+        return Jenkins.get().getQueue().getItem(id);
+    }
+
+    @Tool(
+            description =
+                    "Rebuild a Jenkins build: re-run with the same parameters (and for Pipeline jobs, the same script when possible). Returns the queue item for the new build.",
+            treePruneSupported = true)
+    public QueueItem rebuildBuild(
+            @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
+            @Nullable
+                    @ToolParam(
+                            description = "Build number (optional, if not provided, rebuilds the last build)",
+                            required = false)
+                    Integer buildNumber) {
+        var optBuild = getBuildByNumberOrLast(jobFullName, buildNumber);
+        if (optBuild.isEmpty()) {
+            return null;
+        }
+        Run<?, ?> run = optBuild.get();
+        Job<?, ?> job = run.getParent();
+        job.checkPermission(Item.BUILD);
+
+        ReplayAction replayAction = run.getAction(ReplayAction.class);
+        if (replayAction != null && replayAction.isRebuildEnabled()) {
+            Queue.Item item =
+                    replayAction.run2(replayAction.getOriginalScript(), replayAction.getOriginalLoadedScripts());
+            return item != null ? (QueueItem) item : null;
+        }
+
+        List<Action> actions = new ArrayList<>();
+        var remoteAddr = JenkinsMcpContext.get().getHttpServletRequest().getRemoteAddr();
+        actions.add(new CauseAction(new MCPCause(remoteAddr), new Cause.UserIdCause()));
+        ParametersAction paramsAction = run.getAction(ParametersAction.class);
+        if (paramsAction != null) {
+            actions.add(paramsAction);
+        }
+        var jobParam = Jenkins.get().getItemByFullName(jobFullName, ParameterizedJobMixIn.ParameterizedJob.class);
+        if (jobParam == null) {
+            return null;
+        }
+        var scheduleResult = Jenkins.get().getQueue().schedule2(jobParam, 0, actions);
+        return scheduleResult.getItem();
+    }
+
+    @Tool(
+            description =
+                    "Get the pipeline script(s) of a build for replay. Returns the main script and loaded scripts. Only available for Pipeline (replayable) builds.",
+            structuredOutput = true,
+            annotations = @Tool.Annotations(destructiveHint = false))
+    public GetReplayScriptsResult getReplayScripts(
+            @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
+            @Nullable
+                    @ToolParam(
+                            description = "Build number (optional, if not provided, uses the last build)",
+                            required = false)
+                    Integer buildNumber) {
+        var optBuild = getBuildByNumberOrLast(jobFullName, buildNumber);
+        if (optBuild.isEmpty()) {
+            throw new IllegalArgumentException("Build not found for job " + jobFullName);
+        }
+        Run<?, ?> run = optBuild.get();
+        ReplayAction replayAction = run.getAction(ReplayAction.class);
+        if (replayAction == null) {
+            throw new IllegalArgumentException(
+                    "Not a replayable Pipeline build. Replay is only available for Pipeline jobs (workflow-cps).");
+        }
+        String mainScript = replayAction.getOriginalScript();
+        Map<String, String> loadedScripts = replayAction.getOriginalLoadedScripts();
+        return new GetReplayScriptsResult(mainScript, loadedScripts != null ? loadedScripts : Map.of());
+    }
+
+    @Tool(
+            description =
+                    "Replay a Pipeline build with optionally modified script(s). Runs the job again with the given main script and optional loaded scripts. Only available for Pipeline jobs.",
+            treePruneSupported = true)
+    public QueueItem replayBuild(
+            @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
+            @Nullable
+                    @ToolParam(
+                            description = "Build number (optional, if not provided, uses the last build)",
+                            required = false)
+                    Integer buildNumber,
+            @ToolParam(description = "Main pipeline script content") String mainScript,
+            @Nullable
+                    @ToolParam(
+                            description =
+                                    "Loaded scripts map (optional): script name to content. If not provided, original loaded scripts are used.",
+                            required = false)
+                    Map<String, String> loadedScripts) {
+        var optBuild = getBuildByNumberOrLast(jobFullName, buildNumber);
+        if (optBuild.isEmpty()) {
+            return null;
+        }
+        Run<?, ?> run = optBuild.get();
+        ReplayAction replayAction = run.getAction(ReplayAction.class);
+        if (replayAction == null) {
+            throw new IllegalArgumentException(
+                    "Not a replayable Pipeline build. Replay is only available for Pipeline jobs (workflow-cps).");
+        }
+        if (!replayAction.isEnabled() || !replayAction.isReplayableSandboxTest()) {
+            throw new IllegalStateException("Replay not allowed for this build (permission or script approval).");
+        }
+        Map<String, String> scriptsToUse =
+                loadedScripts != null ? loadedScripts : replayAction.getOriginalLoadedScripts();
+        if (scriptsToUse == null) {
+            scriptsToUse = Map.of();
+        }
+        Queue.Item item = replayAction.run2(mainScript, scriptsToUse);
+        return item != null ? (QueueItem) item : null;
     }
 }
