@@ -32,11 +32,13 @@ import com.fasterxml.jackson.databind.SerializerProvider;
 import hudson.model.Run;
 import java.io.IOException;
 import java.io.StringWriter;
-import org.kohsuke.stapler.export.DataWriter;
-import org.kohsuke.stapler.export.ExportConfig;
+import java.util.List;
+import org.apache.commons.lang3.StringUtils;
 import org.kohsuke.stapler.export.Flavor;
 import org.kohsuke.stapler.export.Model;
 import org.kohsuke.stapler.export.ModelBuilder;
+import org.kohsuke.stapler.export.NamedPathPruner;
+import org.kohsuke.stapler.export.Property;
 import org.kohsuke.stapler.export.TreePruner;
 
 /**
@@ -44,31 +46,58 @@ import org.kohsuke.stapler.export.TreePruner;
  * This is used by the getBuild tool to provide build information without the potentially large artifacts array.
  * Use the getBuildArtifacts tool to retrieve artifacts separately.
  *
- * This implementation uses Jenkins' TreePruner to filter out the artifacts field during serialization,
- * which is more efficient and robust than post-processing approaches. The pruner ensures that artifacts
- * are never serialized in the first place, saving both memory and processing time.
+ * This implementation mirrors {@link JenkinsExportedBeanSerializer}: it honors the optional "tree" field
+ * selection expression when present, and otherwise applies a cleaner pruner. In both cases the "artifacts"
+ * field is always excluded so getBuild never returns artifacts.
  */
 public class RunWithoutArtifactsSerializer extends JsonSerializer<Run> {
     private static final ModelBuilder MODEL_BUILDER = new ModelBuilder();
 
-    // TreePruner that excludes only the "artifacts" field
-    private static final TreePruner ARTIFACTS_PRUNER = new TreePruner() {
+    // Properties excluded from the default (no tree expression) output. Mirrors
+    // JenkinsExportedBeanSerializer's cleaner and additionally drops "artifacts".
+    private static final List<String> EXCLUDED_PROPERTIES = List.of("enclosingBlocks", "nodeId", "artifacts");
+
+    private static final TreePruner CLEANER_PRUNER = new TreePruner() {
         @Override
-        public TreePruner accept(Object node, org.kohsuke.stapler.export.Property prop) {
-            return "artifacts".equals(prop.name) ? null : TreePruner.DEFAULT;
+        public TreePruner accept(Object node, Property prop) {
+            return EXCLUDED_PROPERTIES.contains(prop.name) ? null : TreePruner.DEFAULT;
         }
     };
 
     @Override
     public void serialize(Run value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
+        String tree = (String) serializers.getAttribute("tree");
+
         StringWriter sw = new StringWriter();
-        ExportConfig config = new ExportConfig().withFlavor(Flavor.JSON);
-        DataWriter dw = Flavor.JSON.createDataWriter(value, sw, config);
+        var dw = Flavor.JSON.createDataWriter(value, sw);
         Model model = MODEL_BUILDER.get(value.getClass());
 
-        // Use TreePruner to exclude only the artifacts field during serialization
-        model.writeTo(value, ARTIFACTS_PRUNER, dw);
+        TreePruner treePruner;
+        if (StringUtils.isEmpty(tree)) {
+            treePruner = CLEANER_PRUNER;
+        } else {
+            // Honor the caller's field selection, but still guarantee artifacts are never returned.
+            treePruner = new ArtifactsExcludingPruner(new NamedPathPruner(tree));
+        }
 
+        model.writeTo(value, treePruner, dw);
         gen.writeRawValue(sw.toString());
+    }
+
+    // Delegating pruner that always drops the "artifacts" property while otherwise honoring the delegate.
+    private static final class ArtifactsExcludingPruner extends TreePruner {
+        private final TreePruner delegate;
+
+        ArtifactsExcludingPruner(TreePruner delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public TreePruner accept(Object node, Property prop) {
+            if ("artifacts".equals(prop.name)) {
+                return null;
+            }
+            return delegate.accept(node, prop);
+        }
     }
 }

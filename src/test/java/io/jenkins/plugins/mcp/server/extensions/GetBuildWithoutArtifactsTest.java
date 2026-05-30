@@ -78,14 +78,15 @@ public class GetBuildWithoutArtifactsTest {
                         ObjectMapper objectMapper = new ObjectMapper();
                         try {
                             JsonNode buildJsonNode = objectMapper.readTree(getBuildTextContent.text());
+                            JsonNode buildResultNode = buildJsonNode.get("result");
 
                             // Verify that artifacts field is NOT present in getBuild response
-                            assertThat(buildJsonNode.has("artifacts")).isFalse();
+                            assertThat(buildResultNode.has("artifacts")).isFalse();
 
                             // Verify that other build information is still present
-                            assertThat(buildJsonNode.has("number")).isTrue();
-                            assertThat(buildJsonNode.has("result")).isTrue();
-                            assertThat(buildJsonNode.has("displayName")).isTrue();
+                            assertThat(buildResultNode.has("number")).isTrue();
+                            assertThat(buildResultNode.has("result")).isTrue();
+                            assertThat(buildResultNode.has("displayName")).isTrue();
 
                         } catch (JsonProcessingException e) {
                             throw new RuntimeException(e);
@@ -109,14 +110,16 @@ public class GetBuildWithoutArtifactsTest {
                     .isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
                         ObjectMapper objectMapper = new ObjectMapper();
                         try {
-                            // Validate that the response is a proper JSON array
+                            // Validate that the response wraps a proper JSON array under "result"
                             JsonNode jsonNode = objectMapper.readTree(textContent.text());
-                            assertThat(jsonNode.isArray()).isTrue();
-                            assertThat(jsonNode.size()).isEqualTo(2); // Two artifacts: artifact1.txt and artifact2.txt
+                            JsonNode resultNode = jsonNode.get("result");
+                            assertThat(resultNode.isArray()).isTrue();
+                            assertThat(resultNode.size())
+                                    .isEqualTo(2); // Two artifacts: artifact1.txt and artifact2.txt
 
                             // Verify that both artifacts are present in the array
                             Set<String> foundArtifacts = new HashSet<>();
-                            for (JsonNode artifactNode : jsonNode) {
+                            for (JsonNode artifactNode : resultNode) {
                                 assertThat(artifactNode.isObject()).isTrue();
                                 assertThat(artifactNode.has("relativePath")).isTrue();
                                 String relativePath =
@@ -158,14 +161,15 @@ public class GetBuildWithoutArtifactsTest {
                         ObjectMapper objectMapper = new ObjectMapper();
                         try {
                             JsonNode buildJsonNode = objectMapper.readTree(getBuildTextContent.text());
+                            JsonNode buildResultNode = buildJsonNode.get("result");
 
                             // Verify that artifacts field is NOT present
-                            assertThat(buildJsonNode.has("artifacts")).isFalse();
+                            assertThat(buildResultNode.has("artifacts")).isFalse();
 
                             // Verify that other build information is still present
-                            assertThat(buildJsonNode.has("number")).isTrue();
-                            assertThat(buildJsonNode.has("result")).isTrue();
-                            assertThat(buildJsonNode.has("displayName")).isTrue();
+                            assertThat(buildResultNode.has("number")).isTrue();
+                            assertThat(buildResultNode.has("result")).isTrue();
+                            assertThat(buildResultNode.has("displayName")).isTrue();
 
                         } catch (JsonProcessingException e) {
                             throw new RuntimeException(e);

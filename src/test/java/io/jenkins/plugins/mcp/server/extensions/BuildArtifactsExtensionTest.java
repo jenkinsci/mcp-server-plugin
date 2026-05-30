@@ -35,6 +35,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder;
 import io.jenkins.plugins.mcp.server.junit.McpClientTest;
+import io.jenkins.plugins.mcp.server.tool.ToolResponse;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.HashSet;
 import java.util.Map;
@@ -73,12 +74,13 @@ public class BuildArtifactsExtensionTest {
                 ObjectMapper objectMapper = new ObjectMapper();
                 try {
                     JsonNode jsonNode = objectMapper.readTree(textContent.text());
-                    // After fix: the response contains a JSON array with a single artifact
-                    assertThat(jsonNode.isArray()).isTrue();
-                    assertThat(jsonNode.size()).isEqualTo(1);
+                    JsonNode resultNode = jsonNode.get("result");
+                    // The response wraps a JSON array with a single artifact under "result"
+                    assertThat(resultNode.isArray()).isTrue();
+                    assertThat(resultNode.size()).isEqualTo(1);
 
                     // Check that we have the test.txt artifact in the array
-                    JsonNode artifactNode = jsonNode.get(0);
+                    JsonNode artifactNode = resultNode.get(0);
                     assertThat(artifactNode.get("relativePath").asText()).isEqualTo("test.txt");
                     assertThat(artifactNode.get("fileName").asText()).isEqualTo("test.txt");
                 } catch (JsonProcessingException e) {
@@ -118,9 +120,11 @@ public class BuildArtifactsExtensionTest {
                 ObjectMapper objectMapper = new ObjectMapper();
                 try {
                     JsonNode jsonNode = objectMapper.readTree(textContent.text());
-                    assertThat(jsonNode.get("content").asText()).contains("This is test content for artifact reading");
-                    assertThat(jsonNode.get("hasMoreContent").asBoolean()).isFalse();
-                    assertThat(jsonNode.get("totalSize").asLong()).isGreaterThan(0);
+                    JsonNode resultNode = jsonNode.get("result");
+                    assertThat(resultNode.get("content").asText())
+                            .contains("This is test content for artifact reading");
+                    assertThat(resultNode.get("hasMoreContent").asBoolean()).isFalse();
+                    assertThat(resultNode.get("totalSize").asLong()).isGreaterThan(0);
                 } catch (JsonProcessingException e) {
                     throw new RuntimeException(e);
                 }
@@ -166,9 +170,10 @@ public class BuildArtifactsExtensionTest {
                 ObjectMapper objectMapper = new ObjectMapper();
                 try {
                     JsonNode jsonNode = objectMapper.readTree(textContent.text());
-                    assertThat(jsonNode.get("content").asText()).hasSize(100);
-                    assertThat(jsonNode.get("hasMoreContent").asBoolean()).isTrue();
-                    assertThat(jsonNode.get("totalSize").asLong()).isEqualTo(1000);
+                    JsonNode resultNode = jsonNode.get("result");
+                    assertThat(resultNode.get("content").asText()).hasSize(100);
+                    assertThat(resultNode.get("hasMoreContent").asBoolean()).isTrue();
+                    assertThat(resultNode.get("totalSize").asLong()).isEqualTo(1000);
                 } catch (JsonProcessingException e) {
                     throw new RuntimeException(e);
                 }
@@ -193,8 +198,9 @@ public class BuildArtifactsExtensionTest {
                 ObjectMapper objectMapper = new ObjectMapper();
                 try {
                     JsonNode jsonNode = objectMapper.readTree(textContent.text());
-                    assertThat(jsonNode.isArray()).isTrue();
-                    assertThat(jsonNode.size()).isEqualTo(0); // Empty array for non-existent job
+                    // Empty results: ToolResponse omits the "result" field and reports no data
+                    assertThat(jsonNode.has("result")).isFalse();
+                    assertThat(jsonNode.get("message").asText()).isEqualTo(ToolResponse.NO_DATA_MSG);
                 } catch (JsonProcessingException e) {
                     throw new RuntimeException(e);
                 }
@@ -232,14 +238,15 @@ public class BuildArtifactsExtensionTest {
             assertThat(response.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
                 ObjectMapper objectMapper = new ObjectMapper();
                 try {
-                    // Validate that the response is a proper JSON array
+                    // Validate that the response wraps a proper JSON array under "result"
                     JsonNode jsonNode = objectMapper.readTree(textContent.text());
-                    assertThat(jsonNode.isArray()).isTrue();
-                    assertThat(jsonNode.size()).isEqualTo(2); // Should have 2 artifacts
+                    JsonNode resultNode = jsonNode.get("result");
+                    assertThat(resultNode.isArray()).isTrue();
+                    assertThat(resultNode.size()).isEqualTo(2); // Should have 2 artifacts
 
                     // Verify that both artifacts are present in the array
                     Set<String> foundArtifacts = new HashSet<>();
-                    for (JsonNode artifactNode : jsonNode) {
+                    for (JsonNode artifactNode : resultNode) {
                         assertThat(artifactNode.isObject()).isTrue();
                         assertThat(artifactNode.has("relativePath")).isTrue();
                         assertThat(artifactNode.has("fileName")).isTrue();
@@ -286,9 +293,10 @@ public class BuildArtifactsExtensionTest {
                 ObjectMapper objectMapper = new ObjectMapper();
                 try {
                     JsonNode jsonNode = objectMapper.readTree(textContent.text());
-                    assertThat(jsonNode.get("content").asText()).contains("Artifact not found");
-                    assertThat(jsonNode.get("hasMoreContent").asBoolean()).isFalse();
-                    assertThat(jsonNode.get("totalSize").asLong()).isEqualTo(0);
+                    JsonNode resultNode = jsonNode.get("result");
+                    assertThat(resultNode.get("content").asText()).contains("Artifact not found");
+                    assertThat(resultNode.get("hasMoreContent").asBoolean()).isFalse();
+                    assertThat(resultNode.get("totalSize").asLong()).isEqualTo(0);
                 } catch (JsonProcessingException e) {
                     throw new RuntimeException(e);
                 }
@@ -315,9 +323,10 @@ public class BuildArtifactsExtensionTest {
                 ObjectMapper objectMapper = new ObjectMapper();
                 try {
                     JsonNode jsonNode = objectMapper.readTree(textContent.text());
-                    assertThat(jsonNode.get("content").asText()).contains("Build not found");
-                    assertThat(jsonNode.get("hasMoreContent").asBoolean()).isFalse();
-                    assertThat(jsonNode.get("totalSize").asLong()).isEqualTo(0);
+                    JsonNode resultNode = jsonNode.get("result");
+                    assertThat(resultNode.get("content").asText()).contains("Build not found");
+                    assertThat(resultNode.get("hasMoreContent").asBoolean()).isFalse();
+                    assertThat(resultNode.get("totalSize").asLong()).isEqualTo(0);
                 } catch (JsonProcessingException e) {
                     throw new RuntimeException(e);
                 }
@@ -355,9 +364,10 @@ public class BuildArtifactsExtensionTest {
                 ObjectMapper objectMapper = new ObjectMapper();
                 try {
                     JsonNode jsonNode = objectMapper.readTree(textContent.text());
-                    assertThat(jsonNode.get("content").asText()).isEmpty();
-                    assertThat(jsonNode.get("hasMoreContent").asBoolean()).isFalse();
-                    assertThat(jsonNode.get("totalSize").asLong()).isGreaterThan(0);
+                    JsonNode resultNode = jsonNode.get("result");
+                    assertThat(resultNode.get("content").asText()).isEmpty();
+                    assertThat(resultNode.get("hasMoreContent").asBoolean()).isFalse();
+                    assertThat(resultNode.get("totalSize").asLong()).isGreaterThan(0);
                 } catch (JsonProcessingException e) {
                     throw new RuntimeException(e);
                 }
@@ -401,10 +411,11 @@ public class BuildArtifactsExtensionTest {
                 ObjectMapper objectMapper = new ObjectMapper();
                 try {
                     JsonNode jsonNode = objectMapper.readTree(textContent.text());
+                    JsonNode resultNode = jsonNode.get("result");
                     // Should still get the content, just with capped limit
-                    assertThat(jsonNode.get("content").asText()).contains("Test content");
-                    assertThat(jsonNode.get("hasMoreContent").asBoolean()).isFalse();
-                    assertThat(jsonNode.get("totalSize").asLong()).isGreaterThan(0);
+                    assertThat(resultNode.get("content").asText()).contains("Test content");
+                    assertThat(resultNode.get("hasMoreContent").asBoolean()).isFalse();
+                    assertThat(resultNode.get("totalSize").asLong()).isGreaterThan(0);
                 } catch (JsonProcessingException e) {
                     throw new RuntimeException(e);
                 }
@@ -450,10 +461,52 @@ public class BuildArtifactsExtensionTest {
                 ObjectMapper objectMapper = new ObjectMapper();
                 try {
                     JsonNode jsonNode = objectMapper.readTree(textContent.text());
+                    JsonNode resultNode = jsonNode.get("result");
                     // Should still get the content with normalized parameters
-                    assertThat(jsonNode.get("content").asText()).contains("Test content");
-                    assertThat(jsonNode.get("hasMoreContent").asBoolean()).isFalse();
-                    assertThat(jsonNode.get("totalSize").asLong()).isGreaterThan(0);
+                    assertThat(resultNode.get("content").asText()).contains("Test content");
+                    assertThat(resultNode.get("hasMoreContent").asBoolean()).isFalse();
+                    assertThat(resultNode.get("totalSize").asLong()).isGreaterThan(0);
+                } catch (JsonProcessingException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+        }
+    }
+
+    @McpClientTest
+    void testGetBuildArtifactBinaryContent(JenkinsMcpClientBuilder jenkinsMcpClientBuilder, JenkinsRule jenkins)
+            throws Exception {
+        // Create a job whose artifact contains a NUL byte, marking it as binary content
+        WorkflowJob project = jenkins.createProject(WorkflowJob.class, "binary-artifact-job");
+        project.setDefinition(new CpsFlowDefinition(
+                "node {\n" + "    writeFile file: 'binary.dat', text: 'PK\\u0003\\u0004binary\\u0000content'\n"
+                        + "    archiveArtifacts artifacts: 'binary.dat'\n"
+                        + "}",
+                true));
+
+        project.scheduleBuild2(0).get();
+        await().atMost(10, SECONDS).until(() -> project.getLastBuild() != null);
+        await().atMost(10, SECONDS).until(() -> project.getLastBuild().isBuilding() == false);
+
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+            var callToolRequest = McpSchema.CallToolRequest.builder()
+                    .name("getBuildArtifact")
+                    .arguments(Map.of("jobFullName", "binary-artifact-job", "artifactPath", "binary.dat"))
+                    .build();
+
+            var response = client.callTool(callToolRequest);
+            assertThat(response.isError()).isFalse();
+            assertThat(response.content()).hasSize(1);
+
+            assertThat(response.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                ObjectMapper objectMapper = new ObjectMapper();
+                try {
+                    JsonNode jsonNode = objectMapper.readTree(textContent.text());
+                    JsonNode resultNode = jsonNode.get("result");
+                    // Binary content is refused with a clear message rather than garbled text
+                    assertThat(resultNode.get("content").asText()).contains("binary and cannot be returned as text");
+                    assertThat(resultNode.get("hasMoreContent").asBoolean()).isFalse();
+                    assertThat(resultNode.get("totalSize").asLong()).isGreaterThan(0);
                 } catch (JsonProcessingException e) {
                     throw new RuntimeException(e);
                 }

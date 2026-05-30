@@ -38,6 +38,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import jenkins.util.SystemProperties;
 import jenkins.util.VirtualFile;
 import lombok.extern.slf4j.Slf4j;
 
@@ -51,7 +52,9 @@ public class BuildArtifactsExtension implements McpServerExtension {
      * - "unchecked": Run.getArtifacts() returns raw List requiring unchecked conversion
      */
     @SuppressWarnings({"rawtypes", "unchecked"})
-    @Tool(description = "Get the artifacts for a specific build or the last build of a Jenkins job")
+    @Tool(
+            description = "Get the artifacts for a specific build or the last build of a Jenkins job",
+            annotations = @Tool.Annotations(destructiveHint = false))
     public List<Run.Artifact> getBuildArtifacts(
             @ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
             @Nullable
@@ -66,7 +69,8 @@ public class BuildArtifactsExtension implements McpServerExtension {
 
     @Tool(
             description =
-                    "Get the content of a specific build artifact with pagination support. Returns the artifact content as text with information about whether there is more content to retrieve.")
+                    "Get the content of a specific build artifact with pagination support. Returns the artifact content as text with information about whether there is more content to retrieve.",
+            annotations = @Tool.Annotations(destructiveHint = false))
     public BuildArtifactResponse getBuildArtifact(
             @ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
             @Nullable
@@ -91,12 +95,15 @@ public class BuildArtifactsExtension implements McpServerExtension {
         if (offset == null || offset < 0) {
             offset = 0L;
         }
+        int defaultLimit =
+                SystemProperties.getInteger(BuildArtifactsExtension.class.getName() + ".limit.default", 65536); // 64KB
         if (limit == null || limit <= 0) {
-            limit = 65536; // 64KB default
+            limit = defaultLimit;
         }
 
         // Cap the limit to prevent excessive memory usage
-        final int maxLimit = 1048576; // 1MB max
+        final int maxLimit =
+                SystemProperties.getInteger(BuildArtifactsExtension.class.getName() + ".limit.max", 1048576); // 1MB
         if (limit > maxLimit) {
             log.warn("Limit {} is too large, using the default max limit {}", limit, maxLimit);
             limit = maxLimit;
@@ -178,6 +185,15 @@ public class BuildArtifactsExtension implements McpServerExtension {
                 return new BuildArtifactResponse(false, fileSize, "");
             }
 
+            // Binary artifacts (jar, war, images, ...) cannot be represented as text. Detect them
+            // and return a clear message rather than emitting garbled UTF-8 replacement characters.
+            if (isBinaryContent(buffer, bytesRead)) {
+                return new BuildArtifactResponse(
+                        false,
+                        fileSize,
+                        "Artifact appears to be binary and cannot be returned as text: " + artifactPath);
+            }
+
             // Convert to string (assuming text content)
             String content = new String(buffer, 0, bytesRead, StandardCharsets.UTF_8);
 
@@ -186,6 +202,20 @@ public class BuildArtifactsExtension implements McpServerExtension {
 
             return new BuildArtifactResponse(hasMoreContent, fileSize, content);
         }
+    }
+
+    /*
+     * Heuristically determines whether the given bytes are binary (non-text) content. The presence
+     * of a NUL byte is a strong, low-false-positive indicator of binary data, as text files
+     * virtually never contain NUL bytes.
+     */
+    private static boolean isBinaryContent(byte[] buffer, int length) {
+        for (int i = 0; i < length; i++) {
+            if (buffer[i] == 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public record BuildArtifactResponse(boolean hasMoreContent, long totalSize, String content) {}
