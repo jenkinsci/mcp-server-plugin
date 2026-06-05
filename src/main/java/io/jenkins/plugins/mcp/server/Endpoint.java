@@ -30,6 +30,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.Extension;
+import hudson.ExtensionComponent;
 import hudson.PluginWrapper;
 import hudson.model.RootAction;
 import hudson.security.csrf.CrumbExclusion;
@@ -52,10 +53,12 @@ import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
@@ -67,6 +70,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 import jenkins.model.Jenkins;
 import jenkins.util.HttpServletFilter;
 import jenkins.util.SystemProperties;
@@ -198,6 +202,11 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
      */
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    /**
+     * Package hosting the built-in tool extensions shipped with this plugin.
+     */
+    private static final String BUILTIN_EXTENSION_PACKAGE = "io.jenkins.plugins.mcp.server.extensions";
+
     private final ExecutorService sseMessageExecutor = createSseMessageExecutor();
 
     private static ExecutorService createSseMessageExecutor() {
@@ -309,6 +318,8 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
                 .build();
         var extensions = McpServerExtension.all();
 
+        var resolvedTools = resolveTools(extensions.getComponents());
+
         var prompts = extensions.stream()
                 .map(McpServerExtension::getSyncPrompts)
                 .flatMap(List::stream)
@@ -325,40 +336,185 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
 
         // Initialize session-based transports if SSE or Streamable enabled
         if (!DISABLE_MCP_SSE || !DISABLE_MCP_STREAMABLE) {
-            initSessionBased(serverCapabilities, extensions, prompts, resources, rootUrl, pluginName, pluginVersion);
+            initSessionBased(serverCapabilities, resolvedTools, prompts, resources, rootUrl, pluginName, pluginVersion);
         }
 
         // Initialize stateless transport if enabled
         if (!DISABLE_MCP_STATELESS) {
-            initStateless(serverCapabilities, extensions, prompts, resources, pluginName, pluginVersion);
+            initStateless(serverCapabilities, resolvedTools, prompts, resources, pluginName, pluginVersion);
         }
 
         initialized = true;
     }
 
+    /**
+     * Resolves the set of tools exposed by the server, de-duplicating by tool name.
+     *
+     * <p>Tools come from two sources: annotation-based {@link Tool @Tool} methods and programmatic
+     * {@link McpServerExtension#getSyncTools()} specifications. When several tools share the same name,
+     * a single winner is selected:
+     *
+     * <ul>
+     *   <li>If at least one candidate declares {@code @Tool(override = true)}, an override wins and
+     *       replaces the others. When several overrides compete, the one from the extension with the
+     *       highest {@link hudson.Extension#ordinal() ordinal} wins.
+     *   <li>Otherwise the duplicate is treated as accidental: the built-in (or first declared) tool is
+     *       kept and the others are skipped with a warning, so a built-in tool is never silently
+     *       shadowed.
+     * </ul>
+     */
+    List<ToolCandidate> resolveTools(List<ExtensionComponent<McpServerExtension>> components) {
+        List<ToolCandidate> candidates = new ArrayList<>();
+        for (var component : components) {
+            double ordinal = component.ordinal();
+            McpServerExtension extension = component.getInstance();
+            boolean builtin = isBuiltinExtension(extension.getClass());
+
+            for (var spec : extension.getSyncTools()) {
+                String name = spec.tool().name();
+                candidates.add(new ToolCandidate(
+                        name,
+                        ordinal,
+                        false,
+                        builtin,
+                        extension,
+                        null,
+                        spec,
+                        extension.getClass().getName() + " (programmatic tool '" + name + "')"));
+            }
+
+            for (Method method : extension.getClass().getMethods()) {
+                Tool tool = method.getAnnotation(Tool.class);
+                if (tool == null) {
+                    continue;
+                }
+                candidates.add(new ToolCandidate(
+                        McpToolWrapper.toolName(method),
+                        ordinal,
+                        tool.override(),
+                        builtin,
+                        extension,
+                        method,
+                        null,
+                        extension.getClass().getName() + "#" + method.getName()));
+            }
+        }
+
+        Map<String, List<ToolCandidate>> byName = new LinkedHashMap<>();
+        for (var candidate : candidates) {
+            byName.computeIfAbsent(candidate.name(), k -> new ArrayList<>()).add(candidate);
+        }
+
+        List<ToolCandidate> winners = new ArrayList<>(byName.size());
+        byName.forEach((name, group) -> winners.add(selectToolWinner(name, group)));
+        return winners;
+    }
+
+    private ToolCandidate selectToolWinner(String name, List<ToolCandidate> candidates) {
+        if (candidates.size() == 1) {
+            return candidates.get(0);
+        }
+
+        List<ToolCandidate> overrides =
+                candidates.stream().filter(ToolCandidate::override).toList();
+
+        if (!overrides.isEmpty()) {
+            ToolCandidate winner = overrides.stream()
+                    .max(Comparator.comparingDouble(ToolCandidate::ordinal))
+                    .orElseThrow();
+            if (overrides.size() > 1) {
+                log.warn(
+                        "Multiple tools declare override=true for name '{}'; using {} (ordinal {}), ignoring: {}",
+                        name,
+                        winner.description(),
+                        winner.ordinal(),
+                        describeOthers(overrides, winner));
+            }
+            log.info(
+                    "Tool name '{}' overridden by {}, replacing: {}",
+                    name,
+                    winner.description(),
+                    describeOthers(candidates, winner));
+            return winner;
+        }
+
+        // No explicit override: accidental name collision. Keep the built-in tool if present so it is
+        // never silently shadowed; otherwise keep the first declared tool deterministically.
+        ToolCandidate winner =
+                candidates.stream().filter(ToolCandidate::builtin).findFirst().orElseGet(() -> candidates.get(0));
+        log.warn(
+                "Duplicate tool name '{}' without override; keeping {}, skipping: {}. "
+                        + "Annotate the replacement with @Tool(override=true) to override it intentionally.",
+                name,
+                winner.description(),
+                describeOthers(candidates, winner));
+        return winner;
+    }
+
+    private static String describeOthers(List<ToolCandidate> all, ToolCandidate winner) {
+        return all.stream()
+                .filter(c -> c != winner)
+                .map(ToolCandidate::description)
+                .collect(Collectors.joining(", "));
+    }
+
+    /**
+     * Returns {@code true} when the given extension class provides a built-in tool, i.e. it ships with
+     * this plugin. Built-in tools are never silently replaced by a same-named tool from another plugin
+     * unless that tool explicitly opts in with {@code @Tool(override = true)}.
+     */
+    private static boolean isBuiltinExtension(Class<?> extensionClass) {
+        // Built-in tool extensions all live in this package; this also works in the test harness where
+        // the plugin ownership below cannot be resolved.
+        if (extensionClass.getName().startsWith(BUILTIN_EXTENSION_PACKAGE + ".")) {
+            return true;
+        }
+        try {
+            var pluginManager = Jenkins.get().getPluginManager();
+            PluginWrapper endpointPlugin = pluginManager.whichPlugin(Endpoint.class);
+            PluginWrapper extensionPlugin = pluginManager.whichPlugin(extensionClass);
+            if (endpointPlugin != null && extensionPlugin != null) {
+                return endpointPlugin.getShortName().equals(extensionPlugin.getShortName());
+            }
+        } catch (RuntimeException e) {
+            log.debug("Unable to determine the owning plugin of {}", extensionClass.getName(), e);
+        }
+        return false;
+    }
+
+    /**
+     * A single tool candidate during resolution. Exactly one of {@code method} (annotation-based tool)
+     * or {@code spec} (programmatic tool) is non-null. The {@link McpToolWrapper} (which generates a
+     * JSON schema in its constructor) is built lazily so losing candidates do not pay for it.
+     */
+    record ToolCandidate(
+            String name,
+            double ordinal,
+            boolean override,
+            boolean builtin,
+            McpServerExtension extension,
+            Method method,
+            McpServerFeatures.SyncToolSpecification spec,
+            String description) {
+        McpToolWrapper newWrapper(ObjectMapper objectMapper) {
+            return new McpToolWrapper(objectMapper, extension, method);
+        }
+    }
+
     private void initSessionBased(
             McpSchema.ServerCapabilities serverCapabilities,
-            List<McpServerExtension> extensions,
+            List<ToolCandidate> resolvedTools,
             List<McpServerFeatures.SyncPromptSpecification> prompts,
             List<McpServerFeatures.SyncResourceSpecification> resources,
             String rootUrl,
             String pluginName,
             String pluginVersion) {
 
-        var tools = extensions.stream()
-                .map(McpServerExtension::getSyncTools)
-                .flatMap(List::stream)
+        List<McpServerFeatures.SyncToolSpecification> allTools = resolvedTools.stream()
+                .map(candidate -> candidate.method() != null
+                        ? candidate.newWrapper(objectMapper).asSyncToolSpecification()
+                        : candidate.spec())
                 .toList();
-
-        var annotationTools = extensions.stream()
-                .flatMap(extension -> Arrays.stream(extension.getClass().getMethods())
-                        .filter(method -> method.isAnnotationPresent(Tool.class))
-                        .map(method -> new McpToolWrapper(objectMapper, extension, method).asSyncToolSpecification()))
-                .toList();
-
-        List<McpServerFeatures.SyncToolSpecification> allTools = new ArrayList<>();
-        allTools.addAll(tools);
-        allTools.addAll(annotationTools);
 
         httpServletSseServerTransportProvider = HttpServletSseServerTransportProvider.builder()
                 .jsonMapper(new JacksonMcpJsonMapper(objectMapper))
@@ -405,14 +561,14 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
 
     private void initStateless(
             McpSchema.ServerCapabilities serverCapabilities,
-            List<McpServerExtension> extensions,
+            List<ToolCandidate> resolvedTools,
             List<McpServerFeatures.SyncPromptSpecification> prompts,
             List<McpServerFeatures.SyncResourceSpecification> resources,
             String pluginName,
             String pluginVersion) {
 
-        // Convert session-based tool specs to stateless tool specs
-        var statelessTools = convertToStatelessTools(extensions);
+        // Convert resolved tool specs to stateless tool specs
+        var statelessTools = convertToStatelessTools(resolvedTools);
         var statelessPrompts = convertToStatelessPrompts(prompts);
         var statelessResources = convertToStatelessResources(resources);
 
@@ -434,26 +590,12 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
     }
 
     private List<McpStatelessServerFeatures.SyncToolSpecification> convertToStatelessTools(
-            List<McpServerExtension> extensions) {
-        // Collect tools from getSyncTools() - these need conversion
-        var sessionTools = extensions.stream()
-                .map(McpServerExtension::getSyncTools)
-                .flatMap(List::stream)
-                .map(this::convertToolToStateless)
+            List<ToolCandidate> resolvedTools) {
+        return resolvedTools.stream()
+                .map(candidate -> candidate.method() != null
+                        ? candidate.newWrapper(objectMapper).asStatelessSyncToolSpecification()
+                        : convertToolToStateless(candidate.spec()))
                 .toList();
-
-        // Collect annotation-based tools - use McpToolWrapper.asStatelessSyncToolSpecification()
-        var annotationTools = extensions.stream()
-                .flatMap(extension -> Arrays.stream(extension.getClass().getMethods())
-                        .filter(method -> method.isAnnotationPresent(Tool.class))
-                        .map(method ->
-                                new McpToolWrapper(objectMapper, extension, method).asStatelessSyncToolSpecification()))
-                .toList();
-
-        List<McpStatelessServerFeatures.SyncToolSpecification> allTools = new ArrayList<>();
-        allTools.addAll(sessionTools);
-        allTools.addAll(annotationTools);
-        return allTools;
     }
 
     private McpStatelessServerFeatures.SyncToolSpecification convertToolToStateless(

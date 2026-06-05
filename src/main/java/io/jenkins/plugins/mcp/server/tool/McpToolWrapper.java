@@ -243,13 +243,22 @@ public class McpToolWrapper {
                 || classToCheck.isAnnotationPresent(ExportedBean.class);
     }
 
-    String getToolName() {
+    /**
+     * Resolves the tool name for a {@link Tool}-annotated method without instantiating an
+     * {@link McpToolWrapper}. Used during tool-override resolution to compare names before
+     * deciding which candidate to keep.
+     */
+    public static String toolName(Method method) {
         Assert.notNull(method, "method cannot be null");
         var tool = method.getAnnotation(Tool.class);
         if (tool == null) {
             return method.getName();
         }
         return StringUtils.hasText(tool.name()) ? tool.name() : method.getName();
+    }
+
+    String getToolName() {
+        return toolName(method);
     }
 
     boolean isStructuredOutput() {
