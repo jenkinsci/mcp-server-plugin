@@ -334,7 +334,7 @@ Streamable example:
 
 #### Claude
 ```bash
-claude mcp add jenkins http://jenkins-host/mcp-server/mcp --transport http --header "Authorization: Basic <user:token base64>"
+claude mcp add -s user jenkins https://jenkins-host/mcp-server/mcp --transport http --header "Authorization: Basic <user:token base64>"
 ```
 
 #### Stateless Configuration Example
