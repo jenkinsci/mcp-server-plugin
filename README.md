@@ -476,6 +476,35 @@ public class MyCustomMcpExtension implements McpServerExtension {
 	}
 }
 ```
+
+### Overriding a Built-in Tool
+
+You can replace a built-in tool (or any tool contributed by another plugin) with your own
+implementation from a separate plugin. Declare a `@Tool` with the **same name** and set
+`override = true`:
+
+```java
+@Extension
+public class MyBuildLogExtension implements McpServerExtension {
+	@Tool(name = "getBuildLog", description = "My own getBuildLog", override = true)
+	public MyResponse getBuildLog(@ToolParam(description = "Job full name") String jobFullName) {
+		// Your implementation replaces the built-in getBuildLog
+	}
+}
+```
+
+Rules:
+
+- Overriding is an explicit opt-in. A tool only replaces another tool of the same name when it sets
+  `override = true`. This guarantees a built-in tool is never silently shadowed by an accidental name
+  clash.
+- If two tools share a name and **none** of them sets `override = true`, the existing (built-in) tool
+  is kept and the duplicate is skipped with a warning in the logs.
+- The `@Extension(ordinal = ...)` value is only used to break ties when **several** tools declare
+  `override = true` for the same name: the one provided by the extension with the highest ordinal
+  wins.
+- Each tool name is exposed exactly once, so MCP clients always see a single `getBuildLog`.
+
 ### Result Handling
 
 The MCP Server Plugin handles various result types with the following approach:

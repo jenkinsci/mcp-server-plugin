@@ -43,6 +43,16 @@ public @interface Tool {
     String name() default "";
 
     /**
+     * Set to {@code true} to replace another tool that has the same name, such as a built-in tool.
+     * <p>
+     * Overriding only happens when you ask for it. If two tools share a name and neither sets
+     * {@code override = true}, the first one wins and the other is ignored with a warning.
+     * If several tools set {@code override = true} for the same name, the one from the extension
+     * with the highest {@link hudson.Extension#ordinal() ordinal} wins.
+     */
+    boolean override() default false;
+
+    /**
      * The description of the tool. If not provided, the method name will be used.
      */
     String description() default "";
