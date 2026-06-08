@@ -120,9 +120,7 @@ public class DefaultMcpServer implements McpServerExtension {
         }
     }
 
-    @Tool(
-            description = "Trigger a build for a Jenkins job",
-            treePruneSupported = true)
+    @Tool(description = "Trigger a build for a Jenkins job", treePruneSupported = true)
     public QueueItem triggerBuild(
             @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
             @ToolParam(description = "Build parameters (optional, e.g., {key1=value1,key2=value2})", required = false)
