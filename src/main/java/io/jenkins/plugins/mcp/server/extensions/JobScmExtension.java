@@ -62,7 +62,7 @@ public class JobScmExtension implements McpServerExtension {
 
     @Tool(
             description = "Retrieves scm configurations of a Jenkins job",
-            annotations = @Tool.Annotations(destructiveHint = false))
+            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
     public List getJobScm(
             @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName) {
         var job = Jenkins.get().getItemByFullName(jobFullName, Job.class);
@@ -85,7 +85,7 @@ public class JobScmExtension implements McpServerExtension {
 
     @Tool(
             description = "Retrieves scm configurations of a Jenkins build",
-            annotations = @Tool.Annotations(destructiveHint = false))
+            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
     public List getBuildScm(
             @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
             @Nullable
@@ -105,7 +105,7 @@ public class JobScmExtension implements McpServerExtension {
 
     @Tool(
             description = "Retrieves change log sets of a Jenkins build",
-            annotations = @Tool.Annotations(destructiveHint = false))
+            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
     public List getBuildChangeSets(
             @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
             @Nullable
@@ -123,7 +123,7 @@ public class JobScmExtension implements McpServerExtension {
 
     @Tool(
             description = "Get a paginated list of Jenkins jobs that use the specified git SCM URL",
-            annotations = @Tool.Annotations(destructiveHint = false))
+            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
     public List<Job> findJobsWithScmUrl(
             @ToolParam(description = "SCM URL to search for (e.g., 'git@github.com:jenkinsci/mcp-server-plugin.git')")
                     String scmUrl,

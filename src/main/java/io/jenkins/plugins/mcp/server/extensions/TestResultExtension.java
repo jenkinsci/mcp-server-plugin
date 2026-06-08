@@ -23,7 +23,7 @@ public class TestResultExtension implements McpServerExtension {
 
     @Tool(
             description = "Retrieves the test results associated to a Jenkins build",
-            annotations = @Tool.Annotations(destructiveHint = false))
+            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
     public Map<String, Object> getTestResults(
             @ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
             @Nullable
@@ -65,7 +65,7 @@ public class TestResultExtension implements McpServerExtension {
 
     @Tool(
             description = "Retrieves the flaky failures associated to a Jenkins build if any found",
-            annotations = @Tool.Annotations(destructiveHint = false))
+            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
     public Map<String, Object> getFlakyFailures(
             @ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
             @Nullable

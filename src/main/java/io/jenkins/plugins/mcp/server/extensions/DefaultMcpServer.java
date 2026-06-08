@@ -75,7 +75,7 @@ public class DefaultMcpServer implements McpServerExtension {
 
     @Tool(
             description = "Get a specific build or the last build of a Jenkins job",
-            annotations = @Tool.Annotations(destructiveHint = false))
+            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
     public Run getBuild(
             @ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
             @Nullable
@@ -86,7 +86,9 @@ public class DefaultMcpServer implements McpServerExtension {
         return getBuildByNumberOrLast(jobFullName, buildNumber).orElse(null);
     }
 
-    @Tool(description = "Get a Jenkins job by its full path", annotations = @Tool.Annotations(destructiveHint = false))
+    @Tool(
+            description = "Get a Jenkins job by its full path",
+            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
     public Job getJob(
             @ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName) {
         return Jenkins.get().getItemByFullName(jobFullName, Job.class);
@@ -118,8 +120,10 @@ public class DefaultMcpServer implements McpServerExtension {
         }
     }
 
-    @Tool(description = "Trigger a build for a Jenkins job", treePruneSupported = true)
-    // keep the default value for destructive (true)
+    @Tool(
+            description = "Trigger a build for a Jenkins job",
+            treePruneSupported = true,
+            annotations = @Tool.Annotations(destructiveHint = false))
     public QueueItem triggerBuild(
             @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
             @ToolParam(description = "Build parameters (optional, e.g., {key1=value1,key2=value2})", required = false)
@@ -160,7 +164,7 @@ public class DefaultMcpServer implements McpServerExtension {
     @Tool(
             description =
                     "Get a paginated list of Jenkins jobs, sorted by name. Returns up to 'limit' jobs starting from the 'skip' index. If no jobs are available in the requested range, returns an empty list.",
-            annotations = @Tool.Annotations(destructiveHint = false))
+            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
     public List<Job> getJobs(
             @ToolParam(
                             description =
@@ -240,7 +244,7 @@ public class DefaultMcpServer implements McpServerExtension {
             description =
                     "Get information about the currently authenticated user/principal, including their full name or 'anonymous' if not authenticated",
             structuredOutput = true,
-            annotations = @Tool.Annotations(destructiveHint = false))
+            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
     @SneakyThrows
     public WhoAmIResponse whoAmI() {
         var name = Jenkins.getAuthentication2().getName();
@@ -255,7 +259,7 @@ public class DefaultMcpServer implements McpServerExtension {
                             + " This tool provides a comprehensive overview of the controller's operational state to determine if"
                             + " it's stable and ready to build. Use this tool to assess Jenkins instance health rather than"
                             + " simple up/down status.",
-            annotations = @Tool.Annotations(destructiveHint = false))
+            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
     public Map<String, Object> getStatus() {
         var map = new HashMap<String, Object>();
         var jenkins = Jenkins.get();
@@ -306,7 +310,7 @@ public class DefaultMcpServer implements McpServerExtension {
             description =
                     "Get the queue item details by its ID. The caller can check the queue item's status, build details, and other relevant information.",
             treePruneSupported = true,
-            annotations = @Tool.Annotations(destructiveHint = false))
+            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
     public QueueItem getQueueItem(@ToolParam(description = "The queue item id") long id) {
         return Jenkins.get().getQueue().getItem(id);
     }
@@ -314,7 +318,8 @@ public class DefaultMcpServer implements McpServerExtension {
     @Tool(
             description =
                     "Rebuild a Jenkins build: re-run with the same parameters (and for Pipeline jobs, the same script when possible). Returns the queue item for the new build.",
-            treePruneSupported = true)
+            treePruneSupported = true,
+            annotations = @Tool.Annotations(destructiveHint = false))
     public QueueItem rebuildBuild(
             @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
             @Nullable
@@ -356,7 +361,7 @@ public class DefaultMcpServer implements McpServerExtension {
             description =
                     "Get the pipeline script(s) of a build for replay. Returns the main script and loaded scripts. Only available for Pipeline (replayable) builds.",
             structuredOutput = true,
-            annotations = @Tool.Annotations(destructiveHint = false))
+            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
     public GetReplayScriptsResult getReplayScripts(
             @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
             @Nullable
@@ -382,7 +387,8 @@ public class DefaultMcpServer implements McpServerExtension {
     @Tool(
             description =
                     "Replay a Pipeline build with optionally modified script(s). Runs the job again with the given main script and optional loaded scripts. Only available for Pipeline jobs.",
-            treePruneSupported = true)
+            treePruneSupported = true,
+            annotations = @Tool.Annotations(destructiveHint = false))
     public QueueItem replayBuild(
             @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
             @Nullable
