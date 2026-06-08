@@ -83,13 +83,15 @@ public class EndPointTest {
                 assertThat(toolsByName).containsKey(name);
                 assertThat(toolsByName.get(name).annotations()).isNotNull();
                 assertThat(toolsByName.get(name).annotations().readOnlyHint()).isTrue();
-                assertThat(toolsByName.get(name).annotations().destructiveHint()).isFalse();
+                assertThat(toolsByName.get(name).annotations().destructiveHint())
+                        .isFalse();
             };
             Consumer<String> assertDestructiveMutation = name -> {
                 assertThat(toolsByName).containsKey(name);
                 assertThat(toolsByName.get(name).annotations()).isNotNull();
                 assertThat(toolsByName.get(name).annotations().readOnlyHint()).isFalse();
-                assertThat(toolsByName.get(name).annotations().destructiveHint()).isTrue();
+                assertThat(toolsByName.get(name).annotations().destructiveHint())
+                        .isTrue();
             };
 
             for (String name : new String[] {
@@ -118,8 +120,10 @@ public class EndPointTest {
 
             assertThat(toolsByName).containsKey("updateBuild");
             assertThat(toolsByName.get("updateBuild").annotations()).isNotNull();
-            assertThat(toolsByName.get("updateBuild").annotations().readOnlyHint()).isFalse();
-            assertThat(toolsByName.get("updateBuild").annotations().destructiveHint()).isTrue();
+            assertThat(toolsByName.get("updateBuild").annotations().readOnlyHint())
+                    .isFalse();
+            assertThat(toolsByName.get("updateBuild").annotations().destructiveHint())
+                    .isTrue();
         }
     }
 
