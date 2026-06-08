@@ -123,7 +123,7 @@ public class DefaultMcpServer implements McpServerExtension {
     @Tool(
             description = "Trigger a build for a Jenkins job",
             treePruneSupported = true,
-            annotations = @Tool.Annotations(destructiveHint = false))
+            annotations = @Tool.Annotations(destructiveHint = true))
     public QueueItem triggerBuild(
             @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
             @ToolParam(description = "Build parameters (optional, e.g., {key1=value1,key2=value2})", required = false)
@@ -319,7 +319,7 @@ public class DefaultMcpServer implements McpServerExtension {
             description =
                     "Rebuild a Jenkins build: re-run with the same parameters (and for Pipeline jobs, the same script when possible). Returns the queue item for the new build.",
             treePruneSupported = true,
-            annotations = @Tool.Annotations(destructiveHint = false))
+            annotations = @Tool.Annotations(destructiveHint = true))
     public QueueItem rebuildBuild(
             @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
             @Nullable
@@ -388,7 +388,7 @@ public class DefaultMcpServer implements McpServerExtension {
             description =
                     "Replay a Pipeline build with optionally modified script(s). Runs the job again with the given main script and optional loaded scripts. Only available for Pipeline jobs.",
             treePruneSupported = true,
-            annotations = @Tool.Annotations(destructiveHint = false))
+            annotations = @Tool.Annotations(destructiveHint = true))
     public QueueItem replayBuild(
             @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
             @Nullable

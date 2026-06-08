@@ -85,11 +85,11 @@ public class EndPointTest {
                 assertThat(toolsByName.get(name).annotations().readOnlyHint()).isTrue();
                 assertThat(toolsByName.get(name).annotations().destructiveHint()).isFalse();
             };
-            Consumer<String> assertAdditiveMutation = name -> {
+            Consumer<String> assertDestructiveMutation = name -> {
                 assertThat(toolsByName).containsKey(name);
                 assertThat(toolsByName.get(name).annotations()).isNotNull();
                 assertThat(toolsByName.get(name).annotations().readOnlyHint()).isFalse();
-                assertThat(toolsByName.get(name).annotations().destructiveHint()).isFalse();
+                assertThat(toolsByName.get(name).annotations().destructiveHint()).isTrue();
             };
 
             for (String name : new String[] {
@@ -113,7 +113,7 @@ public class EndPointTest {
             }
 
             for (String name : new String[] {"triggerBuild", "rebuildBuild", "replayBuild"}) {
-                assertAdditiveMutation.accept(name);
+                assertDestructiveMutation.accept(name);
             }
 
             assertThat(toolsByName).containsKey("updateBuild");
