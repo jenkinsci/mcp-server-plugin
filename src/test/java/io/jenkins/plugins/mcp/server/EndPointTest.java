@@ -34,6 +34,7 @@ import io.jenkins.plugins.mcp.server.junit.McpClientTest;
 import io.modelcontextprotocol.spec.McpSchema;
 import jakarta.servlet.http.HttpServletResponse;
 import java.net.URL;
+import java.util.function.Consumer;
 import org.htmlunit.HttpMethod;
 import org.htmlunit.WebRequest;
 import org.junit.jupiter.api.Test;
@@ -69,6 +70,60 @@ public class EndPointTest {
                             "getTestResults",
                             "getFlakyFailures",
                             "getQueueItem");
+        }
+    }
+
+    @McpClientTest
+    void testBuiltinToolHints(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder) {
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+            var toolsByName = client.listTools().tools().stream()
+                    .collect(java.util.stream.Collectors.toMap(McpSchema.Tool::name, tool -> tool));
+
+            Consumer<String> assertReadOnly = name -> {
+                assertThat(toolsByName).containsKey(name);
+                assertThat(toolsByName.get(name).annotations()).isNotNull();
+                assertThat(toolsByName.get(name).annotations().readOnlyHint()).isTrue();
+                assertThat(toolsByName.get(name).annotations().destructiveHint())
+                        .isFalse();
+            };
+            Consumer<String> assertDestructiveMutation = name -> {
+                assertThat(toolsByName).containsKey(name);
+                assertThat(toolsByName.get(name).annotations()).isNotNull();
+                assertThat(toolsByName.get(name).annotations().readOnlyHint()).isFalse();
+                assertThat(toolsByName.get(name).annotations().destructiveHint())
+                        .isTrue();
+            };
+
+            for (String name : new String[] {
+                "getBuild",
+                "getJob",
+                "getJobs",
+                "whoAmI",
+                "getStatus",
+                "getQueueItem",
+                "getReplayScripts",
+                "getBuildLog",
+                "searchBuildLog",
+                "getTestResults",
+                "getFlakyFailures",
+                "getJobScm",
+                "getBuildScm",
+                "getBuildChangeSets",
+                "findJobsWithScmUrl"
+            }) {
+                assertReadOnly.accept(name);
+            }
+
+            for (String name : new String[] {"triggerBuild", "rebuildBuild", "replayBuild"}) {
+                assertDestructiveMutation.accept(name);
+            }
+
+            assertThat(toolsByName).containsKey("updateBuild");
+            assertThat(toolsByName.get("updateBuild").annotations()).isNotNull();
+            assertThat(toolsByName.get("updateBuild").annotations().readOnlyHint())
+                    .isFalse();
+            assertThat(toolsByName.get("updateBuild").annotations().destructiveHint())
+                    .isTrue();
         }
     }
 
