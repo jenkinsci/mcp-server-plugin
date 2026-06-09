@@ -29,6 +29,7 @@ package io.jenkins.plugins.mcp.server.extensions;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jayway.jsonpath.Configuration;
@@ -38,7 +39,10 @@ import io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder;
 import io.jenkins.plugins.mcp.server.junit.McpClientTest;
 import io.jenkins.plugins.mcp.server.junit.TestUtils;
 import io.jenkins.plugins.mcp.server.tool.ToolResponse;
+import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.spec.McpSchema;
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -264,5 +268,162 @@ public class BuildLogExtensionTest {
                 assertThat((Integer) contentMap.get("matchCount")).isGreaterThanOrEqualTo(2);
             });
         }
+    }
+
+    @McpClientTest
+    void testGetBuildLogCursorPagination(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
+            throws Exception {
+        WorkflowJob project = jenkins.createProject(WorkflowJob.class, "cursor-job");
+        project.setDefinition(new CpsFlowDefinition("for (int i = 1; i <= 25; i++) { echo \"LINE-\" + i }", true));
+        project.scheduleBuild2(0).get();
+        await().atMost(10, SECONDS).until(() -> project.getLastBuild() != null);
+
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+            // A single large read returns the whole log; forward reads do not compute the total.
+            Map<String, Object> full = getBuildLogResult(client, project.getFullName(), 0L, 1000, null);
+            List<String> fullLines = toStringList(full.get("lines"));
+            assertThat(fullLines.size()).isGreaterThanOrEqualTo(25);
+            assertThat((Boolean) full.get("hasMoreContent")).isFalse();
+            assertThat(((Number) full.get("totalLines")).longValue()).isEqualTo(-1L);
+
+            // Page through the same log 5 lines at a time using the returned cursor.
+            List<String> paged = new ArrayList<>();
+            String cursor = null;
+            boolean more = true;
+            int guard = 0;
+            while (more && guard++ < 1000) {
+                Map<String, Object> page = getBuildLogResult(client, project.getFullName(), 0L, 5, cursor);
+                paged.addAll(toStringList(page.get("lines")));
+                more = (Boolean) page.get("hasMoreContent");
+                cursor = (String) page.get("nextCursor");
+                if (cursor == null) {
+                    break;
+                }
+            }
+            assertThat(paged).isEqualTo(fullLines);
+        }
+    }
+
+    @McpClientTest
+    void testCursorBoundToBuildNumber(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
+            throws Exception {
+        WorkflowJob project = jenkins.createProject(WorkflowJob.class, "cursor-bind-job");
+        project.setDefinition(new CpsFlowDefinition("for (int i = 1; i <= 5; i++) { echo \"A-\" + i }", true));
+        project.scheduleBuild2(0).get();
+        // Second build with different log content
+        project.scheduleBuild2(0).get();
+        await().atMost(10, SECONDS)
+                .until(() ->
+                        project.getLastBuild() != null && project.getLastBuild().getNumber() == 2);
+
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+            // Get a cursor from build #1
+            Map<String, Object> params = new HashMap<>();
+            params.put("jobFullName", project.getFullName());
+            params.put("buildNumber", 1);
+            params.put("limit", 2);
+            Map<String, Object> page = readResult(client, "getBuildLog", params);
+            String cursor = (String) page.get("nextCursor");
+            assertThat(cursor).isNotNull();
+
+            // Reusing it against build #2 must be rejected
+            Map<String, Object> wrong = new HashMap<>();
+            wrong.put("jobFullName", project.getFullName());
+            wrong.put("buildNumber", 2);
+            wrong.put("cursor", cursor);
+            var response = client.callTool(new McpSchema.CallToolRequest("getBuildLog", wrong));
+            assertThat(response.isError()).isTrue();
+        }
+    }
+
+    @McpClientTest
+    void testTailReadReportsExactTotalLines(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
+            throws Exception {
+        WorkflowJob project = jenkins.createProject(WorkflowJob.class, "tail-total-job");
+        project.setDefinition(new CpsFlowDefinition("for (int i = 1; i <= 10; i++) { echo \"LINE-\" + i }", true));
+        project.scheduleBuild2(0).get();
+        await().atMost(10, SECONDS).until(() -> project.getLastBuild() != null);
+
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+            long total = project.getLastBuild().getLog(Integer.MAX_VALUE).size();
+
+            // End-relative read: totalLines is exact, and only the last 3 lines are returned.
+            Map<String, Object> tail = getBuildLogResult(client, project.getFullName(), 0L, -3, null);
+            assertThat(toStringList(tail.get("lines"))).hasSize(3);
+            assertThat(((Number) tail.get("totalLines")).longValue()).isEqualTo(total);
+            assertThat(((Number) tail.get("endLine")).longValue()).isEqualTo(total);
+        }
+    }
+
+    @McpClientTest
+    void testReadingLogOfRunningBuildDoesNotBlock(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
+            throws Exception {
+        WorkflowJob project = jenkins.createProject(WorkflowJob.class, "running-job");
+        // Emit a couple of lines, then keep the build in progress with a long sleep.
+        project.setDefinition(new CpsFlowDefinition(
+                "echo 'MARKER-ONE'\necho 'MARKER-TWO'\nsleep(time: 600, unit: 'SECONDS')\necho 'DONE'", true));
+        project.scheduleBuild2(0);
+
+        await().atMost(30, SECONDS).until(() -> {
+            WorkflowRun b = project.getLastBuild();
+            return b != null && b.isBuilding() && b.getLog(100).stream().anyMatch(l -> l.contains("MARKER-TWO"));
+        });
+        WorkflowRun build = project.getLastBuild();
+
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+            // Previously these calls used Run#writeWholeLogTo, which blocks until the build finishes.
+            // They must now return a snapshot promptly while the build is still in progress.
+            Map<String, Object> logResult = assertTimeoutPreemptively(
+                    Duration.ofSeconds(30), () -> getBuildLogResult(client, project.getFullName(), 0L, 1000, null));
+            assertThat(toStringList(logResult.get("lines"))).anyMatch(l -> l.contains("MARKER-TWO"));
+            assertThat(build.isBuilding()).isTrue();
+
+            Map<String, Object> searchResult = assertTimeoutPreemptively(Duration.ofSeconds(30), () -> {
+                Map<String, Object> params = new HashMap<>();
+                params.put("jobFullName", project.getFullName());
+                params.put("pattern", "MARKER");
+                var response = client.callTool(new McpSchema.CallToolRequest("searchBuildLog", params));
+                assertThat(response.isError()).isFalse();
+                return JsonPath.using(Configuration.defaultConfiguration())
+                        .parse(((McpSchema.TextContent) response.content().get(0)).text())
+                        .read("$.result", Map.class);
+            });
+            assertThat((Integer) searchResult.get("matchCount")).isGreaterThanOrEqualTo(2);
+        } finally {
+            build.doStop();
+            await().atMost(30, SECONDS).until(() -> !build.isBuilding());
+        }
+    }
+
+    private Map<String, Object> getBuildLogResult(
+            McpSyncClient client, String jobFullName, Long skip, Integer limit, String cursor) {
+        Map<String, Object> params = new HashMap<>();
+        params.put("jobFullName", jobFullName);
+        if (skip != null) {
+            params.put("skip", skip);
+        }
+        if (limit != null) {
+            params.put("limit", limit);
+        }
+        if (cursor != null) {
+            params.put("cursor", cursor);
+        }
+        return readResult(client, "getBuildLog", params);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> readResult(McpSyncClient client, String tool, Map<String, Object> params) {
+        var response = client.callTool(new McpSchema.CallToolRequest(tool, params));
+        assertThat(response.isError()).isFalse();
+        assertThat(response.content()).hasSize(1);
+        String text = ((McpSchema.TextContent) response.content().get(0)).text();
+        DocumentContext documentContext =
+                JsonPath.using(Configuration.defaultConfiguration()).parse(text);
+        return documentContext.read("$.result", Map.class);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<String> toStringList(Object linesNode) {
+        return new ArrayList<>((List<String>) linesNode);
     }
 }

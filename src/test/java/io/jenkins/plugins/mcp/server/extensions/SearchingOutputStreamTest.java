@@ -178,6 +178,19 @@ class SearchingOutputStreamTest {
         }
     }
 
+    @Test
+    void testEarlyTerminationStopsAfterBudgetReached() throws IOException {
+        SearchingOutputStream sos = new SearchingOutputStream("test", false, false, 2, 0, true, StandardCharsets.UTF_8);
+
+        // With early termination on, the third match (beyond maxMatches=2) signals that more matches
+        // exist and there is nothing left to determine, so reading is aborted via an exception.
+        assertThatThrownBy(() -> writeLines(sos, "test 1", "test 2", "test 3", "test 4"))
+                .isInstanceOf(RuntimeException.class);
+
+        assertThat(sos.getMatches()).hasSize(2);
+        assertThat(sos.hasMoreMatches()).isTrue();
+    }
+
     private void writeLines(SearchingOutputStream sos, String... lines) throws IOException {
         for (String line : lines) {
             sos.write(line.getBytes(StandardCharsets.UTF_8));
