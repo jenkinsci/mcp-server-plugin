@@ -149,43 +149,37 @@ public class JobScmExtension implements McpServerExtension {
 
         URIish uri = new URIish(scmUrl);
 
-        List<Job> result = Jenkins.get().getAllItems().stream()
-                .filter(project -> {
-                    SCMTriggerItem scmTriggerItem = SCMTriggerItem.SCMTriggerItems.asSCMTriggerItem(project);
-                    if (scmTriggerItem == null) {
-                        return false;
-                    }
-
-                    for (SCM scm : scmTriggerItem.getSCMs()) {
-                        if (scm instanceof GitSCM) {
-                            if (matchesGitSCM(project, (GitSCM) scm, uri, branch)) {
-                                if (LOGGER.isLoggable(Level.FINE)) {
-                                    LOGGER.log(
-                                            Level.FINE,
-                                            "Project: {0} matches SCM URL: {1} and branch: {2}",
-                                            new Object[] {project.getFullDisplayName(), scmUrl, branch});
-                                }
-                                return true;
-                            }
-                        } else {
-                            if (LOGGER.isLoggable(Level.FINER)) {
-                                LOGGER.log(
-                                        Level.FINER,
-                                        "Skipping unhandled SCM type: {0} for project: {1}",
-                                        new Object[] {scm.getType(), project.getFullDisplayName()});
-                            }
-                        }
-                    }
-
-                    return false;
-                })
-                .filter(item -> item instanceof Job)
-                .map(item -> (Job) item)
+        return Jenkins.get().getAllItems(Job.class).stream()
+                .filter(job -> matchesScm(job, uri, branch))
                 .skip(skip)
                 .limit(limit)
                 .toList();
+    }
 
-        return result;
+    private boolean matchesScm(Job<?, ?> project, URIish uri, String branch) {
+        SCMTriggerItem scmTriggerItem = SCMTriggerItem.SCMTriggerItems.asSCMTriggerItem(project);
+        if (scmTriggerItem == null) {
+            return false;
+        }
+
+        for (SCM scm : scmTriggerItem.getSCMs()) {
+            if (scm instanceof GitSCM) {
+                if (matchesGitSCM(project, (GitSCM) scm, uri, branch)) {
+                    if (LOGGER.isLoggable(Level.FINE)) {
+                        LOGGER.log(Level.FINE, "Project: {0} matches SCM URL: {1} and branch: {2}", new Object[] {
+                            project.getFullDisplayName(), uri, branch
+                        });
+                    }
+                    return true;
+                }
+            } else if (LOGGER.isLoggable(Level.FINER)) {
+                LOGGER.log(Level.FINER, "Skipping unhandled SCM type: {0} for project: {1}", new Object[] {
+                    scm.getType(), project.getFullDisplayName()
+                });
+            }
+        }
+
+        return false;
     }
 
     private boolean matchesGitSCM(Item project, GitSCM git, URIish uri, String branch) {
@@ -228,6 +222,7 @@ public class JobScmExtension implements McpServerExtension {
                             LOGGER.log(Level.FINE, "Branch Spec is parametrized for {0}", project.getFullDisplayName());
                         }
                         branchFound = true;
+                        break;
                     } else {
                         if (branchSpec.matchesRepositoryBranch(repository.getName(), branch)) {
                             if (LOGGER.isLoggable(Level.FINE)) {
