@@ -454,6 +454,7 @@ public class BuildLogsExtension implements McpServerExtension {
         private final List<SearchMatch> openMatches = new ArrayList<>();
         private final List<SearchMatch> closedMatches = new ArrayList<>();
         private boolean hasMoreMatches = false;
+        private boolean terminated = false;
         private long lineNumber = 0;
         private Pattern compiledPattern;
 
@@ -489,6 +490,10 @@ public class BuildLogsExtension implements McpServerExtension {
 
         @Override
         protected void eol(byte[] b, int len) {
+            // close() flushes a pending partial line through eol(); ignore it once we've already bailed.
+            if (terminated) {
+                return;
+            }
             lineNumber++;
             String line = new String(b, 0, len, charset).trim();
 
@@ -515,6 +520,7 @@ public class BuildLogsExtension implements McpServerExtension {
             // Budget hit, all open matches' context is filled, and we've seen at least one extra
             // match: nothing left here that can change the result, so bail out of the scan.
             if (earlyTerminate && hasMoreMatches && openMatches.isEmpty()) {
+                terminated = true;
                 throw StopReading.INSTANCE;
             }
         }
@@ -632,6 +638,7 @@ public class BuildLogsExtension implements McpServerExtension {
         private final int limit;
         private final List<String> lines = new ArrayList<>();
         private boolean hasMoreContent;
+        private boolean terminated;
         private long captureEndOffset = -1;
 
         ForwardLineCollector(Charset charset, long skip, int limit) {
@@ -642,6 +649,10 @@ public class BuildLogsExtension implements McpServerExtension {
 
         @Override
         protected void onLine(long index, byte[] in, int sz, long lineStart, long lineEnd) throws IOException {
+            // close() can drive a final flush after we've already bailed out; ignore it.
+            if (terminated) {
+                return;
+            }
             if (index < skip) {
                 return;
             }
@@ -651,6 +662,7 @@ public class BuildLogsExtension implements McpServerExtension {
                 return;
             }
             hasMoreContent = true;
+            terminated = true;
             throw StopReading.INSTANCE;
         }
     }

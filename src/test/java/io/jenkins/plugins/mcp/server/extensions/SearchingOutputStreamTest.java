@@ -182,12 +182,29 @@ class SearchingOutputStreamTest {
     void testEarlyTerminationStopsAfterBudgetReached() throws IOException {
         SearchingOutputStream sos = new SearchingOutputStream("test", false, false, 2, 0, true, StandardCharsets.UTF_8);
 
-        // With early termination on, the third match (beyond maxMatches=2) signals that more matches
-        // exist and there is nothing left to determine, so reading is aborted via an exception.
+        // Once we've taken 2 matches and seen a 3rd, there's nothing left worth scanning for, so the
+        // stream throws to short-circuit the rest of the read.
         assertThatThrownBy(() -> writeLines(sos, "test 1", "test 2", "test 3", "test 4"))
                 .isInstanceOf(RuntimeException.class);
 
         assertThat(sos.getMatches()).hasSize(2);
+        assertThat(sos.hasMoreMatches()).isTrue();
+    }
+
+    @Test
+    void testCloseAfterEarlyTerminationDoesNotRethrow() throws IOException {
+        // Regression: after early termination, close() flushes any pending partial line via forceEol(),
+        // which calls eol() again. That second call must not re-throw — otherwise the throw escapes
+        // try-with-resources and the cleanup looks like an error.
+        SearchingOutputStream sos = new SearchingOutputStream("x", false, false, 1, 0, true, StandardCharsets.UTF_8);
+        sos.write("x\n".getBytes(StandardCharsets.UTF_8));
+        assertThatThrownBy(() -> sos.write("x\n".getBytes(StandardCharsets.UTF_8)))
+                .isInstanceOf(RuntimeException.class);
+        sos.write("trailing-x".getBytes(StandardCharsets.UTF_8));
+
+        sos.close(); // must not throw
+
+        assertThat(sos.getMatches()).hasSize(1);
         assertThat(sos.hasMoreMatches()).isTrue();
     }
 
