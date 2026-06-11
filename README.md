@@ -405,6 +405,26 @@ The plugin provides the following built-in tools for interacting with Jenkins:
 - `replayBuild`: Run a Pipeline build again with a modified script. Provide `mainScript` (required) and optionally `loadedScripts`. Optional `buildNumber`; defaults to the last build. Fails if the build is not replayable or replay is not allowed (e.g. permissions or sandbox).
 - `getTestResults`: Retrieve test results of a specific build or the last build.
 
+#### Artifacts
+- `getBuildArtifacts`: Retrieve the list of artifacts for a specific build or the last build of a Jenkins job. Returns each artifact's file name, relative path, and display path. Optional `buildNumber`; defaults to the last build.
+- `getBuildArtifact`: Get the content of a specific build artifact with pagination support.
+  This tool retrieves the actual content of an artifact file as text with information about whether there is more content to retrieve:
+
+  ```json
+  {
+    "jobFullName": "my-job",
+    "buildNumber": 123,
+    "artifactPath": "logs/build.log",
+    "offset": 0,
+    "limit": 1024
+  }
+  ```
+  Note on Artifact Content Reading:
+  - Use `artifactPath` to specify the relative path of the artifact from the artifacts root.
+  - Use `offset` and `limit` parameters for pagination when reading large artifact files.
+  - Returns content as text with metadata about file size and whether more content is available.
+  - Ideal for reading log files, configuration files, or other text-based artifacts.
+
 #### SCM Integration
 - `getJobScm`: Retrieve SCM configurations of a Jenkins job.
 - `getBuildScm`: Retrieve SCM configurations of a specific build.
@@ -509,7 +529,7 @@ Rules:
 
 The MCP Server Plugin handles various result types with the following approach:
 
-- **List Results**: Each element in the list is converted to a separate text content item in the response.
+- **List Results**: Lists are serialized as proper JSON arrays within a single text content item in the response.
 - **Single Objects**: The entire object is converted into a single text content item.
 
 For serialization to text content:
