@@ -375,9 +375,14 @@ public class DefaultMcpServer implements McpServerExtension {
             throw new IllegalArgumentException(
                     "Not a replayable Pipeline build. Replay is only available for Pipeline jobs (workflow-cps).");
         }
-        String mainScript = replayAction.getOriginalScript();
-        Map<String, String> loadedScripts = replayAction.getOriginalLoadedScripts();
-        return new GetReplayScriptsResult(mainScript, loadedScripts != null ? loadedScripts : Map.of());
+        // SECURITY-3759: the replay script is the job's pipeline source, equivalent to config.xml, so gate
+        // its disclosure on Item.EXTENDED_READ (same as getJobScm and GET /job/.../config.xml).
+        if (run.getParent().hasPermission(Item.EXTENDED_READ)) {
+            String mainScript = replayAction.getOriginalScript();
+            Map<String, String> loadedScripts = replayAction.getOriginalLoadedScripts();
+            return new GetReplayScriptsResult(mainScript, loadedScripts != null ? loadedScripts : Map.of());
+        }
+        return new GetReplayScriptsResult("", Map.of());
     }
 
     @Tool(
