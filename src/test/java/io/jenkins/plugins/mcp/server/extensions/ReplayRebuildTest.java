@@ -33,18 +33,23 @@ import static org.awaitility.Awaitility.await;
 import com.jayway.jsonpath.Configuration;
 import com.jayway.jsonpath.JsonPath;
 import hudson.model.FreeStyleProject;
+import hudson.model.Item;
 import hudson.model.ParametersAction;
 import hudson.model.ParametersDefinitionProperty;
 import hudson.model.Result;
 import hudson.model.StringParameterDefinition;
 import hudson.model.StringParameterValue;
 import hudson.tasks.Shell;
+import io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder;
 import io.jenkins.plugins.mcp.server.junit.McpClientTest;
 import io.modelcontextprotocol.spec.McpSchema;
+import java.util.Base64;
 import java.util.Map;
+import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jvnet.hudson.test.JenkinsRule;
+import org.jvnet.hudson.test.MockAuthorizationStrategy;
 import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
 /**
@@ -139,6 +144,87 @@ class ReplayRebuildTest {
             assertThat((String) result.get("mainScript")).contains("echo 'hello replay'");
             assertThat(result).containsKey("loadedScripts");
         }
+    }
+
+    /**
+     * SECURITY-3759: a user with only Overall/Read + Item/Read (but not Item/ExtendedRead) must not be able
+     * to read the Pipeline replay script, mirroring the GET /job/.../config.xml boundary. The tool must
+     * return an empty script (no disclosure), consistent with the getJobScm guard added in SECURITY-3622.
+     */
+    @McpClientTest
+    void testGetReplayScripts_deniedWithoutExtendedRead(
+            JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder) throws Exception {
+        WorkflowJob project = jenkins.createProject(WorkflowJob.class, "replay-secured");
+        project.setDefinition(new CpsFlowDefinition("echo 'secret pipeline source'", true));
+        project.scheduleBuild2(0).get();
+
+        jenkins.jenkins.setSecurityRealm(jenkins.createDummySecurityRealm());
+        jenkins.jenkins.setAuthorizationStrategy(new MockAuthorizationStrategy()
+                .grant(Jenkins.READ)
+                .everywhere()
+                .to("reader")
+                .grant(Item.READ)
+                .everywhere()
+                .to("reader"));
+
+        try (var client = jenkinsMcpClientBuilder
+                .jenkins(jenkins)
+                .requestCustomizer(ReplayRebuildTest::authAsReader)
+                .build()) {
+            var request =
+                    new McpSchema.CallToolRequest("getReplayScripts", Map.of("jobFullName", project.getFullName()));
+            var response = client.callTool(request);
+            assertThat(response.isError()).isFalse();
+            var textContent = (McpSchema.TextContent) response.content().get(0);
+            var result = JsonPath.using(Configuration.defaultConfiguration())
+                    .parse(textContent.text())
+                    .read("$.result", Map.class);
+            // No disclosure: mainScript is blank and the secret source is absent.
+            assertThat((String) result.get("mainScript")).isEmpty();
+            assertThat(textContent.text()).doesNotContain("secret pipeline source");
+        }
+    }
+
+    /**
+     * SECURITY-3759: a user granted Item/ExtendedRead (the permission GET /job/.../config.xml requires) can
+     * still read the replay script.
+     */
+    @McpClientTest
+    void testGetReplayScripts_allowedWithExtendedRead(
+            JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder) throws Exception {
+        WorkflowJob project = jenkins.createProject(WorkflowJob.class, "replay-extread");
+        project.setDefinition(new CpsFlowDefinition("echo 'visible pipeline source'", true));
+        project.scheduleBuild2(0).get();
+
+        jenkins.jenkins.setSecurityRealm(jenkins.createDummySecurityRealm());
+        jenkins.jenkins.setAuthorizationStrategy(new MockAuthorizationStrategy()
+                .grant(Jenkins.READ)
+                .everywhere()
+                .to("reader")
+                .grant(Item.READ, Item.EXTENDED_READ)
+                .everywhere()
+                .to("reader"));
+
+        try (var client = jenkinsMcpClientBuilder
+                .jenkins(jenkins)
+                .requestCustomizer(ReplayRebuildTest::authAsReader)
+                .build()) {
+            var request =
+                    new McpSchema.CallToolRequest("getReplayScripts", Map.of("jobFullName", project.getFullName()));
+            var response = client.callTool(request);
+            assertThat(response.isError()).isFalse();
+            var textContent = (McpSchema.TextContent) response.content().get(0);
+            var result = JsonPath.using(Configuration.defaultConfiguration())
+                    .parse(textContent.text())
+                    .read("$.result", Map.class);
+            assertThat((String) result.get("mainScript")).contains("echo 'visible pipeline source'");
+        }
+    }
+
+    private static void authAsReader(java.net.http.HttpRequest.Builder request) {
+        String encodedAuth =
+                Base64.getEncoder().encodeToString("reader:reader".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        request.setHeader("Authorization", "Basic " + encodedAuth);
     }
 
     @McpClientTest
