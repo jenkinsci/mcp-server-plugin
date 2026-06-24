@@ -164,4 +164,106 @@ class McpConnectionMetricsTest {
         assertThat(McpConnectionMetrics.getTotalStreamableRequests()).isZero();
         assertThat(McpConnectionMetrics.getTotalConnectionErrors()).isZero();
     }
+
+    @Test
+    void testPerUserSseConnectionMetrics() {
+        McpConnectionMetrics.recordSseConnectionStart("alice");
+        McpConnectionMetrics.recordSseConnectionStart("alice");
+        McpConnectionMetrics.recordSseConnectionStart("bob");
+
+        McpConnectionMetrics.UserMetrics alice = McpConnectionMetrics.userMetrics.get("alice");
+        McpConnectionMetrics.UserMetrics bob = McpConnectionMetrics.userMetrics.get("bob");
+
+        assertThat(alice).isNotNull();
+        assertThat(alice.sseConnectionsTotal.get()).isEqualTo(2);
+        assertThat(alice.sseConnectionsActive.get()).isEqualTo(2);
+
+        assertThat(bob).isNotNull();
+        assertThat(bob.sseConnectionsTotal.get()).isOne();
+        assertThat(bob.sseConnectionsActive.get()).isOne();
+
+        // Global counters should also reflect the combined total
+        assertThat(McpConnectionMetrics.getTotalSseConnections()).isEqualTo(3);
+        assertThat(McpConnectionMetrics.getActiveSseConnections()).isEqualTo(3);
+
+        McpConnectionMetrics.recordSseConnectionEnd("alice");
+        assertThat(alice.sseConnectionsActive.get()).isOne();
+        assertThat(McpConnectionMetrics.getActiveSseConnections()).isEqualTo(2);
+    }
+
+    @Test
+    void testPerUserStreamableRequestMetrics() {
+        McpConnectionMetrics.recordStreamableRequest("carol");
+        McpConnectionMetrics.recordStreamableRequest("carol");
+        McpConnectionMetrics.recordStreamableRequest("dave");
+
+        McpConnectionMetrics.UserMetrics carol = McpConnectionMetrics.userMetrics.get("carol");
+        McpConnectionMetrics.UserMetrics dave = McpConnectionMetrics.userMetrics.get("dave");
+
+        assertThat(carol).isNotNull();
+        assertThat(carol.streamableRequestsTotal.get()).isEqualTo(2);
+
+        assertThat(dave).isNotNull();
+        assertThat(dave.streamableRequestsTotal.get()).isOne();
+
+        assertThat(McpConnectionMetrics.getTotalStreamableRequests()).isEqualTo(3);
+    }
+
+    @Test
+    void testPerUserConnectionErrorMetrics() {
+        McpConnectionMetrics.recordConnectionError("alice");
+        McpConnectionMetrics.recordConnectionError("alice");
+        McpConnectionMetrics.recordConnectionError("bob");
+
+        McpConnectionMetrics.UserMetrics alice = McpConnectionMetrics.userMetrics.get("alice");
+        McpConnectionMetrics.UserMetrics bob = McpConnectionMetrics.userMetrics.get("bob");
+
+        assertThat(alice).isNotNull();
+        assertThat(alice.connectionErrorsTotal.get()).isEqualTo(2);
+
+        assertThat(bob).isNotNull();
+        assertThat(bob.connectionErrorsTotal.get()).isOne();
+
+        assertThat(McpConnectionMetrics.getTotalConnectionErrors()).isEqualTo(3);
+    }
+
+    @Test
+    void testResetClearsUserMetrics() {
+        McpConnectionMetrics.recordSseConnectionStart("alice");
+        McpConnectionMetrics.recordStreamableRequest("bob");
+
+        assertThat(McpConnectionMetrics.userMetrics).isNotEmpty();
+
+        McpConnectionMetrics.reset();
+
+        assertThat(McpConnectionMetrics.userMetrics).isEmpty();
+    }
+
+    @Test
+    void testMetricsEndpointIncludesUsersSection(JenkinsRule jenkins) throws Exception {
+        McpConnectionMetrics.recordSseConnectionStart("alice");
+        McpConnectionMetrics.recordStreamableRequest("alice");
+        McpConnectionMetrics.recordStreamableRequest("bob");
+
+        try (JenkinsRule.WebClient webClient = jenkins.createWebClient()) {
+            var metricsUrl = jenkins.getURL().toString() + McpConnectionMetrics.URL_NAME;
+            var request = new WebRequest(new URL(metricsUrl), HttpMethod.GET);
+            WebResponse response = webClient.loadWebResponse(request);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpServletResponse.SC_OK);
+
+            DocumentContext json = JsonPath.parse(response.getContentAsString());
+            assertThat(json.read("$.users", Object.class)).isNotNull();
+            assertThat(json.read("$.users.alice.sseConnectionsTotal", Long.class))
+                    .isEqualTo(1L);
+            assertThat(json.read("$.users.alice.sseConnectionsActive", Long.class))
+                    .isEqualTo(1L);
+            assertThat(json.read("$.users.alice.streamableRequestsTotal", Long.class))
+                    .isEqualTo(1L);
+            assertThat(json.read("$.users.alice.connectionErrorsTotal", Long.class))
+                    .isZero();
+            assertThat(json.read("$.users.bob.streamableRequestsTotal", Long.class))
+                    .isEqualTo(1L);
+        }
+    }
 }
