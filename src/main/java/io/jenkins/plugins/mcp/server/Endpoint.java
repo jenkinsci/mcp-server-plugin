@@ -286,7 +286,8 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
                 response.sendError(HttpServletResponse.SC_NOT_FOUND, "Streamable endpoint is disabled");
                 return true;
             }
-            McpConnectionMetrics.recordStreamableRequest();
+            McpConnectionMetrics.recordStreamableRequest(
+                    Jenkins.getAuthentication2().getName());
             handleMessage(request, response, httpServletStreamableServerTransportProvider);
             return true;
         }
@@ -679,7 +680,8 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
             if (isBrowserRequest(req)) {
                 serveBrowserPage(resp);
             } else {
-                McpConnectionMetrics.recordStreamableRequest();
+                McpConnectionMetrics.recordStreamableRequest(
+                        Jenkins.getAuthentication2().getName());
                 handleMessage(req, resp, httpServletStreamableServerTransportProvider);
             }
             return true;
@@ -860,16 +862,17 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
     private void handleSSE(HttpServletRequest request, HttpServletResponse response)
             throws IOException, ServletException {
         String clientInfo = getClientInfo(request);
+        String username = Jenkins.getAuthentication2().getName();
         log.info("SSE connection started from {}", clientInfo);
-        McpConnectionMetrics.recordSseConnectionStart();
+        McpConnectionMetrics.recordSseConnectionStart(username);
         try {
             httpServletSseServerTransportProvider.service(request, response);
         } catch (IOException e) {
             log.warn("SSE connection error from {}: {}", clientInfo, e.getMessage());
-            McpConnectionMetrics.recordConnectionError();
+            McpConnectionMetrics.recordConnectionError(username);
             throw e;
         } finally {
-            McpConnectionMetrics.recordSseConnectionEnd();
+            McpConnectionMetrics.recordSseConnectionEnd(username);
             log.info("SSE connection ended from {}", clientInfo);
         }
     }

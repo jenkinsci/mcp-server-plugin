@@ -107,9 +107,25 @@ This endpoint requires authentication (standard Jenkins permissions) and provide
   "streamableRequestsTotal": 150,
   "connectionErrorsTotal": 2,
   "uptimeSeconds": 3600,
-  "startTime": "2025-01-28T10:00:00Z"
+  "startTime": "2025-01-28T10:00:00Z",
+  "users": {
+    "alice": {
+      "sseConnectionsTotal": 10,
+      "sseConnectionsActive": 1,
+      "streamableRequestsTotal": 50,
+      "connectionErrorsTotal": 0
+    },
+    "bob": {
+      "sseConnectionsTotal": 32,
+      "sseConnectionsActive": 2,
+      "streamableRequestsTotal": 100,
+      "connectionErrorsTotal": 2
+    }
+  }
 }
 ```
+
+The top-level counters are server-wide aggregates. The `users` object breaks down the same counters per Jenkins user (including `anonymous` and `SYSTEM`), allowing you to see which accounts are actively connected and how much traffic each is generating.
 
 #### Graceful Shutdown
 
