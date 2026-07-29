@@ -55,7 +55,9 @@ class ParameterValueFactoryExtendedChoiceParameterTest {
                 ",");
         ParameterValue value = ParameterValueFactory.createParameterValue(param, inputValue);
 
-        assertThat(value).isInstanceOfSatisfying(ExtendedChoiceParameterValue.class, v -> assertThat(v.getValue())
-                .isEqualTo("feature,bug"));
+        assertThat(value)
+                .isInstanceOfSatisfying(
+                        ExtendedChoiceParameterValue.class,
+                        v -> assertThat(v.getValue()).isEqualTo("feature,bug"));
     }
 }

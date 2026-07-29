@@ -15,8 +15,10 @@ class ParameterValueFactoryGitParameterTest {
 
         ParameterValue value = ParameterValueFactory.createParameterValue(param, "feature/new");
 
-        assertThat(value).isInstanceOfSatisfying(StringParameterValue.class, v -> assertThat(v.getValue())
-                .isEqualTo("feature/new"));
+        assertThat(value)
+                .isInstanceOfSatisfying(
+                        StringParameterValue.class,
+                        v -> assertThat(v.getValue()).isEqualTo("feature/new"));
     }
 
     @Test
@@ -25,7 +27,9 @@ class ParameterValueFactoryGitParameterTest {
 
         ParameterValue value = ParameterValueFactory.createParameterValue(param, "bad-branch");
 
-        assertThat(value).isInstanceOfSatisfying(StringParameterValue.class, v -> assertThat(v.getValue())
-                .isEqualTo("master"));
+        assertThat(value)
+                .isInstanceOfSatisfying(
+                        StringParameterValue.class,
+                        v -> assertThat(v.getValue()).isEqualTo("master"));
     }
 }
