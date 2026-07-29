@@ -65,8 +65,9 @@ public class ToolOverrideTest {
             assertThat(response.isError()).isFalse();
             assertThat(response.content())
                     .first()
-                    .isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> assertThat(textContent.text())
-                            .contains(OVERRIDDEN_BUILD_LOG_RESULT));
+                    .isInstanceOfSatisfying(
+                            McpSchema.TextContent.class,
+                            textContent -> assertThat(textContent.text()).contains(OVERRIDDEN_BUILD_LOG_RESULT));
         }
     }
 
@@ -97,8 +98,9 @@ public class ToolOverrideTest {
             assertThat(response.isError()).isFalse();
             assertThat(response.content())
                     .first()
-                    .isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> assertThat(textContent.text())
-                            .contains(PROGRAMMATIC_OVERRIDE_RESULT));
+                    .isInstanceOfSatisfying(
+                            McpSchema.TextContent.class,
+                            textContent -> assertThat(textContent.text()).contains(PROGRAMMATIC_OVERRIDE_RESULT));
         }
     }
 

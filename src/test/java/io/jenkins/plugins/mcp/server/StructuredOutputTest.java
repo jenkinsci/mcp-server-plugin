@@ -65,8 +65,9 @@ public class StructuredOutputTest {
 
             McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("mapWithStructuredOutput", Map.of());
             var response = client.callTool(request);
-            assertThat(response.structuredContent()).isInstanceOfSatisfying(Map.class, value -> assertThat(value)
-                    .containsEntry("key1", "value1"));
+            assertThat(response.structuredContent())
+                    .isInstanceOfSatisfying(
+                            Map.class, value -> assertThat(value).containsEntry("key1", "value1"));
         }
     }
 
@@ -94,8 +95,9 @@ public class StructuredOutputTest {
             McpSchema.CallToolRequest request =
                     new McpSchema.CallToolRequest("collectionWithStructuredOutput", Map.of());
             var response = client.callTool(request);
-            assertThat(response.structuredContent()).isInstanceOfSatisfying(List.class, value -> assertThat(value)
-                    .contains("item1", "item2"));
+            assertThat(response.structuredContent())
+                    .isInstanceOfSatisfying(
+                            List.class, value -> assertThat(value).contains("item1", "item2"));
         }
     }
 
@@ -125,9 +127,12 @@ public class StructuredOutputTest {
             McpSchema.CallToolRequest request =
                     new McpSchema.CallToolRequest("genericObjectWithStructuredOutput", Map.of());
             var response = client.callTool(request);
-            assertThat(response.structuredContent()).isInstanceOfSatisfying(Map.class, value -> assertThat(value)
-                    .containsEntry("name", "John Doe")
-                    .containsEntry("age", 30));
+            assertThat(response.structuredContent())
+                    .isInstanceOfSatisfying(
+                            Map.class,
+                            value -> assertThat(value)
+                                    .containsEntry("name", "John Doe")
+                                    .containsEntry("age", 30));
         }
     }
 
@@ -142,9 +147,12 @@ public class StructuredOutputTest {
             McpSchema.CallToolRequest request =
                     new McpSchema.CallToolRequest("customObjectWithStructuredOutput", Map.of());
             var response = client.callTool(request);
-            assertThat(response.structuredContent()).isInstanceOfSatisfying(Map.class, value -> assertThat(value)
-                    .containsEntry("name", "John Doe")
-                    .containsEntry("age", 30));
+            assertThat(response.structuredContent())
+                    .isInstanceOfSatisfying(
+                            Map.class,
+                            value -> assertThat(value)
+                                    .containsEntry("name", "John Doe")
+                                    .containsEntry("age", 30));
         }
     }
 

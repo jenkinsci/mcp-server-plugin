@@ -15,8 +15,10 @@ class ParameterValueFactoryListGitBranchesParameterTest {
 
         ParameterValue value = ParameterValueFactory.createParameterValue(param, "release/1.0");
 
-        assertThat(value).isInstanceOfSatisfying(StringParameterValue.class, v -> assertThat(v.getValue())
-                .isEqualTo("release/1.0"));
+        assertThat(value)
+                .isInstanceOfSatisfying(
+                        StringParameterValue.class,
+                        v -> assertThat(v.getValue()).isEqualTo("release/1.0"));
     }
 
     @Test
@@ -25,7 +27,9 @@ class ParameterValueFactoryListGitBranchesParameterTest {
 
         ParameterValue value = ParameterValueFactory.createParameterValue(param, "bad-branch");
 
-        assertThat(value).isInstanceOfSatisfying(StringParameterValue.class, v -> assertThat(v.getValue())
-                .isEqualTo("main"));
+        assertThat(value)
+                .isInstanceOfSatisfying(
+                        StringParameterValue.class,
+                        v -> assertThat(v.getValue()).isEqualTo("main"));
     }
 }
