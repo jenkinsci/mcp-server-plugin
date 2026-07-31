@@ -31,6 +31,7 @@ import static io.jenkins.plugins.mcp.server.extensions.util.JenkinsUtil.getBuild
 import hudson.Extension;
 import hudson.model.Item;
 import hudson.model.Job;
+import hudson.model.Result;
 import hudson.plugins.git.BranchSpec;
 import hudson.plugins.git.GitSCM;
 import hudson.plugins.git.GitStatus;
@@ -43,6 +44,7 @@ import jakarta.annotation.Nullable;
 import java.net.URISyntaxException;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import jenkins.model.Jenkins;
@@ -124,7 +126,7 @@ public class JobScmExtension implements McpServerExtension {
     @Tool(
             description = "Get a paginated list of Jenkins jobs that use the specified git SCM URL",
             annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
-    public List<Job> findJobsWithScmUrl(
+    public List<SimpleJob> findJobsWithScmUrl(
             @ToolParam(description = "SCM URL to search for (e.g., 'git@github.com:jenkinsci/mcp-server-plugin.git')")
                     String scmUrl,
             @ToolParam(description = "SCM Branch (e.g., 'feature/my-feature')", required = false) String branch,
@@ -153,8 +155,25 @@ public class JobScmExtension implements McpServerExtension {
                 .filter(job -> matchesScm(job, uri, branch))
                 .skip(skip)
                 .limit(limit)
+                .map(JobScmExtension::toSimpleJob)
                 .toList();
     }
+
+    private static SimpleJob toSimpleJob(Job<?, ?> job) {
+        String lastResult = Optional.ofNullable(job.getLastBuild().getResult())
+                .orElse(Result.NOT_BUILT)
+                .toString();
+        return new SimpleJob(
+                job.getName(),
+                job.getDisplayName(),
+                job.getFullDisplayName(),
+                job.getFullName(),
+                job.getUrl(),
+                lastResult);
+    }
+
+    public record SimpleJob(
+            String name, String displayName, String fullDisplayName, String fullName, String url, String lastResult) {}
 
     private boolean matchesScm(Job<?, ?> project, URIish uri, String branch) {
         SCMTriggerItem scmTriggerItem = SCMTriggerItem.SCMTriggerItems.asSCMTriggerItem(project);
