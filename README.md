@@ -20,10 +20,6 @@ This MCP Server is based on the MCP Java SDK version 0.17.2, which implements th
 
 ## Getting Started
 
-### Prerequisites
-
-- Jenkins (version 2.533 or higher)
-
 ### Configuration
 
 The MCP Server plugin automatically sets up necessary endpoints and tools upon installation, requiring no additional configuration.
