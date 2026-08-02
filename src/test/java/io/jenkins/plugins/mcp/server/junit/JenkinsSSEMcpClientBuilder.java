@@ -45,7 +45,7 @@ public class JenkinsSSEMcpClientBuilder extends JenkinsMcpClientBuilder.Abstract
         HttpClientSseClientTransport.Builder builder =
                 HttpClientSseClientTransport.builder(baseUrl).sseEndpoint(MCP_SERVER_SSE);
         if (requestCustomizer != null) {
-            builder = builder.customizeRequest(requestCustomizer);
+            builder = builder.httpRequestCustomizer(requestCustomizer);
         }
         var transport = builder.build();
 

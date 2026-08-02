@@ -42,6 +42,7 @@ import hudson.model.StringParameterValue;
 import hudson.tasks.Shell;
 import io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder;
 import io.jenkins.plugins.mcp.server.junit.McpClientTest;
+import io.modelcontextprotocol.client.transport.customizer.McpSyncHttpClientRequestCustomizer;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.Base64;
 import java.util.Map;
@@ -169,7 +170,7 @@ class ReplayRebuildTest {
 
         try (var client = jenkinsMcpClientBuilder
                 .jenkins(jenkins)
-                .requestCustomizer(ReplayRebuildTest::authAsReader)
+                .requestCustomizer(authAsReader())
                 .build()) {
             var request =
                     new McpSchema.CallToolRequest("getReplayScripts", Map.of("jobFullName", project.getFullName()));
@@ -207,7 +208,7 @@ class ReplayRebuildTest {
 
         try (var client = jenkinsMcpClientBuilder
                 .jenkins(jenkins)
-                .requestCustomizer(ReplayRebuildTest::authAsReader)
+                .requestCustomizer(authAsReader())
                 .build()) {
             var request =
                     new McpSchema.CallToolRequest("getReplayScripts", Map.of("jobFullName", project.getFullName()));
@@ -221,10 +222,12 @@ class ReplayRebuildTest {
         }
     }
 
-    private static void authAsReader(java.net.http.HttpRequest.Builder request) {
-        String encodedAuth =
-                Base64.getEncoder().encodeToString("reader:reader".getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        request.setHeader("Authorization", "Basic " + encodedAuth);
+    private static McpSyncHttpClientRequestCustomizer authAsReader() {
+        return (builder, method, endpoint, body, context) -> {
+            String encodedAuth = Base64.getEncoder()
+                    .encodeToString("reader:reader".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            builder.setHeader("Authorization", "Basic " + encodedAuth);
+        };
     }
 
     @McpClientTest

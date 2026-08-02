@@ -27,15 +27,14 @@
 package io.jenkins.plugins.mcp.server.junit;
 
 import io.modelcontextprotocol.client.McpSyncClient;
-import java.net.http.HttpRequest;
-import java.util.function.Consumer;
+import io.modelcontextprotocol.client.transport.customizer.McpSyncHttpClientRequestCustomizer;
 import org.jvnet.hudson.test.JenkinsRule;
 
 public interface JenkinsMcpClientBuilder {
 
     JenkinsMcpClientBuilder jenkins(JenkinsRule jenkinsRule);
 
-    JenkinsMcpClientBuilder requestCustomizer(Consumer<HttpRequest.Builder> requestCustomizer);
+    JenkinsMcpClientBuilder requestCustomizer(McpSyncHttpClientRequestCustomizer requestCustomizer);
 
     JenkinsMcpClientBuilder requestTimeoutSeconds(int seconds);
 
@@ -43,7 +42,7 @@ public interface JenkinsMcpClientBuilder {
 
     abstract class AbstractJenkinsMcpClientBuilder implements JenkinsMcpClientBuilder {
         protected JenkinsRule jenkins;
-        protected Consumer<HttpRequest.Builder> requestCustomizer;
+        protected McpSyncHttpClientRequestCustomizer requestCustomizer;
         protected int requestTimeoutSeconds = 300;
         protected int initializationTimeoutSeconds = 300;
 
@@ -54,7 +53,7 @@ public interface JenkinsMcpClientBuilder {
         }
 
         @Override
-        public JenkinsMcpClientBuilder requestCustomizer(Consumer<HttpRequest.Builder> requestCustomizer) {
+        public JenkinsMcpClientBuilder requestCustomizer(McpSyncHttpClientRequestCustomizer requestCustomizer) {
             this.requestCustomizer = requestCustomizer;
             return this;
         }
