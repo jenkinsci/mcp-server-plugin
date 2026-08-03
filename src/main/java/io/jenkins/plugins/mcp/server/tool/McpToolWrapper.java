@@ -31,30 +31,27 @@ import static io.jenkins.plugins.mcp.server.Endpoint.HTTP_SERVLET_REQUEST;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.github.victools.jsonschema.generator.Option;
 import com.github.victools.jsonschema.generator.OptionPreset;
 import com.github.victools.jsonschema.generator.SchemaGenerator;
 import com.github.victools.jsonschema.generator.SchemaGeneratorConfig;
 import com.github.victools.jsonschema.generator.SchemaGeneratorConfigBuilder;
 import com.github.victools.jsonschema.generator.SchemaVersion;
-import com.github.victools.jsonschema.module.jackson.JacksonModule;
 import com.github.victools.jsonschema.module.jackson.JacksonOption;
+import com.github.victools.jsonschema.module.jackson.JacksonSchemaModule;
 import com.github.victools.jsonschema.module.swagger2.Swagger2Module;
 import hudson.security.ACL;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
 import io.jenkins.plugins.mcp.server.jackson.JenkinsExportedBeanModule;
 import io.modelcontextprotocol.common.McpTransportContext;
-import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
+import io.modelcontextprotocol.json.jackson3.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.server.McpStatelessServerFeatures;
 import io.modelcontextprotocol.server.McpSyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.servlet.http.HttpServletRequest;
-import java.io.IOException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.lang.reflect.ParameterizedType;
@@ -75,22 +72,22 @@ import org.springframework.lang.Nullable;
 import org.springframework.security.core.Authentication;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 @Slf4j
 public class McpToolWrapper {
 
     private static final SchemaGenerator SUBTYPE_SCHEMA_GENERATOR;
     private static final boolean PROPERTY_REQUIRED_BY_DEFAULT = true;
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final ObjectMapper OBJECT_MAPPER =
+            JsonMapper.builder().addModule(new JenkinsExportedBeanModule()).build();
     public static final String DESCRIPTION = "description";
 
     static {
-        OBJECT_MAPPER.registerModule(new JenkinsExportedBeanModule());
-    }
-
-    static {
         com.github.victools.jsonschema.generator.Module jacksonModule =
-                new JacksonModule(JacksonOption.RESPECT_JSONPROPERTY_REQUIRED);
+                new JacksonSchemaModule(JacksonOption.RESPECT_JSONPROPERTY_REQUIRED);
         com.github.victools.jsonschema.generator.Module openApiModule = new Swagger2Module();
         SchemaGeneratorConfigBuilder schemaGeneratorConfigBuilder = new SchemaGeneratorConfigBuilder(
                         SchemaVersion.DRAFT_2020_12, OptionPreset.PLAIN_JSON)
@@ -109,9 +106,9 @@ public class McpToolWrapper {
     private final Method method;
     private final Object target;
 
-    private final ObjectMapper objectMapper;
+    private final JsonMapper objectMapper;
 
-    public McpToolWrapper(ObjectMapper objectMapper, Object target, Method method) {
+    public McpToolWrapper(JsonMapper objectMapper, Object target, Method method) {
         this.objectMapper = objectMapper;
         this.target = target;
         this.method = method;
@@ -177,7 +174,7 @@ public class McpToolWrapper {
     private static String toJson(Object item, String tree) {
         try {
             return OBJECT_MAPPER.writer().withAttribute("tree", tree).writeValueAsString(item);
-        } catch (IOException e) {
+        } catch (tools.jackson.core.JacksonException e) {
             log.atError().setCause(e).log("This error should not happen");
             throw new RuntimeException(e);
         }

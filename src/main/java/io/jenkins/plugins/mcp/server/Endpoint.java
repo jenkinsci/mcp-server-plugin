@@ -26,7 +26,6 @@
 
 package io.jenkins.plugins.mcp.server;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.Extension;
@@ -37,8 +36,8 @@ import hudson.security.csrf.CrumbExclusion;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.tool.McpToolWrapper;
 import io.modelcontextprotocol.common.McpTransportContext;
-import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
-import io.modelcontextprotocol.json.schema.jackson2.DefaultJsonSchemaValidator;
+import io.modelcontextprotocol.json.jackson3.JacksonMcpJsonMapper;
+import io.modelcontextprotocol.json.schema.jackson3.DefaultJsonSchemaValidator;
 import io.modelcontextprotocol.server.McpServer;
 import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.server.McpStatelessServerFeatures;
@@ -78,6 +77,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  *
@@ -200,7 +200,7 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
     /**
      * JSON object mapper for serialization/deserialization
      */
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final JsonMapper objectMapper = new JsonMapper();
 
     /**
      * Package hosting the built-in tool extensions shipped with this plugin.
@@ -496,7 +496,7 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
             Method method,
             McpServerFeatures.SyncToolSpecification spec,
             String description) {
-        McpToolWrapper newWrapper(ObjectMapper objectMapper) {
+        McpToolWrapper newWrapper(JsonMapper objectMapper) {
             return new McpToolWrapper(objectMapper, extension, method);
         }
     }
