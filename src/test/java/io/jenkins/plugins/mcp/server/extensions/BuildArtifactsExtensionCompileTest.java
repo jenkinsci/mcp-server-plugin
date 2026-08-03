@@ -2,7 +2,7 @@
  *
  * The MIT License
  *
- * Copyright (c) 2025, Gong Yi.
+ * Copyright (c) 2025, Derek Taubert.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -24,29 +24,32 @@
  *
  */
 
-package io.jenkins.plugins.mcp.server.jackson;
+package io.jenkins.plugins.mcp.server.extensions;
 
-import com.fasterxml.jackson.databind.BeanDescription;
-import com.fasterxml.jackson.databind.JsonSerializer;
-import com.fasterxml.jackson.databind.SerializationConfig;
-import com.fasterxml.jackson.databind.ser.BeanSerializerModifier;
-import hudson.model.Run;
-import org.kohsuke.stapler.export.ExportedBean;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-public class JenkinsExportedBeanSerializerModifier extends BeanSerializerModifier {
+import org.junit.jupiter.api.Test;
 
-    @Override
-    public JsonSerializer<?> modifySerializer(
-            SerializationConfig config, BeanDescription beanDesc, JsonSerializer<?> serializer) {
+/**
+ * Simple compilation test to verify that our BuildArtifactsExtension compiles correctly.
+ * This test doesn't require the full Jenkins test harness.
+ */
+public class BuildArtifactsExtensionCompileTest {
 
-        if (beanDesc.getClassAnnotations().has(ExportedBean.class)) {
-            // Use custom serializer for Run objects to exclude artifacts
-            if (Run.class.isAssignableFrom(beanDesc.getBeanClass())) {
-                return new RunWithoutArtifactsSerializer();
-            }
-            return new JenkinsExportedBeanSerializer();
-        }
+    @Test
+    void testBuildArtifactsExtensionCanBeInstantiated() {
+        BuildArtifactsExtension extension = new BuildArtifactsExtension();
+        assertNotNull(extension);
+    }
 
-        return serializer;
+    @Test
+    void testBuildArtifactResponseRecord() {
+        BuildArtifactsExtension.BuildArtifactResponse response =
+                new BuildArtifactsExtension.BuildArtifactResponse(false, 100L, "test content");
+
+        assertNotNull(response);
+        assert !response.hasMoreContent();
+        assert response.totalSize() == 100L;
+        assert "test content".equals(response.content());
     }
 }
