@@ -29,16 +29,18 @@ import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 public class AgentExtensionTest {
 
     static Stream<Arguments> getAgentParameters() {
-        Stream<Arguments> baseArgs = Stream.of(
-                Arguments.of(false, ""),
-                Arguments.of(true, "Maintenance")
-        );
+        Stream<Arguments> baseArgs = Stream.of(Arguments.of(false, ""), Arguments.of(true, "Maintenance"));
         return TestUtils.appendMcpClientArgs(baseArgs);
     }
 
     @ParameterizedTest
     @MethodSource("getAgentParameters")
-    void testGetAgent(boolean takeOffline, String offlineReason, JenkinsMcpClientBuilder jenkinsMcpClientBuilder, JenkinsRule jenkins) throws Exception {
+    void testGetAgent(
+            boolean takeOffline,
+            String offlineReason,
+            JenkinsMcpClientBuilder jenkinsMcpClientBuilder,
+            JenkinsRule jenkins)
+            throws Exception {
         Node node = jenkins.createOnlineSlave();
         node.setLabelString("test linux");
         enableSecurity(jenkins);
@@ -76,19 +78,17 @@ public class AgentExtensionTest {
         }
     }
 
-
     static Stream<Arguments> takeOfflineParameters() {
         Stream<Arguments> baseArgs = Stream.of(
-                Arguments.of("admin", true),
-                Arguments.of("connecter", false),
-                Arguments.of("disconnecter", true)
-        );
+                Arguments.of("admin", true), Arguments.of("connecter", false), Arguments.of("disconnecter", true));
         return TestUtils.appendMcpClientArgs(baseArgs);
     }
 
     @ParameterizedTest
     @MethodSource("takeOfflineParameters")
-    void testTakeAgentOffline(String user, boolean canTakeOffline, JenkinsMcpClientBuilder jenkinsMcpClientBuilder, JenkinsRule jenkins) throws Exception {
+    void testTakeAgentOffline(
+            String user, boolean canTakeOffline, JenkinsMcpClientBuilder jenkinsMcpClientBuilder, JenkinsRule jenkins)
+            throws Exception {
         Node node = jenkins.createOnlineSlave();
         node.setLabelString("test linux");
         enableSecurity(jenkins);
@@ -100,8 +100,8 @@ public class AgentExtensionTest {
                     builder.setHeader("Authorization", "Basic " + encodedAuth);
                 })
                 .build()) {
-            McpSchema.CallToolRequest request =
-                    new McpSchema.CallToolRequest("takeAgentOffline", Map.of("name", node.getNodeName(), "reason", "Maintenance"), null);
+            McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(
+                    "takeAgentOffline", Map.of("name", node.getNodeName(), "reason", "Maintenance"), null);
             var response = client.callTool(request);
             assertThat(response.isError()).isFalse();
             assertThat(response.content()).hasSize(1);
@@ -123,17 +123,19 @@ public class AgentExtensionTest {
                 Arguments.of("admin", true),
                 Arguments.of("connecter", true),
                 Arguments.of("disconnecter", true),
-                Arguments.of("reader", false)
-        );
+                Arguments.of("reader", false));
         return TestUtils.appendMcpClientArgs(baseArgs);
     }
 
     @ParameterizedTest
     @MethodSource("takeOnlineParameters")
-    void testTakeAgentOnline(String user, boolean canTakeOnline, JenkinsMcpClientBuilder jenkinsMcpClientBuilder, JenkinsRule jenkins) throws Exception {
+    void testTakeAgentOnline(
+            String user, boolean canTakeOnline, JenkinsMcpClientBuilder jenkinsMcpClientBuilder, JenkinsRule jenkins)
+            throws Exception {
         Node node = jenkins.createOnlineSlave();
         node.setLabelString("test linux");
-        node.toComputer().setTemporaryOfflineCause(new OfflineCause.UserCause(User.getById("admin", true), "Maintenance"));
+        node.toComputer()
+                .setTemporaryOfflineCause(new OfflineCause.UserCause(User.getById("admin", true), "Maintenance"));
         enableSecurity(jenkins);
         try (var client = jenkinsMcpClientBuilder
                 .jenkins(jenkins)
@@ -143,8 +145,8 @@ public class AgentExtensionTest {
                     builder.setHeader("Authorization", "Basic " + encodedAuth);
                 })
                 .build()) {
-            McpSchema.CallToolRequest request =
-                    new McpSchema.CallToolRequest("takeAgentOnline", Map.of("name", node.getNodeName(), "reason", "Maintenance"), null);
+            McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(
+                    "takeAgentOnline", Map.of("name", node.getNodeName(), "reason", "Maintenance"), null);
             var response = client.callTool(request);
             assertThat(response.isError()).isFalse();
             assertThat(response.content()).hasSize(1);
@@ -177,8 +179,7 @@ public class AgentExtensionTest {
                     builder.setHeader("Authorization", "Basic " + encodedAuth);
                 })
                 .build()) {
-            McpSchema.CallToolRequest request =
-                    new McpSchema.CallToolRequest("listAgentNames", Map.of(), null);
+            McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("listAgentNames", Map.of(), null);
             var response = client.callTool(request);
             assertThat(response.isError()).isFalse();
             assertThat(response.content()).hasSize(1);
@@ -190,16 +191,17 @@ public class AgentExtensionTest {
         }
     }
 
-
     private void enableSecurity(JenkinsRule jenkins) throws Exception {
         JenkinsRule.DummySecurityRealm securityRealm = jenkins.createDummySecurityRealm();
         jenkins.jenkins.setSecurityRealm(securityRealm);
-        var authStrategy = new MockAuthorizationStrategy().grant(Jenkins.ADMINISTER).everywhere().to("admin");
+        var authStrategy = new MockAuthorizationStrategy()
+                .grant(Jenkins.ADMINISTER)
+                .everywhere()
+                .to("admin");
         authStrategy.grant(Jenkins.READ).everywhere().toEveryone();
         authStrategy.grant(Computer.CONNECT).everywhere().to("connecter");
         authStrategy.grant(Computer.DISCONNECT).everywhere().to("disconnecter");
         jenkins.jenkins.setAuthorizationStrategy(authStrategy);
         jenkins.jenkins.save();
     }
-
 }
