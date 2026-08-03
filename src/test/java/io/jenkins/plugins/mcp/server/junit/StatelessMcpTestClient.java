@@ -28,8 +28,7 @@ package io.jenkins.plugins.mcp.server.junit;
 
 import static io.jenkins.plugins.mcp.server.Endpoint.MCP_SERVER_STATELESS;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
+import io.modelcontextprotocol.json.jackson3.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.io.Closeable;
 import java.io.IOException;
@@ -40,6 +39,7 @@ import java.net.http.HttpResponse;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.jvnet.hudson.test.JenkinsRule;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Test client for stateless MCP server mode.
@@ -59,7 +59,7 @@ public class StatelessMcpTestClient implements Closeable {
         var url = jenkins.getURL();
         this.endpointUrl = url.toString() + MCP_SERVER_STATELESS;
         this.httpClient = HttpClient.newHttpClient();
-        ObjectMapper objectMapper = new ObjectMapper();
+        JsonMapper objectMapper = new JsonMapper();
         this.jsonMapper = new JacksonMcpJsonMapper(objectMapper);
 
         // Send initialize request to get server capabilities

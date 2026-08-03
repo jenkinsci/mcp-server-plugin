@@ -28,7 +28,6 @@ package io.jenkins.plugins.mcp.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import hudson.model.Descriptor;
 import io.jenkins.plugins.mcp.server.jackson.JenkinsExportedBeanModule;
 import java.io.IOException;
@@ -39,14 +38,12 @@ import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.junit.jupiter.api.Test;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
+import tools.jackson.databind.json.JsonMapper;
 
 @WithJenkins
 public class JenkinsObjectSerializationTest {
-    private ObjectMapper objectMapper = new ObjectMapper();
-
-    {
-        objectMapper.registerModule(new JenkinsExportedBeanModule());
-    }
+    private JsonMapper objectMapper =
+            JsonMapper.builder().addModule(new JenkinsExportedBeanModule()).build();
 
     @Test
     void testSerializeExportedBean(JenkinsRule jenkins)
@@ -57,7 +54,7 @@ public class JenkinsObjectSerializationTest {
         var build = project.scheduleBuild2(0).get();
 
         var json = objectMapper.writeValueAsString(build);
-        var map = new ObjectMapper().readValue(json, Map.class);
+        var map = new JsonMapper().readValue(json, Map.class);
         assertThat(map).extracting("_class").isEqualTo("org.jenkinsci.plugins.workflow.job.WorkflowRun");
     }
 
@@ -72,7 +69,7 @@ public class JenkinsObjectSerializationTest {
         var result = Map.of("build", build, "number", build.getNumber());
         var json = objectMapper.writeValueAsString(result);
 
-        var map = new ObjectMapper().readValue(json, Map.class);
+        var map = new JsonMapper().readValue(json, Map.class);
         assertThat(map).extractingByKey("number").isEqualTo(build.getNumber());
         assertThat(map).extractingByKey("build").isInstanceOfSatisfying(Map.class, buildMap -> {
             assertThat(buildMap).extracting("_class").isEqualTo("org.jenkinsci.plugins.workflow.job.WorkflowRun");
@@ -84,7 +81,7 @@ public class JenkinsObjectSerializationTest {
             throws IOException, Descriptor.FormException, ExecutionException, InterruptedException {
 
         var json = objectMapper.writeValueAsString(Map.of("key", "value", "key1", "value1"));
-        var map = new ObjectMapper().readValue(json, Map.class);
+        var map = new JsonMapper().readValue(json, Map.class);
         assertThat(map).extractingByKey("key").isEqualTo("value");
     }
 }

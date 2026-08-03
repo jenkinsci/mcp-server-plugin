@@ -26,16 +26,16 @@
 
 package io.jenkins.plugins.mcp.server.tool;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import java.util.Map;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.json.JsonMapper;
 
 class McpToolWrapperTest {
     MockMethods target = new MockMethods();
-    ObjectMapper objectMapper = new ObjectMapper();
+    JsonMapper objectMapper = new JsonMapper();
     ;
 
     @Test

@@ -26,11 +26,9 @@
 
 package io.jenkins.plugins.mcp.server.jackson;
 
-import com.fasterxml.jackson.core.JsonGenerator;
-import com.fasterxml.jackson.databind.JsonSerializer;
-import com.fasterxml.jackson.databind.SerializerProvider;
 import java.io.IOException;
 import java.io.StringWriter;
+import java.io.UncheckedIOException;
 import java.util.List;
 import org.apache.commons.lang3.StringUtils;
 import org.kohsuke.stapler.export.Flavor;
@@ -38,8 +36,11 @@ import org.kohsuke.stapler.export.Model;
 import org.kohsuke.stapler.export.ModelBuilder;
 import org.kohsuke.stapler.export.NamedPathPruner;
 import org.kohsuke.stapler.export.TreePruner;
+import tools.jackson.core.JsonGenerator;
+import tools.jackson.databind.SerializationContext;
+import tools.jackson.databind.ValueSerializer;
 
-public class JenkinsExportedBeanSerializer extends JsonSerializer {
+public class JenkinsExportedBeanSerializer extends ValueSerializer<Object> {
 
     private static final ModelBuilder MODEL_BUILDER = new ModelBuilder();
     // remove some values which are not useful in the JSON output
@@ -53,11 +54,10 @@ public class JenkinsExportedBeanSerializer extends JsonSerializer {
     };
 
     @Override
-    public void serialize(Object value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
+    public void serialize(Object value, JsonGenerator gen, SerializationContext serializers) {
         String tree = (String) serializers.getAttribute("tree");
 
         StringWriter sw = new StringWriter();
-        var dw = Flavor.JSON.createDataWriter(value, sw);
         Model p = MODEL_BUILDER.get(value.getClass());
 
         TreePruner treePruner;
@@ -67,7 +67,12 @@ public class JenkinsExportedBeanSerializer extends JsonSerializer {
             treePruner = new NamedPathPruner(tree);
         }
 
-        p.writeTo(value, treePruner, dw);
+        try {
+            var dw = Flavor.JSON.createDataWriter(value, sw);
+            p.writeTo(value, treePruner, dw);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
         gen.writeRawValue(sw.toString());
     }
 }

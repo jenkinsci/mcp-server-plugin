@@ -36,7 +36,7 @@
     <gitHubRepo>jenkinsci/${project.artifactId}-plugin</gitHubRepo>
     <spotless.check.skip>false</spotless.check.skip>
     <hpi.strictBundledArtifacts>true</hpi.strictBundledArtifacts>
-    <hpi.bundledArtifacts>classmate,itu,json-schema-validator,jsonschema-generator,jsonschema-module-jackson,jsonschema-module-swagger-2,mcp,mcp-core,mcp-json-jackson2,reactive-streams,reactor-core,swagger-annotations</hpi.bundledArtifacts>
+    <hpi.bundledArtifacts>classmate,itu,json-schema-validator,jsonschema-generator,jsonschema-module-jackson,jsonschema-module-swagger-2,mcp,mcp-core,mcp-json-jackson3,reactive-streams,reactor-core,swagger-annotations</hpi.bundledArtifacts>
     <banObsoleteDependencyOverrides.skip>false</banObsoleteDependencyOverrides.skip>
     <ban-junit4-imports.skip>false</ban-junit4-imports.skip>
     <ban-deprecated-stapler.skip>false</ban-deprecated-stapler.skip>
@@ -71,7 +71,7 @@
       <dependency>
         <groupId>com.networknt</groupId>
         <artifactId>json-schema-validator</artifactId>
-        <version>2.0.4</version>
+        <version>3.0.6</version>
       </dependency>
     </dependencies>
   </dependencyManagement>
@@ -81,11 +81,11 @@
       <artifactId>jsonschema-generator</artifactId>
       <exclusions>
         <exclusion>
-          <groupId>com.fasterxml.jackson.core</groupId>
+          <groupId>org.slf4j</groupId>
           <artifactId>*</artifactId>
         </exclusion>
         <exclusion>
-          <groupId>org.slf4j</groupId>
+          <groupId>tools.jackson.core</groupId>
           <artifactId>*</artifactId>
         </exclusion>
       </exclusions>
@@ -120,6 +120,10 @@
       <artifactId>commons-lang3-api</artifactId>
     </dependency>
     <dependency>
+      <groupId>io.jenkins.plugins</groupId>
+      <artifactId>jackson3-api</artifactId>
+    </dependency>
+    <dependency>
       <groupId>io.modelcontextprotocol.sdk</groupId>
       <artifactId>mcp</artifactId>
       <exclusions>
@@ -139,14 +143,14 @@
     </dependency>
     <dependency>
       <groupId>io.modelcontextprotocol.sdk</groupId>
-      <artifactId>mcp-json-jackson2</artifactId>
+      <artifactId>mcp-json-jackson3</artifactId>
       <exclusions>
         <exclusion>
-          <groupId>com.fasterxml.jackson.core</groupId>
+          <groupId>org.slf4j</groupId>
           <artifactId>*</artifactId>
         </exclusion>
         <exclusion>
-          <groupId>org.slf4j</groupId>
+          <groupId>tools.jackson.core</groupId>
           <artifactId>*</artifactId>
         </exclusion>
       </exclusions>
@@ -160,10 +164,6 @@
       <groupId>org.jenkins-ci.plugins</groupId>
       <artifactId>git</artifactId>
       <optional>true</optional>
-    </dependency>
-    <dependency>
-      <groupId>org.jenkins-ci.plugins</groupId>
-      <artifactId>jackson2-api</artifactId>
     </dependency>
     <dependency>
       <groupId>org.jenkins-ci.plugins</groupId>
@@ -257,6 +257,12 @@
       <groupId>org.jenkinsci.plugins</groupId>
       <artifactId>pipeline-model-definition</artifactId>
       <scope>test</scope>
+      <exclusions>
+        <exclusion>
+          <groupId>org.jenkins-ci.plugins</groupId>
+          <artifactId>jackson2-api</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
     <dependency>
       <groupId>org.junit-pioneer</groupId>
