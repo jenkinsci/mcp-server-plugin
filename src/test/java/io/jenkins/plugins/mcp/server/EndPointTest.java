@@ -69,7 +69,11 @@ public class EndPointTest {
                             "getStatus",
                             "getTestResults",
                             "getFlakyFailures",
-                            "getQueueItem");
+                            "getQueueItem",
+                            "getAgent",
+                            "takeAgentOffline",
+                            "takeAgentOnline",
+                            "listAgentNames");
         }
     }
 
