@@ -37,6 +37,7 @@ import com.jayway.jsonpath.DocumentContext;
 import com.jayway.jsonpath.JsonPath;
 import hudson.model.BooleanParameterDefinition;
 import hudson.model.ChoiceParameterDefinition;
+import hudson.model.FreeStyleProject;
 import hudson.model.ParametersDefinitionProperty;
 import hudson.model.Result;
 import hudson.model.StringParameterDefinition;
@@ -56,6 +57,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.jvnet.hudson.test.JenkinsRule;
+import org.jvnet.hudson.test.SleepBuilder;
 import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
 @WithJenkins
@@ -407,6 +409,92 @@ class DefaultMcpServerTest {
                         });
             }
         }
+    }
+
+    static Stream<Arguments> cancelBuildTestParameters() {
+        Stream<Arguments> baseArgs = Stream.of(
+                // security enable, no auth -> no, AccessDenied
+                Arguments.of(true, false, true, "AccessDenied", false),
+                // security enable, auth -> no, triggered
+                Arguments.of(true, true, false, "COMPLETED", true),
+                // security not enable, no auth -> run triggered yeah freedom!
+                Arguments.of(false, false, false, "COMPLETED", true),
+                // security not enable, auth -> run triggered root is the king
+                Arguments.of(false, true, false, "COMPLETED", true));
+        return TestUtils.appendMcpClientArgs(baseArgs);
+    }
+
+    @McpClientTest
+    void testMcpToolCallCancelBuildPipeline(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
+            throws Exception {
+        enableSecurity(jenkins);
+        WorkflowJob project = jenkins.createProject(WorkflowJob.class, "demo-job");
+        project.setDefinition(new CpsFlowDefinition("sleep 30", true));
+        var build = project.scheduleBuild2(0).get();
+
+        String username = "admin";
+        String password = "admin";
+        String authString = username + ":" + password;
+        String encodedAuth = Base64.getEncoder().encodeToString(authString.getBytes());
+        try (var client = jenkinsMcpClientBuilder
+                .jenkins(jenkins)
+                .requestCustomizer((builder, method, endpoint, body, context) ->
+                        builder.setHeader("Authorization", "Basic " + encodedAuth))
+                .build()) {
+            {
+                McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(
+                        "cancelBuild", Map.of("jobFullName", "demo-job", "buildNumber", 1), null);
+
+                var response = client.callTool(request);
+                assertThat(response.isError()).isFalse();
+                assertThat(response.content().get(0).type()).isEqualTo("text");
+                assertThat(response.content())
+                        .first()
+                        .isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                            assertThat(textContent.type()).isEqualTo("text");
+                            assertThat(textContent.text()).contains("true");
+                        });
+                assertThat(build.isBuilding()).isFalse();
+            }
+        }
+        jenkins.waitUntilNoActivityUpTo(MIN_1);
+    }
+
+    @McpClientTest
+    void testMcpToolCallCancelBuildFreestyle(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
+            throws Exception {
+        enableSecurity(jenkins);
+        FreeStyleProject project = jenkins.createFreeStyleProject("freestyle");
+        project.getBuildersList().add(new SleepBuilder(30000));
+        var build = project.scheduleBuild2(0).get();
+
+        String username = "admin";
+        String password = "admin";
+        String authString = username + ":" + password;
+        String encodedAuth = Base64.getEncoder().encodeToString(authString.getBytes());
+        try (var client = jenkinsMcpClientBuilder
+                .jenkins(jenkins)
+                .requestCustomizer((builder, method, endpoint, body, context) ->
+                        builder.setHeader("Authorization", "Basic " + encodedAuth))
+                .build()) {
+            {
+                McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(
+                        "cancelBuild", Map.of("jobFullName", "freestyle", "buildNumber", 1), null);
+
+                var response = client.callTool(request);
+                assertThat(response.isError()).isFalse();
+                assertThat(response.content().get(0).type()).isEqualTo("text");
+                assertThat(response.content())
+                        .first()
+                        .isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                            assertThat(textContent.type()).isEqualTo("text");
+                            assertThat(textContent.text()).contains("true");
+                        });
+
+                assertThat(build.isBuilding()).isFalse();
+            }
+        }
+        jenkins.waitUntilNoActivityUpTo(MIN_1);
     }
 
     private void enableSecurity(JenkinsRule jenkins) throws Exception {
