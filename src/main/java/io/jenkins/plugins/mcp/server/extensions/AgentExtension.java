@@ -31,32 +31,35 @@ public class AgentExtension implements McpServerExtension {
         return Jenkins.get().getComputer(name);
     }
 
-    @Tool(description = "Marks a Jenkins agent temporarily offline")
-    public boolean takeAgentOffline(
+    @Tool(description = "Marks a Jenkins agent temporarily offline or takes it back online")
+    public boolean agentStatus(
             @ToolParam(description = "Agent name") String name,
-            @ToolParam(description = "Offline reason") String reason) {
+            @ToolParam(
+                            description =
+                                    "Agent status, 'ONLINE' to take the agent online or 'OFFLINE' to take the agent offline")
+                    AgentStatus status,
+            @ToolParam(description = "Offline reason when taking the agent offline", required = false) String reason) {
         Computer computer = Jenkins.get().getComputer(name);
         if (computer == null) {
             return false;
         }
-        if (!computer.hasPermission(Computer.DISCONNECT)) {
+        if (status == AgentStatus.OFFLINE && !computer.hasPermission(Computer.DISCONNECT)) {
             return false;
         }
-        OfflineCause.UserCause cause = new OfflineCause.UserCause(User.current(), Util.fixEmptyAndTrim(reason));
-        computer.setTemporaryOfflineCause(cause);
-        return true;
-    }
-
-    @Tool(description = "Take a Jenkins agent online", annotations = @Tool.Annotations(destructiveHint = false))
-    public boolean takeAgentOnline(@ToolParam(description = "Agent name") String name) {
-        Computer computer = Jenkins.get().getComputer(name);
-        if (computer == null) {
+        if (status == AgentStatus.ONLINE && !computer.hasPermission(Computer.CONNECT)) {
             return false;
         }
-        if (!computer.hasPermission(Computer.CONNECT)) {
-            return false;
+        if (status == AgentStatus.OFFLINE) {
+            OfflineCause.UserCause cause = new OfflineCause.UserCause(User.current(), Util.fixEmptyAndTrim(reason));
+            computer.setTemporaryOfflineCause(cause);
+            return true;
         }
         computer.setTemporaryOfflineCause(null);
         return true;
+    }
+
+    public enum AgentStatus {
+        ONLINE,
+        OFFLINE;
     }
 }

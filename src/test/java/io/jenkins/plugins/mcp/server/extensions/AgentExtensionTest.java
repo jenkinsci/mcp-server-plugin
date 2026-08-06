@@ -14,6 +14,7 @@ import io.jenkins.plugins.mcp.server.junit.McpClientTest;
 import io.jenkins.plugins.mcp.server.junit.TestUtils;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
@@ -80,14 +81,21 @@ public class AgentExtensionTest {
 
     static Stream<Arguments> takeOfflineParameters() {
         Stream<Arguments> baseArgs = Stream.of(
-                Arguments.of("admin", true), Arguments.of("connecter", false), Arguments.of("disconnecter", true));
+                Arguments.of("admin", true, "Maintenance"),
+                Arguments.of("connecter", false, "Maintenance"),
+                Arguments.of("connecter", false, null),
+                Arguments.of("disconnecter", true, "Maintenance"));
         return TestUtils.appendMcpClientArgs(baseArgs);
     }
 
     @ParameterizedTest
     @MethodSource("takeOfflineParameters")
     void testTakeAgentOffline(
-            String user, boolean canTakeOffline, JenkinsMcpClientBuilder jenkinsMcpClientBuilder, JenkinsRule jenkins)
+            String user,
+            boolean canTakeOffline,
+            String reason,
+            JenkinsMcpClientBuilder jenkinsMcpClientBuilder,
+            JenkinsRule jenkins)
             throws Exception {
         Node node = jenkins.createOnlineSlave();
         node.setLabelString("test linux");
@@ -100,8 +108,13 @@ public class AgentExtensionTest {
                     builder.setHeader("Authorization", "Basic " + encodedAuth);
                 })
                 .build()) {
-            McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(
-                    "takeAgentOffline", Map.of("name", node.getNodeName(), "reason", "Maintenance"), null);
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("name", node.getNodeName());
+            arguments.put("status", "OFFLINE");
+            if (reason != null) {
+                arguments.put("reason", reason);
+            }
+            McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("agentStatus", arguments, null);
             var response = client.callTool(request);
             assertThat(response.isError()).isFalse();
             assertThat(response.content()).hasSize(1);
@@ -113,7 +126,11 @@ public class AgentExtensionTest {
             // Verify that the node is now offline with the correct reason
             assertThat(node.toComputer().isOffline()).isEqualTo(canTakeOffline);
             if (canTakeOffline) {
-                assertThat(node.toComputer().getOfflineCauseReason()).isEqualTo("Maintenance");
+                if (reason != null) {
+                    assertThat(node.toComputer().getOfflineCauseReason()).isEqualTo(reason);
+                } else {
+                    assertThat(node.toComputer().getOfflineCause()).isNull();
+                }
             }
         }
     }
@@ -146,7 +163,7 @@ public class AgentExtensionTest {
                 })
                 .build()) {
             McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(
-                    "takeAgentOnline", Map.of("name", node.getNodeName(), "reason", "Maintenance"), null);
+                    "agentStatus", Map.of("name", node.getNodeName(), "status", "ONLINE"), null);
             var response = client.callTool(request);
             assertThat(response.isError()).isFalse();
             assertThat(response.content()).hasSize(1);

@@ -407,6 +407,11 @@ The plugin provides the following built-in tools for interacting with Jenkins:
 - `getBuildChangeSets`: Retrieve change log sets of a specific build.
 - `findJobsWithScmUrl`: Find jobs using a specific SCM (git) repository URL
 
+#### Agent Management
+- `getAgents`: Get a list of all Jenkins agents (nodes).
+- `getAgent`: Get information about a specific Jenkins agent (node) by name.
+- `agentStatus`: Take an agent online or offline. Provide the agent name and the desired status (online/offline). Optional `reason` parameter for offline reason.
+ 
 #### Management Information
 - `whoAmI`: Get information about the current user.
 - `getStatus`: Checks the health and readiness status of a Jenkins instance. Use this tool to assess Jenkins instance health rather than simple up/down status.
