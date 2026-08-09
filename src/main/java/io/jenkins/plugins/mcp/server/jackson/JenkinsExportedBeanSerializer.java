@@ -45,7 +45,8 @@ public class JenkinsExportedBeanSerializer extends ValueSerializer<Object> {
 
     private static final ModelBuilder MODEL_BUILDER = new ModelBuilder();
     // remove some values which are not useful in the JSON output
-    private static final List<String> EXCLUDED_PROPERTIES = List.of("enclosingBlocks", "nodeId");
+    private static final List<String> EXCLUDED_PROPERTIES =
+            List.of("enclosingBlocks", "enclosingBlockNames", "nodeId");
 
     private static final class ExclusionPruner extends TreePruner {
         private final TreePruner delegate;

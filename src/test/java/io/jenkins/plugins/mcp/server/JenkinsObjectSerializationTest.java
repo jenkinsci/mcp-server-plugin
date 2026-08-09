@@ -118,8 +118,9 @@ public class JenkinsObjectSerializationTest {
         var json = objectMapper.writeValueAsString(testResult);
         var doc = JsonPath.using(Configuration.defaultConfiguration()).parse(json);
 
-        // Then nodeId and enclosingBlocks are absent at every depth
+        // Then nodeId, enclosingBlocks and enclosingBlockNames are absent at every depth
         assertThat((List<?>) doc.read("$..nodeId")).isEmpty();
         assertThat((List<?>) doc.read("$..enclosingBlocks")).isEmpty();
+        assertThat((List<?>) doc.read("$..enclosingBlockNames")).isEmpty();
     }
 }

@@ -94,6 +94,8 @@ public class TestResultExtensionTest {
                         .isEmpty();
                 assertThat((List<Object>) documentContext.read("$..suites[*].enclosingBlocks"))
                         .isEmpty();
+                assertThat((List<Object>) documentContext.read("$..suites[*].enclosingBlockNames"))
+                        .isEmpty();
 
                 List<Object> list = documentContext.read("$..suites");
                 assertThat(list).size().isEqualTo(testResult.getSuites().size());
@@ -267,6 +269,8 @@ public class TestResultExtensionTest {
                 assertThat((List<Object>) documentContext.read("$..suites[*].nodeId"))
                         .isEmpty();
                 assertThat((List<Object>) documentContext.read("$..suites[*].enclosingBlocks"))
+                        .isEmpty();
+                assertThat((List<Object>) documentContext.read("$..suites[*].enclosingBlockNames"))
                         .isEmpty();
             }
         }
