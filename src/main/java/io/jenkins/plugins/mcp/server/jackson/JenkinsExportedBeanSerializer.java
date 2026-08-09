@@ -75,7 +75,7 @@ public class JenkinsExportedBeanSerializer extends ValueSerializer<Object> {
         }
     }
 
-    private static final TreePruner CLEANER_PRUNER = new ExclusionPruner(new TreePruner.ByDepth(1));
+    private static final TreePruner CLEANER_PRUNER = new ExclusionPruner(new TreePruner.ByDepth(0));
 
     @Override
     public void serialize(Object value, JsonGenerator gen, SerializationContext serializers) {
