@@ -122,5 +122,8 @@ public class JenkinsObjectSerializationTest {
         assertThat((List<?>) doc.read("$..nodeId")).isEmpty();
         assertThat((List<?>) doc.read("$..enclosingBlocks")).isEmpty();
         assertThat((List<?>) doc.read("$..enclosingBlockNames")).isEmpty();
+
+        assertThat((List<?>) doc.read("$..cases[*].errorDetails"))
+                .anySatisfy(v -> assertThat(v).isNotNull());
     }
 }

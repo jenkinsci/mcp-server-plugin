@@ -97,6 +97,9 @@ public class TestResultExtensionTest {
                 assertThat((List<Object>) documentContext.read("$..suites[*].enclosingBlockNames"))
                         .isEmpty();
 
+                assertThat((List<Object>) documentContext.read("$..cases[*].errorDetails"))
+                        .anySatisfy(v -> assertThat(v).isNotNull());
+
                 List<Object> list = documentContext.read("$..suites");
                 assertThat(list).size().isEqualTo(testResult.getSuites().size());
 
