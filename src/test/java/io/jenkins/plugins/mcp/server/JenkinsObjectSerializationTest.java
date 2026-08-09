@@ -28,10 +28,18 @@ package io.jenkins.plugins.mcp.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.jayway.jsonpath.Configuration;
+import com.jayway.jsonpath.JsonPath;
+import hudson.FilePath;
 import hudson.model.Descriptor;
+import hudson.model.Result;
+import hudson.tasks.junit.TestResultAction;
+import io.jenkins.plugins.mcp.server.extensions.TestResultExtensionTest;
 import io.jenkins.plugins.mcp.server.jackson.JenkinsExportedBeanModule;
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
@@ -83,5 +91,39 @@ public class JenkinsObjectSerializationTest {
         var json = objectMapper.writeValueAsString(Map.of("key", "value", "key1", "value1"));
         var map = new JsonMapper().readValue(json, Map.class);
         assertThat(map).extractingByKey("key").isEqualTo("value");
+    }
+
+    @Test
+    void testExcludedPropertiesCascadeIntoNestedBeans(JenkinsRule jenkins) throws Exception {
+        // Given a pipeline run with junit inside stage { node { } }, which sets SuiteResult.nodeId
+        WorkflowJob project = jenkins.createProject(WorkflowJob.class, "junit-cascade");
+        project.setDefinition(new CpsFlowDefinition("""
+                        stage('first') {
+                          node {
+                            def results = junit(testResults: '*.xml')
+                            assert results.totalCount == 6
+                          }
+                        }
+                        """, true));
+        FilePath ws = jenkins.jenkins.getWorkspaceFor(project);
+        Objects.requireNonNull(ws)
+                .child("test-result.xml")
+                .copyFrom(TestResultExtensionTest.class.getResource("junit-report-20090516.xml"));
+
+        // When the TestResult is serialized
+        var run = jenkins.buildAndAssertStatus(Result.FAILURE, project);
+        var testResult = run.getAction(TestResultAction.class).getResult();
+        assertThat(testResult.getSuites().iterator().next().getNodeId()).isNotNull();
+
+        var json = objectMapper.writeValueAsString(testResult);
+        var doc = JsonPath.using(Configuration.defaultConfiguration()).parse(json);
+
+        // Then nodeId, enclosingBlocks and enclosingBlockNames are absent at every depth
+        assertThat((List<?>) doc.read("$..nodeId")).isEmpty();
+        assertThat((List<?>) doc.read("$..enclosingBlocks")).isEmpty();
+        assertThat((List<?>) doc.read("$..enclosingBlockNames")).isEmpty();
+
+        assertThat((List<?>) doc.read("$..cases[*].errorDetails"))
+                .anySatisfy(v -> assertThat(v).isNotNull());
     }
 }
