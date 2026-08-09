@@ -90,6 +90,11 @@ public class TestResultExtensionTest {
                 assertThat(documentContext.read("$.failCount", Integer.class)).isEqualTo(testResult.getFailCount());
                 assertThat(documentContext.read("$.passCount", Integer.class)).isEqualTo(testResult.getPassCount());
 
+                assertThat((List<Object>) documentContext.read("$..suites[*].nodeId"))
+                        .isEmpty();
+                assertThat((List<Object>) documentContext.read("$..suites[*].enclosingBlocks"))
+                        .isEmpty();
+
                 List<Object> list = documentContext.read("$..suites");
                 assertThat(list).size().isEqualTo(testResult.getSuites().size());
 
@@ -258,6 +263,11 @@ public class TestResultExtensionTest {
                                 .mapToLong(Collection::size)
                                 .sum());
                 assertThat(list).size().isEqualTo(4); // There are 4 flaky failures in the four reports
+
+                assertThat((List<Object>) documentContext.read("$..suites[*].nodeId"))
+                        .isEmpty();
+                assertThat((List<Object>) documentContext.read("$..suites[*].enclosingBlocks"))
+                        .isEmpty();
             }
         }
     }
