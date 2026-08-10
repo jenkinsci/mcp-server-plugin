@@ -40,8 +40,13 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.jenkinsci.plugins.workflow.actions.LogAction;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
+import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
+import org.jenkinsci.plugins.workflow.graph.FlowGraphWalker;
+import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
+import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.junitpioneer.jupiter.SetSystemProperty;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
@@ -188,7 +193,101 @@ class BuildLogWindowBoundsTest {
         }
     }
 
+    @McpClientTest
+    @SetSystemProperty(key = LIMIT_MAX, value = "10")
+    void nodeScopedWindowBeyondTheRetainedTailIsStillTheRequestedWindow(
+            JenkinsRule jenkins, JenkinsMcpClientBuilder builder) throws Exception {
+        WorkflowJob project = createNodePayloadJob(jenkins, "bounds-node-window");
+        String nodeId = payloadNodeId(project.getLastBuild());
+
+        try (var client = builder.jenkins(jenkins).build()) {
+            // Same second-pass fallback as above, but over a *node* source, whose length is frozen at
+            // construction and whose liveness was sampled before the snapshot -- the opposite of a
+            // run's log on both counts. The whole-build cases here never exercise that combination.
+            Map<String, Object> result = getBuildLog(client, project.getFullName(), nodeId, -24L, 10);
+
+            assertThat(linesOf(result))
+                    .as("the requested window, not the retained one")
+                    .containsExactly(
+                            "PAYLOAD-LINE-7",
+                            "PAYLOAD-LINE-8",
+                            "PAYLOAD-LINE-9",
+                            "PAYLOAD-LINE-10",
+                            "PAYLOAD-LINE-11",
+                            "PAYLOAD-LINE-12",
+                            "PAYLOAD-LINE-13",
+                            "PAYLOAD-LINE-14",
+                            "PAYLOAD-LINE-15",
+                            "PAYLOAD-LINE-16");
+            assertThat(((Number) result.get("startLine")).longValue()).isEqualTo(7L);
+            assertThat(((Number) result.get("endLine")).longValue()).isEqualTo(16L);
+            assertThat(((Number) result.get("totalLines")).longValue())
+                    .as("the count from the first pass survives the second")
+                    .isEqualTo(NODE_PAYLOAD_LINES);
+            assertThat((Boolean) result.get("hasMoreContent")).isTrue();
+            assertThat((String) result.get("nextCursor"))
+                    .as("hasMoreContent=true without a cursor leaves the caller stuck")
+                    .isNotNull();
+        }
+    }
+
     // -----------------------------------------------------------------------
+
+    private static final int NODE_PAYLOAD_LINES = 30;
+
+    /** One {@code echo} of a multi-line string, so a single flow node owns all {@value #NODE_PAYLOAD_LINES} lines. */
+    private WorkflowJob createNodePayloadJob(JenkinsRule jenkins, String name) throws Exception {
+        WorkflowJob project = jenkins.createProject(WorkflowJob.class, name);
+        project.setDefinition(new CpsFlowDefinition(
+                "String payload = 'PAYLOAD-LINE-1'\n"
+                        + "for (int i = 2; i <= " + NODE_PAYLOAD_LINES
+                        + "; i++) { payload = payload + '\\n' + 'PAYLOAD-LINE-' + i }\n"
+                        + "echo payload",
+                true));
+        project.scheduleBuild2(0).get();
+        await().atMost(60, SECONDS)
+                .until(() -> project.getLastBuild() != null
+                        && !project.getLastBuild().isBuilding());
+        return project;
+    }
+
+    private static String payloadNodeId(WorkflowRun build) throws Exception {
+        var execution =
+                ((FlowExecutionOwner.Executable) build).asFlowExecutionOwner().getOrNull();
+        for (FlowNode node : new FlowGraphWalker(execution)) {
+            LogAction logAction = node.getAction(LogAction.class);
+            if (logAction != null && logAction.getLogText().length() > 0) {
+                var buf = new java.io.ByteArrayOutputStream();
+                logAction.getLogText().writeLogTo(0, buf);
+                if (buf.toString(build.getCharset()).contains("PAYLOAD-LINE-" + NODE_PAYLOAD_LINES)) {
+                    return node.getId();
+                }
+            }
+        }
+        throw new AssertionError("no flow node owns the payload log");
+    }
+
+    private static Map<String, Object> getBuildLog(
+            McpSyncClient client, String jobFullName, String nodeId, Long skip, Integer limit) {
+        Map<String, Object> params = new HashMap<>();
+        params.put("jobFullName", jobFullName);
+        params.put("nodeId", nodeId);
+        if (skip != null) {
+            params.put("skip", skip);
+        }
+        if (limit != null) {
+            params.put("limit", limit);
+        }
+        var response = client.callTool(new McpSchema.CallToolRequest("getBuildLog", params));
+        assertThat(response.isError())
+                .as(
+                        "unexpected error: %s",
+                        ((McpSchema.TextContent) response.content().get(0)).text())
+                .isFalse();
+        return JsonPath.using(Configuration.defaultConfiguration())
+                .parse(((McpSchema.TextContent) response.content().get(0)).text())
+                .read("$.result", Map.class);
+    }
 
     private static Map<String, Object> getBuildLog(McpSyncClient client, String jobFullName, Long skip, Integer limit) {
         Map<String, Object> params = new HashMap<>();

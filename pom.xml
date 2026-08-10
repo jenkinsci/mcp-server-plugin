@@ -172,6 +172,13 @@
       <optional>true</optional>
     </dependency>
     <dependency>
+      <!-- Provides FlowNode/FlowExecution/LogAction used for per-node log reads. Only reached
+           transitively otherwise, so declare it explicitly. -->
+      <groupId>org.jenkins-ci.plugins.workflow</groupId>
+      <artifactId>workflow-api</artifactId>
+      <optional>true</optional>
+    </dependency>
+    <dependency>
       <groupId>org.jenkins-ci.plugins.workflow</groupId>
       <artifactId>workflow-cps</artifactId>
       <optional>true</optional>
