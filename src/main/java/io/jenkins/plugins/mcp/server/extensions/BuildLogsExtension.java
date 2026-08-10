@@ -221,12 +221,16 @@ public class BuildLogsExtension implements McpServerExtension {
                 cursor,
                 skip,
                 limit);
-        int maxLimit = SystemProperties.getInteger(BuildLogsExtension.class.getName() + ".limit.max", 10000);
+        // Floored at 1: Integer.decode accepts "-5" rather than falling back to the default, and a
+        // negative ceiling inverts limit's sign, rerouting a forward read into the tail path.
+        int maxLimit =
+                Math.max(1, SystemProperties.getInteger(BuildLogsExtension.class.getName() + ".limit.max", 10000));
         if (Math.abs((long) limit) > maxLimit) {
             log.warn("Limit {} is too large, using the default max limit {}", limit, maxLimit);
         }
         int absLimit = (int) Math.min(Math.abs((long) limit), maxLimit);
         limit = limit < 0 ? -absLimit : absLimit;
+        skip = Math.max(skip, -MAX_LOOKBACK);
 
         Charset charset = run.getCharset();
 
@@ -257,6 +261,15 @@ public class BuildLogsExtension implements McpServerExtension {
         // the window, so we make one full pass. totalLines is exact in this branch.
         return readTail(run, charset, skip, limit, maxLimit);
     }
+
+    /**
+     * Furthest back an end-relative read may start. {@code skip} arrives unvalidated from JSON, and the
+     * tail arithmetic ({@code -skip + |limit|}, {@code total + skip - limit}) overflows near
+     * {@link Long#MIN_VALUE} — which lands on {@code hasMoreContent=true} with no cursor and no lines,
+     * the same dead end the retained-window fix exists to prevent. Starting further back than any log
+     * can reach is the same request as "from the start", so saturate rather than reject.
+     */
+    private static final long MAX_LOOKBACK = 1L << 40;
 
     /**
      * Cursor format: base64url of {@code "<buildNumber>:<byteOffset>"}. The build number is in there so
@@ -380,13 +393,36 @@ public class BuildLogsExtension implements McpServerExtension {
         long endOfSnapshot = collector.rawBytesConsumed;
 
         long resolvedSkip;
-        int resolvedLimit = Math.abs(limit);
+        // Widened like the arithmetic above: getLogLines has already clamped limit into
+        // [-maxLimit, maxLimit], but that is two frames away, and unwidened Math.abs(Integer.MIN_VALUE)
+        // stays negative rather than failing loudly.
+        int resolvedLimit = (int) Math.abs((long) limit);
         if (skip == 0) {
             resolvedSkip = Math.max(0, total - resolvedLimit);
         } else if (limit > 0) {
             resolvedSkip = Math.max(0, total + skip);
         } else {
             resolvedSkip = Math.max(0, total + skip - resolvedLimit);
+        }
+        // The ring kept only the trailing `capacity` lines, so a window clamped by maxLimit can start
+        // inside the evicted region. Sliding it forward to whatever we happen to hold would answer a
+        // different question than the one asked, and returning nothing strands the caller, so pay for a
+        // second pass and read the window as requested. Only reachable when the lookback the caller
+        // asked for exceeds the maxLimit ceiling, so the common tail read still costs one pass.
+        long earliestRetained = Math.max(0, total - capacity);
+        if (resolvedSkip < earliestRetained) {
+            // Logged at INFO, not DEBUG: this is the one path that reads the whole log twice, and an
+            // operator watching getBuildLog latency on a large build has nothing else to go on.
+            log.info(
+                    "End-relative window starts at line {} but only the last {} of {} lines were retained;"
+                            + " re-reading that window in a second pass over the log",
+                    resolvedSkip + 1,
+                    capacity,
+                    total);
+            BuildLogResponse exact = readForward(run, charset, 0L, resolvedSkip, resolvedLimit, true, resolvedSkip);
+            // readForward never counts the total; reuse the count from the pass above. On a running
+            // build that count describes the earlier snapshot, same as any other end-relative read.
+            return exact.withTotalLines(total);
         }
         long endExclusive = Math.min(resolvedSkip + resolvedLimit, total);
 
@@ -692,7 +728,18 @@ public class BuildLogsExtension implements McpServerExtension {
             long startLine,
             long endLine,
             long totalLines,
-            String nextCursor) {}
+            String nextCursor) {
+
+        /**
+         * The same response carrying an exact line count, for the one path that reads a window with
+         * {@link #readForward} (which reports {@code -1}) but already knows the total from an earlier
+         * counting pass. A copy method rather than an open-coded rebuild so a new field cannot be
+         * silently dropped here.
+         */
+        BuildLogResponse withTotalLines(long totalLines) {
+            return new BuildLogResponse(lines, hasMoreContent, startLine, endLine, totalLines, nextCursor);
+        }
+    }
 
     public record SearchLogResponse(
             String pattern,
