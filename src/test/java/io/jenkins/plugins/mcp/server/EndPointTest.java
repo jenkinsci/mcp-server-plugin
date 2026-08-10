@@ -71,7 +71,8 @@ public class EndPointTest {
                             "getFlakyFailures",
                             "getQueueItem",
                             "getSystemLog",
-                            "getLogRecorders");
+                            "getLogRecorders",
+                            "getFlowNodes");
         }
     }
 
@@ -111,7 +112,8 @@ public class EndPointTest {
                 "getJobScm",
                 "getBuildScm",
                 "getBuildChangeSets",
-                "findJobsWithScmUrl"
+                "findJobsWithScmUrl",
+                "getFlowNodes"
             }) {
                 assertReadOnly.accept(name);
             }
