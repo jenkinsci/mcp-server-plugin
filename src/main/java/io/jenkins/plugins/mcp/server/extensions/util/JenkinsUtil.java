@@ -30,20 +30,32 @@ import hudson.model.Job;
 import hudson.model.Run;
 import jakarta.annotation.Nullable;
 import java.util.Optional;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import jenkins.model.Jenkins;
 import lombok.NonNull;
 
 public class JenkinsUtil {
 
+    private static final Logger LOGGER = Logger.getLogger(JenkinsUtil.class.getName());
+
     public static Optional<Run> getBuildByNumberOrLast(@NonNull String fullJobName, @Nullable Integer buildNumber) {
-        return Optional.of(Jenkins.get())
-                .map(jenkins -> jenkins.getItemByFullName(fullJobName, Job.class))
-                .map(job -> {
-                    if (buildNumber == null || buildNumber <= 0) {
-                        return job.getLastBuild();
-                    } else {
-                        return job.getBuildByNumber(buildNumber);
-                    }
-                });
+        var jenkins = Jenkins.get();
+        var job = jenkins.getItemByFullName(fullJobName, Job.class);
+        if (job == null) {
+            if (LOGGER.isLoggable(Level.FINE)) {
+                LOGGER.log(
+                        Level.FINE,
+                        "Build lookup failed: job not found or not visible. jobFullName={0}, buildNumber={1}, user={2}, rootUrl={3}",
+                        new Object[] {
+                            fullJobName, buildNumber, jenkins.getAuthentication2().getName(), jenkins.getRootUrl()
+                        });
+            }
+            return Optional.empty();
+        }
+
+        if (buildNumber == null || buildNumber <= 0)
+            return Optional.ofNullable(job.getLastBuild());
+        return Optional.ofNullable(job.getBuildByNumber(buildNumber));
     }
 }

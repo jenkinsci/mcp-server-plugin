@@ -32,6 +32,7 @@ import hudson.Extension;
 import hudson.model.Item;
 import hudson.model.Job;
 import hudson.model.Result;
+import hudson.model.Run;
 import hudson.plugins.git.BranchSpec;
 import hudson.plugins.git.GitSCM;
 import hudson.plugins.git.GitStatus;
@@ -67,22 +68,33 @@ public class JobScmExtension implements McpServerExtension {
             annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
     public List getJobScm(
             @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName) {
-        var job = Jenkins.get().getItemByFullName(jobFullName, Job.class);
-        if (job instanceof SCMTriggerItem scmItem) {
-            if (job.hasPermission(Item.EXTENDED_READ)) {
-                return scmItem.getSCMs().stream()
-                        .map(scm -> {
-                            Object result = null;
-                            if (scm.getType().equals("hudson.plugins.git.GitSCM")) {
-                                result = GitScmUtil.extractGitScmInfo(scm);
-                            }
-                            return result;
-                        })
-                        .filter(Objects::nonNull)
-                        .toList();
-            }
+        var maybeJob = resolveVisibleJob(jobFullName);
+        if (maybeJob.isEmpty())
+            return List.of();
+        var job = maybeJob.get();
+        if (!job.hasPermission(Item.EXTENDED_READ)) {
+            logLookupFailure("missing EXTENDED_READ", jobFullName, null, null);
+            return List.of();
         }
-        return List.of();
+        if (!(job instanceof SCMTriggerItem scmItem)) {
+            logLookupFailure("job does not expose SCM configuration", jobFullName, null, null);
+            return List.of();
+        }
+
+        try {
+            return scmItem.getSCMs().stream()
+                    .map(scm -> {
+                        Object result = null;
+                        if (scm.getType().equals("hudson.plugins.git.GitSCM"))
+                            result = GitScmUtil.extractGitScmInfo(scm);
+                        return result;
+                    })
+                    .filter(Objects::nonNull)
+                    .toList();
+        } catch (RuntimeException e) {
+            logLookupFailure("failed to extract SCM details", jobFullName, null, e);
+            return List.of();
+        }
     }
 
     @Tool(
@@ -95,14 +107,70 @@ public class JobScmExtension implements McpServerExtension {
                             description = "Build number (optional, if not provided, updates the last build)",
                             required = false)
                     Integer buildNumber) {
-        return getBuildByNumberOrLast(jobFullName, buildNumber)
-                .map(build -> {
-                    if (isGitPluginInstalled()) {
-                        return List.of(GitScmUtil.extractGitScmInfo(build));
-                    }
-                    return List.of();
-                })
-                .orElse(List.of());
+        var maybeJob = resolveVisibleJob(jobFullName);
+        if (maybeJob.isEmpty())
+            return List.of();
+        Run<?, ?> build = resolveBuild(maybeJob.get(), buildNumber).orElse(null);
+        if (build == null)
+            return List.of();
+
+        if (!isGitPluginInstalled()) {
+            logLookupFailure("git plugin is not installed or inactive", jobFullName, buildNumber, null);
+            return List.of();
+        }
+
+        try {
+            return Optional.ofNullable(GitScmUtil.extractGitScmInfo(build)).map(List::of).orElse(List.of());
+        } catch (RuntimeException e) {
+            logLookupFailure("failed to extract build SCM details", jobFullName, buildNumber, e);
+            return List.of();
+        }
+    }
+
+    private Optional<Job<?, ?>> resolveVisibleJob(String jobFullName) {
+        var job = Jenkins.get().getItemByFullName(jobFullName, Job.class);
+        if (job == null) {
+            logLookupFailure("job not found or not visible", jobFullName, null, null);
+            return Optional.empty();
+        }
+        return Optional.of(job);
+    }
+
+    private Optional<Run<?, ?>> resolveBuild(Job<?, ?> job, @Nullable Integer buildNumber) {
+        Run<?, ?> build;
+        if (buildNumber == null || buildNumber <= 0) {
+            build = job.getLastBuild();
+        } else {
+            build = job.getBuildByNumber(buildNumber);
+        }
+
+        if (build == null) {
+            int requestedBuildNumber = (buildNumber == null || buildNumber <= 0) ? -1 : buildNumber;
+            logLookupFailure("build not found", job.getFullName(), requestedBuildNumber, null);
+            return Optional.empty();
+        }
+        return Optional.of(build);
+    }
+
+    private void logLookupFailure(
+            String reason, String jobFullName, @Nullable Integer buildNumber, @Nullable Throwable error) {
+        if (!LOGGER.isLoggable(Level.WARNING))
+            return;
+        var jenkins = Jenkins.get();
+        String user = jenkins.getAuthentication2().getName();
+        if (error == null) {
+            LOGGER.log(
+                    Level.WARNING,
+                    "SCM lookup failed: reason={0}, jobFullName={1}, buildNumber={2}, user={3}, rootUrl={4}",
+                    new Object[] {reason, jobFullName, buildNumber, user, jenkins.getRootUrl()});
+            return;
+        }
+        LOGGER.log(
+                Level.WARNING,
+                String.format(
+                        "SCM lookup failed: reason=%s, jobFullName=%s, buildNumber=%s, user=%s, rootUrl=%s",
+                        reason, jobFullName, buildNumber, user, jenkins.getRootUrl()),
+                error);
     }
 
     @Tool(
