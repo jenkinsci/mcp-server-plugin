@@ -46,18 +46,23 @@ will make it mandatory as well.
 
 ### Connection Resilience
 
-The MCP Server plugin includes several features to improve connection reliability:
+The MCP Server plugin includes several features to improve connection reliability.
+
+The keep-alive and timeout tuning described below primarily concern the **SSE** transport (`/mcp-server/sse`), which holds a single long-lived server→client connection open and is therefore sensitive to idle timeouts in Jenkins, proxies, and load balancers. If you use **Streamable HTTP** (`/mcp-server/mcp`) with the usual request/response pattern, you are unlikely to need any of it (see [Transport Recommendation](#transport-recommendation)). The health, metrics, and graceful-shutdown features apply to all transports.
 
 #### Keep-Alive Messages
 
-The server sends periodic keep-alive messages to detect broken connections. By default, keep-alive messages are sent every 30 seconds.
+For the **SSE** transport, the server sends periodic keep-alive pings over the open connection to detect broken connections and to stop idle timeouts (in Jenkins, proxies, or load balancers) from closing it. By default, pings are sent every 30 seconds.
 
 You can configure this interval with the system property:
 ```
 io.jenkins.plugins.mcp.server.Endpoint.keepAliveInterval=30
 ```
 
-Set to `0` to disable keep-alive messages (not recommended).
+Set to `0` to disable keep-alive messages (not recommended for SSE).
+
+> [!NOTE]
+> A ping is only delivered when there is an open server→client stream. SSE always has one. Streamable HTTP only has one while the client keeps a long-lived GET stream open; for a plain POST request/response client there is no stream to ping, so this setting has no effect.
 
 #### Health Endpoint
 
@@ -117,11 +122,11 @@ For better connection reliability, we recommend using **Streamable HTTP** (`/mcp
 
 #### Production Deployment
 
-When deploying behind a reverse proxy or in production environments, configure these timeout settings to prevent premature connection drops:
+When deploying the **SSE** transport behind a reverse proxy or in production environments, configure the timeout settings below so the long-lived connection is not dropped prematurely. Streamable HTTP users generally don't need this (see the note at the end of this section).
 
-**Jenkins/Jetty Configuration**
+**Jenkins/Jetty Configuration (SSE)**
 
-Jenkins uses Winstone (embedded Jetty) which defaults `httpKeepAliveTimeout` to 30 seconds. Since MCP keep-alive pings are also sent every 30 seconds, this creates a race condition where Jetty may close the connection before the next ping arrives.
+Jenkins uses Winstone (embedded Jetty) which defaults `httpKeepAliveTimeout` to 30 seconds. Since MCP keep-alive pings are also sent every 30 seconds, this creates a race condition where Jetty may close the SSE connection before the next ping arrives.
 
 Add this argument to your Jenkins startup command:
 ```
@@ -138,7 +143,7 @@ services:
 
 **Reverse Proxy Configuration (Nginx)**
 
-For Nginx, extend timeouts for MCP endpoints:
+For Nginx, extend timeouts for the MCP endpoints. This keeps SSE connections from being closed while idle:
 ```nginx
 location ~ ^/(mcp-server|mcp-health)/ {
     proxy_pass http://jenkins;
@@ -150,6 +155,9 @@ location ~ ^/(mcp-server|mcp-health)/ {
     proxy_send_timeout 600s;
 }
 ```
+
+> [!NOTE]
+> The one timeout that can also affect **Streamable HTTP** is `proxy_read_timeout`: a single long-running tool call (for example a slow `triggerBuild`) can exceed a short default and return `504 Gateway Timeout`. Raising `proxy_read_timeout` as shown above prevents that regardless of transport. The `httpKeepAliveTimeout` race condition above is SSE-only.
 
 #### Transport Endpoints
 
