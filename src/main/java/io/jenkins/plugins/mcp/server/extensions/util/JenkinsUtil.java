@@ -48,14 +48,16 @@ public class JenkinsUtil {
                         Level.FINE,
                         "Build lookup failed: job not found or not visible. jobFullName={0}, buildNumber={1}, user={2}, rootUrl={3}",
                         new Object[] {
-                            fullJobName, buildNumber, jenkins.getAuthentication2().getName(), jenkins.getRootUrl()
+                            fullJobName,
+                            buildNumber,
+                            jenkins.getAuthentication2().getName(),
+                            jenkins.getRootUrl()
                         });
             }
             return Optional.empty();
         }
 
-        if (buildNumber == null || buildNumber <= 0)
-            return Optional.ofNullable(job.getLastBuild());
+        if (buildNumber == null || buildNumber <= 0) return Optional.ofNullable(job.getLastBuild());
         return Optional.ofNullable(job.getBuildByNumber(buildNumber));
     }
 }

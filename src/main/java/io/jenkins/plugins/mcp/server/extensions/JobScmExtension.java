@@ -69,8 +69,7 @@ public class JobScmExtension implements McpServerExtension {
     public List getJobScm(
             @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName) {
         var maybeJob = resolveVisibleJob(jobFullName);
-        if (maybeJob.isEmpty())
-            return List.of();
+        if (maybeJob.isEmpty()) return List.of();
         var job = maybeJob.get();
         if (!job.hasPermission(Item.EXTENDED_READ)) {
             logLookupFailure("missing EXTENDED_READ", jobFullName, null, null);
@@ -108,11 +107,9 @@ public class JobScmExtension implements McpServerExtension {
                             required = false)
                     Integer buildNumber) {
         var maybeJob = resolveVisibleJob(jobFullName);
-        if (maybeJob.isEmpty())
-            return List.of();
+        if (maybeJob.isEmpty()) return List.of();
         Run<?, ?> build = resolveBuild(maybeJob.get(), buildNumber).orElse(null);
-        if (build == null)
-            return List.of();
+        if (build == null) return List.of();
 
         if (!isGitPluginInstalled()) {
             logLookupFailure("git plugin is not installed or inactive", jobFullName, buildNumber, null);
@@ -120,7 +117,9 @@ public class JobScmExtension implements McpServerExtension {
         }
 
         try {
-            return Optional.ofNullable(GitScmUtil.extractGitScmInfo(build)).map(List::of).orElse(List.of());
+            return Optional.ofNullable(GitScmUtil.extractGitScmInfo(build))
+                    .map(List::of)
+                    .orElse(List.of());
         } catch (RuntimeException e) {
             logLookupFailure("failed to extract build SCM details", jobFullName, buildNumber, e);
             return List.of();
@@ -154,8 +153,7 @@ public class JobScmExtension implements McpServerExtension {
 
     private void logLookupFailure(
             String reason, String jobFullName, @Nullable Integer buildNumber, @Nullable Throwable error) {
-        if (!LOGGER.isLoggable(Level.WARNING))
-            return;
+        if (!LOGGER.isLoggable(Level.WARNING)) return;
         var jenkins = Jenkins.get();
         String user = jenkins.getAuthentication2().getName();
         if (error == null) {
