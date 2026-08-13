@@ -48,18 +48,15 @@ import hudson.slaves.Cloud;
 import io.jenkins.plugins.mcp.server.McpServerExtension;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
+import io.jenkins.plugins.mcp.server.extensions.scm.GitScmConfig;
+import io.jenkins.plugins.mcp.server.extensions.scm.GitScmUtil;
 import io.jenkins.plugins.mcp.server.tool.JenkinsMcpContext;
 import jakarta.annotation.Nullable;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 import jenkins.model.Jenkins;
 import jenkins.model.ParameterizedJobMixIn;
 import jenkins.model.queue.QueueItem;
+import jenkins.triggers.SCMTriggerItem;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.SneakyThrows;
@@ -89,9 +86,35 @@ public class DefaultMcpServer implements McpServerExtension {
     @Tool(
             description = "Get a Jenkins job by its full path",
             annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
-    public Job getJob(
-            @ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName) {
-        return Jenkins.get().getItemByFullName(jobFullName, Job.class);
+    public JobWithScmConfigs getJob(
+            @ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
+            @ToolParam(
+                            description =
+                                    "To retrieves scm configurations of a Jenkins job (only for type SCMTriggerItem",
+                            required = false)
+                    boolean includeScmConfigurations) {
+        Job job = Jenkins.get().getItemByFullName(jobFullName, Job.class);
+        if (job == null) {
+            return null;
+        }
+        if (includeScmConfigurations && job instanceof SCMTriggerItem scmItem) {
+            if (job.hasPermission(Item.EXTENDED_READ)) {
+                List<GitScmConfig> gitScmConfigs = scmItem.getSCMs().stream()
+                        .filter(scm -> scm.getType().equals("hudson.plugins.git.GitSCM"))
+                        .map(GitScmUtil::extractGitScmInfo)
+                        .filter(Objects::nonNull)
+                        .toList();
+                return new JobWithScmConfigs(job, gitScmConfigs);
+            }
+        }
+        return new JobWithScmConfigs(job, Collections.emptyList());
+    }
+
+    @Data
+    @AllArgsConstructor
+    public static class JobWithScmConfigs {
+        private Job job;
+        private List<GitScmConfig> gitScmConfigs;
     }
 
     /**

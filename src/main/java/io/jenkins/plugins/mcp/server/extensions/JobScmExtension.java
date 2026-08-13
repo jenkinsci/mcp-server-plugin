@@ -43,7 +43,6 @@ import io.jenkins.plugins.mcp.server.extensions.scm.GitScmUtil;
 import jakarta.annotation.Nullable;
 import java.net.URISyntaxException;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -60,29 +59,6 @@ public class JobScmExtension implements McpServerExtension {
     public static boolean isGitPluginInstalled() {
         var gitPlugin = Jenkins.get().getPluginManager().getPlugin("git");
         return gitPlugin != null && gitPlugin.isActive();
-    }
-
-    @Tool(
-            description = "Retrieves scm configurations of a Jenkins job",
-            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
-    public List getJobScm(
-            @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName) {
-        var job = Jenkins.get().getItemByFullName(jobFullName, Job.class);
-        if (job instanceof SCMTriggerItem scmItem) {
-            if (job.hasPermission(Item.EXTENDED_READ)) {
-                return scmItem.getSCMs().stream()
-                        .map(scm -> {
-                            Object result = null;
-                            if (scm.getType().equals("hudson.plugins.git.GitSCM")) {
-                                result = GitScmUtil.extractGitScmInfo(scm);
-                            }
-                            return result;
-                        })
-                        .filter(Objects::nonNull)
-                        .toList();
-            }
-        }
-        return List.of();
     }
 
     @Tool(
