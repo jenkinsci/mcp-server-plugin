@@ -213,7 +213,7 @@
     <dependency>
       <groupId>org.jenkins-ci.plugins</groupId>
       <artifactId>list-git-branches-parameter</artifactId>
-      <version>0.0.13</version>
+      <version>76.v7a_a_7a_5065278</version>
       <scope>test</scope>
     </dependency>
     <dependency>
