@@ -35,14 +35,17 @@ The following system properties can be used to configure the MCP Server plugin:
 
 #### Origin header validation
 
-The MCP specification mark as `MUST` validate the `Origin` header of incoming requests.
-By default, the MCP Server plugin does not enforce this validation to facilitate usage by AI Agent not providing the header.
-You can enable different levels of validation, if the header is available with the request you can enforce his validation using
-the system property `io.jenkins.plugins.mcp.server.Endpoint.requireOriginMatch=true`
-When enforcing the validation, the header value must match the configured Jenkins root url.
+The MCP specification marks validating the `Origin` header of incoming requests as a `MUST`.
 
-If receiving the header is mandatory the system property `io.jenkins.plugins.mcp.server.Endpoint.requireOriginHeader=true`
-will make it mandatory as well.
+By default, when an `Origin` header is present it is validated against the configured Jenkins root URL
+(`io.jenkins.plugins.mcp.server.Endpoint.requireOriginMatch` defaults to `true`). Requests that do not send
+an `Origin` header are still allowed, so AI agents that omit it keep working
+(`io.jenkins.plugins.mcp.server.Endpoint.requireOriginHeader` defaults to `false`).
+
+- To also reject requests that omit the `Origin` header, set
+  `io.jenkins.plugins.mcp.server.Endpoint.requireOriginHeader=true`.
+- To disable Origin matching entirely (not recommended), set
+  `io.jenkins.plugins.mcp.server.Endpoint.requireOriginMatch=false`.
 
 ### Connection Resilience
 
