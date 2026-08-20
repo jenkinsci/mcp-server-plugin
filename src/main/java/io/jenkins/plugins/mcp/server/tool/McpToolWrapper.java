@@ -272,8 +272,14 @@ public class McpToolWrapper {
         return getToolName();
     }
 
-    McpSchema.CallToolResult toMcpResult(Object result, String tree) {
+    private static void ensureRootUrlConfigured() {
+        if (Jenkins.get().getRootUrl() == null) {
+            throw new IllegalStateException(
+                    "The Jenkins root URL is not configured. Please set it in 'Manage Jenkins -> Configure System' to use MCP tools.");
+        }
+    }
 
+    McpSchema.CallToolResult toMcpResult(Object result) {
         var builder = new ToolResponse.ToolResponseBuilder().status(ToolResponse.Status.COMPLETED);
 
         if (result == null) {
@@ -316,6 +322,7 @@ public class McpToolWrapper {
                 var jenkinsMcpContext = JenkinsMcpContext.get()) {
             // need Jenkins.READ at least
             Jenkins.get().checkPermission(Jenkins.READ);
+            ensureRootUrlConfigured();
             if (log.isTraceEnabled()) {
                 log.trace(
                         "Tool call: {} as user '{}', arguments: {}",
