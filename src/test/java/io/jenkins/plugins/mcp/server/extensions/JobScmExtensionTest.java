@@ -117,6 +117,65 @@ public class JobScmExtensionTest {
     }
 
     @McpClientTest
+    void testGetBuildScmReturnsEmptyForNonGitBuild(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
+            throws Exception {
+        FreeStyleProject project = jenkins.createFreeStyleProject("non-git-build-project");
+        jenkins.buildAndAssertSuccess(project);
+
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+            McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(
+                    "getBuildScm", Map.of("jobFullName", project.getFullName(), "buildNumber", 1));
+
+            var response = client.callTool(request);
+
+            assertThat(response.isError()).isFalse();
+            assertThat(response.content()).hasSize(1);
+            assertThat(response.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                assertThat(textContent.type()).isEqualTo("text");
+                assertThat(textContent.text()).contains("no results were found");
+            });
+        }
+    }
+
+    @McpClientTest
+    void testGetJobScmReturnsEmptyWhenJobIsNotVisibleOrMissing(
+            JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder) throws Exception {
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+            McpSchema.CallToolRequest request =
+                    new McpSchema.CallToolRequest("getJobScm", Map.of("jobFullName", "missing/folder/job"));
+
+            var response = client.callTool(request);
+
+            assertThat(response.isError()).isFalse();
+            assertThat(response.content()).hasSize(1);
+            assertThat(response.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                assertThat(textContent.type()).isEqualTo("text");
+                assertThat(textContent.text()).contains("no results were found");
+            });
+        }
+    }
+
+    @McpClientTest
+    void testGetBuildScmReturnsEmptyWhenBuildDoesNotExist(
+            JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder) throws Exception {
+        FreeStyleProject project = jenkins.createFreeStyleProject("missing-build-project");
+
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+            McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(
+                    "getBuildScm", Map.of("jobFullName", project.getFullName(), "buildNumber", 9999));
+
+            var response = client.callTool(request);
+
+            assertThat(response.isError()).isFalse();
+            assertThat(response.content()).hasSize(1);
+            assertThat(response.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                assertThat(textContent.type()).isEqualTo("text");
+                assertThat(textContent.text()).contains("no results were found");
+            });
+        }
+    }
+
+    @McpClientTest
     void testGetBuildChangeSets(
             JenkinsRule jenkins, GitSampleRepoRule gitRepo, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
             throws Exception {
