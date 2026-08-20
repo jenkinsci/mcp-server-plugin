@@ -36,6 +36,8 @@ import hudson.model.Run;
 import io.jenkins.plugins.mcp.server.McpServerExtension;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
+import io.jenkins.plugins.mcp.server.extensions.util.LogSource;
+import io.jenkins.plugins.mcp.server.extensions.util.PipelineLogUtil;
 import io.jenkins.plugins.mcp.server.extensions.util.SlidingWindow;
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
@@ -68,7 +70,9 @@ public class BuildLogsExtension implements McpServerExtension {
                             + " and -1 for forward reads (not computed)."
                             + " If 'nextCursor' is set but 'hasMoreContent' is false, you've read everything written"
                             + " so far but the build is still going; keep the cursor and call again later to pick up"
-                            + " whatever was appended in the meantime.",
+                            + " whatever was appended in the meantime."
+                            + " Pass 'nodeId' to read only one Pipeline step's output instead of the whole build;"
+                            + " use getFlowNodes to discover node IDs.",
             annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
     public BuildLogResponse getBuildLog(
             @ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
@@ -88,9 +92,14 @@ public class BuildLogsExtension implements McpServerExtension {
                     Integer limit,
             @ToolParam(
                             description =
-                                    "Opaque cursor previously returned as 'nextCursor'. When set, reading resumes from that position; 'skip' is ignored and 'startLine', 'endLine' and 'totalLines' are reported as -1 (the cursor doesn't carry line numbers). The cursor is tied to the (job, buildNumber) it was issued for; passing it for a different build is rejected as invalid",
+                                    "Opaque cursor previously returned as 'nextCursor'. When set, reading resumes from that position; 'skip' is ignored and 'startLine', 'endLine' and 'totalLines' are reported as -1 (the cursor doesn't carry line numbers). The cursor is tied to the (job, buildNumber, nodeId) it was issued for; passing it for a different job, build or node is rejected as invalid",
                             required = false)
-                    String cursor) {
+                    String cursor,
+            @ToolParam(
+                            description =
+                                    "Pipeline node ID (optional, e.g. '7'). When set, only that node's own output is returned instead of the whole build log. Obtain IDs from getFlowNodes; nodes whose 'hasLog' is false return an empty result. Errors if the build is not a Pipeline run",
+                            required = false)
+                    String nodeId) {
         if (limit == null || limit == 0) {
             limit = 100;
         }
@@ -104,10 +113,10 @@ public class BuildLogsExtension implements McpServerExtension {
         return getBuildByNumberOrLast(jobFullName, buildNumber)
                 .map(build -> {
                     try {
-                        return getLogLines(build, cursorF, skipF, limitF);
-                    } catch (IllegalArgumentException e) {
-                        // Let bad-input errors (invalid or wrong-build cursor) bubble up so the caller
-                        // sees them; only unexpected failures get swallowed below.
+                        return getLogLines(resolveLogSource(build, nodeId), build.getCharset(), cursorF, skipF, limitF);
+                    } catch (IllegalArgumentException | IllegalStateException e) {
+                        // Bad input (wrong-scope cursor, unknown node, non-Pipeline build) and transient
+                        // state must reach the caller; only unexpected failures get swallowed below.
                         throw e;
                     } catch (Exception e) {
                         log.error("Error reading log for job {} build {}", jobFullName, buildNumber, e);
@@ -117,10 +126,52 @@ public class BuildLogsExtension implements McpServerExtension {
                 .orElse(null);
     }
 
+    /**
+     * The whole build when {@code nodeId} is null, otherwise that one node. A node carrying no log
+     * yields an empty source, so every read — including a cursor read — takes the same path. The lookup
+     * sits behind {@code PipelineLogUtil} so no workflow-api type appears in this class: the dependency
+     * is optional and this class must load without it.
+     */
+    private static LogSource resolveLogSource(Run<?, ?> run, String nodeId) {
+        if (nodeId == null || nodeId.isEmpty()) {
+            return LogSource.ofRun(run);
+        }
+        requirePipelineSupport();
+        return PipelineLogUtil.resolveNodeLogSource(run, nodeId);
+    }
+
+    /** Checked by name so this class carries no compile-time reference to it. */
+    private static final String PIPELINE_PROBE_CLASS = "org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner";
+
+    /**
+     * The JVM resolves constant-pool entries lazily, so {@code PipelineLogUtil} loads fine without
+     * workflow-api and only fails on the {@code instanceof FlowExecutionOwner$Executable} opening
+     * {@link PipelineLogUtil#resolveNodeLogSource}, as a {@link NoClassDefFoundError}.
+     *
+     * <p>That still reaches the client as a tool error rather than a transport failure —
+     * {@code McpToolWrapper} calls the tool through {@code Method.invoke}, which wraps anything the
+     * target throws, {@link Error} included, in an {@code InvocationTargetException} that its
+     * {@code catch (Exception)} does catch. What the caller gets is the root-cause message, which for a
+     * {@code NoClassDefFoundError} is a bare internal class name: true, and useless. Probing by name
+     * trades it for a message that names the missing plugins and the way to avoid needing them.
+     */
+    private static void requirePipelineSupport() {
+        try {
+            Class.forName(PIPELINE_PROBE_CLASS, false, BuildLogsExtension.class.getClassLoader());
+        } catch (ClassNotFoundException | LinkageError e) {
+            throw new IllegalArgumentException(
+                    "'nodeId' requires the Jenkins Pipeline plugins (workflow-api / workflow-job), which are"
+                            + " not installed on this controller. Omit 'nodeId' to read the whole build log.",
+                    e);
+        }
+    }
+
     @Tool(
             description =
                     "Search for log lines matching a pattern in a specific build or the last build of a Jenkins job. "
-                            + "Returns matching lines with their line numbers and context.",
+                            + "Returns matching lines with their line numbers and context."
+                            + " Pass 'nodeId' to search only one Pipeline step's output instead of the whole build;"
+                            + " use getFlowNodes to discover node IDs.",
             annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
     public SearchLogResponse searchBuildLog(
             @ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
@@ -143,7 +194,12 @@ public class BuildLogsExtension implements McpServerExtension {
             @ToolParam(
                             description = "Number of context lines to show before and after each match (default: 0)",
                             required = false)
-                    Integer contextLines) {
+                    Integer contextLines,
+            @ToolParam(
+                            description =
+                                    "Pipeline node ID (optional, e.g. '7'). When set, only that node's own output is searched instead of the whole build log. Obtain IDs from getFlowNodes; nodes whose 'hasLog' is false yield no matches. Errors if the build is not a Pipeline run",
+                            required = false)
+                    String nodeId) {
         if (pattern == null || pattern.isEmpty()) {
             throw new IllegalArgumentException("Search pattern cannot be null or empty");
         }
@@ -160,8 +216,10 @@ public class BuildLogsExtension implements McpServerExtension {
             contextLines = 0;
         }
 
-        // Enforce limits
-        maxMatches = Math.min(maxMatches, 1000);
+        // Enforce limits. maxMatches needs the floor as much as the ceiling: at 0 the budget is full
+        // before the first line is scanned, so the first hit only flips hasMoreMatches and then stops
+        // the read, reporting "no matches, but there are more" for a pattern that is right there.
+        maxMatches = Math.min(Math.max(maxMatches, 1), 1000);
         contextLines = Math.min(Math.max(contextLines, 0), 10);
 
         final boolean useRegexF = useRegex;
@@ -172,7 +230,17 @@ public class BuildLogsExtension implements McpServerExtension {
         return getBuildByNumberOrLast(jobFullName, buildNumber)
                 .map(build -> {
                     try {
-                        return searchLogLines(build, pattern, useRegexF, ignoreCaseF, maxMatchesF, contextLinesF);
+                        return searchLogLines(
+                                resolveLogSource(build, nodeId),
+                                build.getCharset(),
+                                pattern,
+                                useRegexF,
+                                ignoreCaseF,
+                                maxMatchesF,
+                                contextLinesF);
+                    } catch (IllegalArgumentException | IllegalStateException e) {
+                        // Bad input and transient state must reach the caller; see getBuildLog.
+                        throw e;
                     } catch (Exception e) {
                         log.error("Error searching log for job {} build {}", jobFullName, buildNumber, e);
                         return null;
@@ -182,21 +250,26 @@ public class BuildLogsExtension implements McpServerExtension {
     }
 
     private SearchLogResponse searchLogLines(
-            Run<?, ?> run, String pattern, boolean useRegex, boolean ignoreCase, int maxMatches, int contextLines)
+            LogSource src,
+            Charset charset,
+            String pattern,
+            boolean useRegex,
+            boolean ignoreCase,
+            int maxMatches,
+            int contextLines)
             throws Exception {
         log.trace(
-                "searchLogLines for run {}/{} called with pattern '{}', useRegex={}, ignoreCase={}",
-                run.getParent().getName(),
-                run.getDisplayName(),
+                "searchLogLines for {} called with pattern '{}', useRegex={}, ignoreCase={}",
+                src.scopeKey(),
                 pattern,
                 useRegex,
                 ignoreCase);
 
-        try (SearchingOutputStream sos = new SearchingOutputStream(
-                pattern, useRegex, ignoreCase, maxMatches, contextLines, true, run.getCharset())) {
+        try (SearchingOutputStream sos =
+                new SearchingOutputStream(pattern, useRegex, ignoreCase, maxMatches, contextLines, true, charset)) {
             PlainTextConsoleOutputStream plain = new PlainTextConsoleOutputStream(sos);
             try {
-                drain(run.getLogText(), 0L, plain);
+                drain(src.text(), 0L, plain);
                 plain.forceEol();
                 sos.forceEol();
             } catch (StopReading ignored) {
@@ -213,28 +286,22 @@ public class BuildLogsExtension implements McpServerExtension {
         }
     }
 
-    private BuildLogResponse getLogLines(Run<?, ?> run, String cursor, long skip, int limit) throws IOException {
-        log.trace(
-                "getLogLines for run {}/{} called with cursor {}, skip {}, limit {}",
-                run.getParent().getName(),
-                run.getDisplayName(),
-                cursor,
-                skip,
-                limit);
-        int maxLimit = SystemProperties.getInteger(BuildLogsExtension.class.getName() + ".limit.max", 10000);
+    private BuildLogResponse getLogLines(LogSource src, Charset charset, String cursor, long skip, int limit)
+            throws IOException {
+        log.trace("getLogLines for {} called with cursor {}, skip {}, limit {}", src.scopeKey(), cursor, skip, limit);
+        int maxLimit = maxLogLines();
         if (Math.abs((long) limit) > maxLimit) {
             log.warn("Limit {} is too large, using the default max limit {}", limit, maxLimit);
         }
         int absLimit = (int) Math.min(Math.abs((long) limit), maxLimit);
         limit = limit < 0 ? -absLimit : absLimit;
-
-        Charset charset = run.getCharset();
+        skip = Math.max(skip, -MAX_LOOKBACK);
 
         // Cursor: jump to the byte offset and ignore skip. We don't know the line numbers at an
         // arbitrary offset, so startLine/endLine/totalLines all come back as -1.
         if (cursor != null && !cursor.isEmpty()) {
-            long byteOffset = decodeCursor(cursor, run.getNumber());
-            return readForward(run, charset, byteOffset, 0L, absLimit, false, 0L);
+            long byteOffset = decodeCursor(cursor, src.scopeKey());
+            return readForward(src, charset, byteOffset, 0L, absLimit, false, 0L);
         }
 
         // Forward read: we can stop as soon as we have enough lines, so we don't bother counting the
@@ -250,28 +317,46 @@ public class BuildLogsExtension implements McpServerExtension {
                 resolvedSkip = skip;
                 resolvedLimit = absLimit;
             }
-            return readForward(run, charset, 0L, resolvedSkip, resolvedLimit, true, resolvedSkip);
+            return readForward(src, charset, 0L, resolvedSkip, resolvedLimit, true, resolvedSkip);
         }
 
         // Tail read (negative skip, or skip == 0 with negative limit): we need the total to resolve
         // the window, so we make one full pass. totalLines is exact in this branch.
-        return readTail(run, charset, skip, limit, maxLimit);
+        return readTail(src, charset, skip, limit, maxLimit);
     }
 
     /**
-     * Cursor format: base64url of {@code "<buildNumber>:<byteOffset>"}. The build number is in there so
-     * a cursor accidentally replayed against a different build is rejected up front rather than handing
-     * back unrelated bytes from another build's log.
+     * Furthest back an end-relative read may start. {@code skip} arrives unvalidated from JSON, and the
+     * tail arithmetic ({@code -skip + |limit|}, {@code total + skip - limit}) overflows near
+     * {@link Long#MIN_VALUE} — which lands on {@code hasMoreContent=true} with no cursor and no lines,
+     * the same dead end the retained-window fix exists to prevent. Starting further back than any log
+     * can reach is the same request as "from the start", so saturate rather than reject.
      */
-    private static String encodeCursor(int buildNumber, long byteOffset) {
-        String raw = buildNumber + ":" + byteOffset;
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(raw.getBytes(StandardCharsets.US_ASCII));
+    private static final long MAX_LOOKBACK = 1L << 40;
+
+    /**
+     * Floored at 1: {@code Integer.decode} accepts {@code "-5"} rather than falling back to the default,
+     * and a negative ceiling inverts {@code limit}'s sign, rerouting a forward read into the tail path.
+     */
+    private static int maxLogLines() {
+        return Math.max(1, SystemProperties.getInteger(BuildLogsExtension.class.getName() + ".limit.max", 10000));
     }
 
-    private static long decodeCursor(String cursor, int expectedBuildNumber) {
+    /**
+     * Cursor format: base64url of {@code "<byteOffset>:<scopeKey>"}. The scope key identifies job, build
+     * and (when node-scoped) node, so a cursor replayed elsewhere is rejected rather than returning
+     * unrelated bytes, possibly mid-line. Offset first keeps the split unambiguous, so job names may
+     * contain colons.
+     */
+    private static String encodeCursor(String scopeKey, long byteOffset) {
+        String raw = byteOffset + ":" + scopeKey;
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(raw.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static long decodeCursor(String cursor, String expectedScopeKey) {
         String raw;
         try {
-            raw = new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.US_ASCII);
+            raw = new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8);
         } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException("Invalid cursor", e);
         }
@@ -279,20 +364,19 @@ public class BuildLogsExtension implements McpServerExtension {
         if (sep <= 0) {
             throw new IllegalArgumentException("Invalid cursor");
         }
-        int buildNumber;
         long byteOffset;
         try {
-            buildNumber = Integer.parseInt(raw, 0, sep, 10);
-            byteOffset = Long.parseLong(raw, sep + 1, raw.length(), 10);
+            byteOffset = Long.parseLong(raw, 0, sep, 10);
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException("Invalid cursor", e);
         }
         if (byteOffset < 0) {
             throw new IllegalArgumentException("Invalid cursor: negative byte offset");
         }
-        if (buildNumber != expectedBuildNumber) {
-            throw new IllegalArgumentException("Cursor was issued for build #" + buildNumber + ", but build #"
-                    + expectedBuildNumber + " was requested");
+        String scopeKey = raw.substring(sep + 1);
+        if (!scopeKey.equals(expectedScopeKey)) {
+            throw new IllegalArgumentException(
+                    "Cursor was issued for " + scopeKey + ", but " + expectedScopeKey + " was requested");
         }
         return byteOffset;
     }
@@ -303,7 +387,7 @@ public class BuildLogsExtension implements McpServerExtension {
      * know there's more). Saves us from reading the whole log just to serve a "head" request.
      */
     private BuildLogResponse readForward(
-            Run<?, ?> run,
+            LogSource src,
             Charset charset,
             long startByte,
             long skip,
@@ -311,12 +395,12 @@ public class BuildLogsExtension implements McpServerExtension {
             boolean knowLineNumbers,
             long baseLine)
             throws IOException {
-        AnnotatedLargeText<?> logText = run.getLogText();
+        AnnotatedLargeText<?> logText = src.text();
         long end = logText.length();
         if (startByte >= end) {
-            // Cursor is already at the end. If the build is still going, hand back the same offset so
-            // the caller can poll for what gets appended next; if it's done, there's nothing left.
-            String nextCursor = run.isLogUpdated() ? encodeCursor(run.getNumber(), startByte) : null;
+            // Cursor is already at the end. If more output may still arrive, hand back the same offset
+            // so the caller can poll for what gets appended next; if it's done, there's nothing left.
+            String nextCursor = mayHaveMore(src, logText, startByte) ? encodeCursor(src.scopeKey(), startByte) : null;
             return new BuildLogResponse(List.of(), false, -1, -1, -1, nextCursor);
         }
         long start = System.currentTimeMillis();
@@ -329,10 +413,11 @@ public class BuildLogsExtension implements McpServerExtension {
         }
         List<String> lines = collector.lines;
         boolean more = collector.hasMoreContent;
+        long consumedEnd = startByte + collector.rawBytesConsumed;
         long nextByteOffset = more
                 ? startByte + collector.captureEndOffset
-                : (run.isLogUpdated() ? startByte + collector.rawBytesConsumed : -1);
-        String nextCursor = nextByteOffset >= 0 ? encodeCursor(run.getNumber(), nextByteOffset) : null;
+                : (mayHaveMore(src, logText, consumedEnd) ? consumedEnd : -1);
+        String nextCursor = nextByteOffset >= 0 ? encodeCursor(src.scopeKey(), nextByteOffset) : null;
         long startLine = !knowLineNumbers || lines.isEmpty() ? -1 : baseLine + 1;
         long endLine = !knowLineNumbers || lines.isEmpty() ? -1 : baseLine + lines.size();
         if (log.isDebugEnabled()) {
@@ -353,7 +438,7 @@ public class BuildLogsExtension implements McpServerExtension {
      * fall inside the requested window in a bounded ring buffer. Replaces the previous count-then-
      * extract approach (two full passes) with a single pass.
      */
-    private BuildLogResponse readTail(Run<?, ?> run, Charset charset, long skip, int limit, int maxLimit)
+    private BuildLogResponse readTail(LogSource src, Charset charset, long skip, int limit, int maxLimit)
             throws IOException {
         long theoretical;
         if (skip == 0) {
@@ -371,7 +456,7 @@ public class BuildLogsExtension implements McpServerExtension {
         }
         int capacity = (int) Math.max(1, Math.min(theoretical, maxLimit));
 
-        AnnotatedLargeText<?> logText = run.getLogText();
+        AnnotatedLargeText<?> logText = src.text();
         long start = System.currentTimeMillis();
         TailLineCollector collector = new TailLineCollector(charset, capacity);
         drain(logText, 0L, collector);
@@ -380,13 +465,36 @@ public class BuildLogsExtension implements McpServerExtension {
         long endOfSnapshot = collector.rawBytesConsumed;
 
         long resolvedSkip;
-        int resolvedLimit = Math.abs(limit);
+        // Widened like the arithmetic above: getLogLines has already clamped limit into
+        // [-maxLimit, maxLimit], but that is two frames away, and unwidened Math.abs(Integer.MIN_VALUE)
+        // stays negative rather than failing loudly.
+        int resolvedLimit = (int) Math.abs((long) limit);
         if (skip == 0) {
             resolvedSkip = Math.max(0, total - resolvedLimit);
         } else if (limit > 0) {
             resolvedSkip = Math.max(0, total + skip);
         } else {
             resolvedSkip = Math.max(0, total + skip - resolvedLimit);
+        }
+        // The ring kept only the trailing `capacity` lines, so a window clamped by maxLimit can start
+        // inside the evicted region. Sliding it forward to whatever we happen to hold would answer a
+        // different question than the one asked, and returning nothing strands the caller, so pay for a
+        // second pass and read the window as requested. Only reachable when the lookback the caller
+        // asked for exceeds the maxLimit ceiling, so the common tail read still costs one pass.
+        long earliestRetained = Math.max(0, total - capacity);
+        if (resolvedSkip < earliestRetained) {
+            // Logged at INFO, not DEBUG: this is the one path that reads the whole log twice, and an
+            // operator watching getBuildLog latency on a large build has nothing else to go on.
+            log.info(
+                    "End-relative window starts at line {} but only the last {} of {} lines were retained;"
+                            + " re-reading that window in a second pass over the log",
+                    resolvedSkip + 1,
+                    capacity,
+                    total);
+            BuildLogResponse exact = readForward(src, charset, 0L, resolvedSkip, resolvedLimit, true, resolvedSkip);
+            // readForward never counts the total; reuse the count from the pass above. On a running
+            // build that count describes the earlier snapshot, same as any other end-relative read.
+            return exact.withTotalLines(total);
         }
         long endExclusive = Math.min(resolvedSkip + resolvedLimit, total);
 
@@ -399,10 +507,10 @@ public class BuildLogsExtension implements McpServerExtension {
             }
         }
         boolean more = endExclusive < total;
-        // If we're caught up but the build is still going, return a cursor pointing at the end of the
-        // snapshot so the caller can come back later and pick up whatever was written in between.
-        long nextByteOffset = more ? lastEndOffset : (run.isLogUpdated() ? endOfSnapshot : -1);
-        String nextCursor = nextByteOffset >= 0 ? encodeCursor(run.getNumber(), nextByteOffset) : null;
+        // If we're caught up but more output may still arrive, return a cursor pointing at the end of
+        // the snapshot so the caller can come back later and pick up whatever was written in between.
+        long nextByteOffset = more ? lastEndOffset : (mayHaveMore(src, logText, endOfSnapshot) ? endOfSnapshot : -1);
+        String nextCursor = nextByteOffset >= 0 ? encodeCursor(src.scopeKey(), nextByteOffset) : null;
         long startLine = lines.isEmpty() ? -1 : resolvedSkip + 1;
         long endLine = lines.isEmpty() ? -1 : endExclusive;
         if (log.isDebugEnabled()) {
@@ -416,6 +524,21 @@ public class BuildLogsExtension implements McpServerExtension {
                     System.currentTimeMillis() - start);
         }
         return new BuildLogResponse(lines, more, startLine, endLine, total, nextCursor);
+    }
+
+    /**
+     * Whether a resume cursor is warranted, i.e. whether bytes beyond {@code consumedEnd} exist or could
+     * still appear.
+     *
+     * <p>Both halves matter, and both are evaluated <em>after</em> the read rather than when the {@link
+     * LogSource} was built. Liveness alone, read too early, keeps saying "still going" for a build that
+     * finished mid-read, handing back a cursor that can never yield anything. Liveness alone, read too
+     * late, misses output written between the snapshot and the source going quiet — the log is complete
+     * but we never saw its tail. Re-checking the length closes that second gap, so the cursor is dropped
+     * only when the source is finished <em>and</em> we read all of it.
+     */
+    private static boolean mayHaveMore(LogSource src, AnnotatedLargeText<?> logText, long consumedEnd) {
+        return src.live() || consumedEnd < logText.length();
     }
 
     /**
@@ -692,7 +815,18 @@ public class BuildLogsExtension implements McpServerExtension {
             long startLine,
             long endLine,
             long totalLines,
-            String nextCursor) {}
+            String nextCursor) {
+
+        /**
+         * The same response carrying an exact line count, for the one path that reads a window with
+         * {@link #readForward} (which reports {@code -1}) but already knows the total from an earlier
+         * counting pass. A copy method rather than an open-coded rebuild so a new field cannot be
+         * silently dropped here.
+         */
+        BuildLogResponse withTotalLines(long totalLines) {
+            return new BuildLogResponse(lines, hasMoreContent, startLine, endLine, totalLines, nextCursor);
+        }
+    }
 
     public record SearchLogResponse(
             String pattern,

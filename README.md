@@ -405,8 +405,9 @@ The plugin provides the following built-in tools for interacting with Jenkins:
 #### Build Information
 - `getBuild`: Retrieve a specific build or the last build of a Jenkins job.
 - `updateBuild`: Update build display name and/or description.
-- `getBuildLog`: Retrieve log lines with pagination for a specific build or the last build. Supports forward reads, end-relative reads (negative `skip`/`limit`), and cursor pagination: every response carries a `nextCursor` you can pass back as `cursor` to keep reading without re-scanning from the top. The cursor is tied to the `(job, buildNumber)` it was issued for and is rejected if used against a different build. `totalLines` is exact for end-relative reads and `-1` for forward/cursor reads (which stop as soon as they have enough lines, so the total is never computed). Reads a non-blocking snapshot, so it returns promptly even while a build is still running. If `nextCursor` is set but `hasMoreContent` is false, you've read everything written so far and the build is still going; hold onto the cursor and call again later to pick up whatever was appended in between.
-- `searchBuildLog`: Search for log lines matching a pattern (string or regex) in build logs. Reads a non-blocking snapshot (returns promptly for in-progress builds) and stops scanning early once `maxMatches` is reached.
+- `getBuildLog`: Retrieve log lines with pagination for a specific build or the last build. Supports forward reads, end-relative reads (negative `skip`/`limit`), and cursor pagination: every response carries a `nextCursor` you can pass back as `cursor` to keep reading without re-scanning from the top. The cursor is tied to the `(job, buildNumber, nodeId)` it was issued for and is rejected if used against a different job, build or node. `totalLines` is exact for end-relative reads and `-1` for forward/cursor reads (which stop as soon as they have enough lines, so the total is never computed). Reads a non-blocking snapshot, so it returns promptly even while a build is still running. If `nextCursor` is set but `hasMoreContent` is false, you've read everything written so far and the build is still going; hold onto the cursor and call again later to pick up whatever was appended in between. Pass the optional `nodeId` to read a single Pipeline step's output instead of the whole build log (see [Reading a single Pipeline step's log](#reading-a-single-pipeline-steps-log)).
+- `searchBuildLog`: Search for log lines matching a pattern (string or regex) in build logs. Reads a non-blocking snapshot (returns promptly for in-progress builds) and stops scanning early once `maxMatches` is reached. Accepts the same optional `nodeId` as `getBuildLog` to restrict the search to one Pipeline step.
+- `getFlowNodes`: List the nodes (steps and blocks) of a Pipeline build's flow graph in execution order. Each node reports `id`, `displayName`, `type`, `status`, `parentIds`, `enclosingIds`, `stageName`, `hasLog`, and `errorMessage`. Use it to discover the `nodeId` values accepted by `getBuildLog` and `searchBuildLog`. Optional `stageName` and `onlyWithLogs` filters, plus `skip`/`limit` pagination (default 100 nodes, max 1000) — large Pipelines hold thousands of nodes, so the response also carries `matched`, `totalInGraph`, and `hasMore` so you can tell how much your filters narrowed things. Fails for non-Pipeline jobs.
 - `rebuildBuild`: Re-run a build with the same parameters. For Pipeline jobs with Replay support, uses the original script; for other parameterized jobs, schedules a new build with the same parameters. Optional `buildNumber`; defaults to the last build. Returns the queue item for the new build.
 - `getReplayScripts`: Return the main script and loaded scripts of a replayable Pipeline build. Use this to inspect or modify script before calling `replayBuild`. Fails for non-Pipeline jobs. Optional `buildNumber`; defaults to the last build.
 - `replayBuild`: Run a Pipeline build again with a modified script. Provide `mainScript` (required) and optionally `loadedScripts`. Optional `buildNumber`; defaults to the last build. Fails if the build is not replayable or replay is not allowed (e.g. permissions or sandbox).
@@ -427,6 +428,65 @@ The plugin provides the following built-in tools for interacting with Jenkins:
 Each tool accepts specific parameters to customize its behavior. For detailed usage instructions and parameter descriptions, refer to the API documentation or use the MCP introspection capabilities.
 
 To use these tools, connect to the MCP server endpoint and make tool calls using your MCP client implementation.
+
+### Reading a single Pipeline step's log
+
+A multi-stage Pipeline's console log mixes every stage's output together, so answering "what failed in
+the Test stage?" means paging through everything else too. `getBuildLog` and `searchBuildLog` both take
+an optional `nodeId` that scopes the read to one node of the Pipeline flow graph.
+
+Node IDs are not guessable, so start with `getFlowNodes`:
+
+```json
+{ "jobFullName": "my-pipeline", "stageName": "Test", "onlyWithLogs": true }
+```
+
+```json
+{
+  "nodes": [
+    { "id": "8",  "displayName": "Stage : Start",  "type": "StepStartNode", "status": "SUCCESS",
+      "stageName": "Test", "hasLog": true,  "enclosingIds": ["2"],          "errorMessage": null },
+    { "id": "10", "displayName": "Print Message", "type": "StepAtomNode",  "status": "SUCCESS",
+      "stageName": "Test", "hasLog": true,  "enclosingIds": ["9","8","2"], "errorMessage": null }
+  ],
+  "skip": 0, "matched": 2, "totalInGraph": 13, "hasMore": false
+}
+```
+
+Then pass an `id` through as `nodeId`:
+
+```json
+{ "jobFullName": "my-pipeline", "nodeId": "10", "limit": 100 }
+```
+
+Notes:
+
+- **Go by `hasLog`, not by node type.** Many block boundary nodes (`node` wrappers, block ends) delegate
+  their output to the steps nested inside them and return an empty result — not an error. Others do own
+  output, including the outer `Stage : Start` in the example above, so a node's kind does not tell you
+  whether it is worth reading. Use `onlyWithLogs: true` to list just the ones that are.
+- **A stage spans several nodes.** To assemble a whole stage's output, filter by `stageName` and read each
+  node with `hasLog: true`.
+- **Filter rather than page.** Graphs routinely reach thousands of nodes, so `getFlowNodes` returns 100 at
+  a time (max 1000). `matched` versus `totalInGraph` tells you how much your filters narrowed the graph;
+  if `matched` is still huge, add `stageName` or `onlyWithLogs` instead of walking `skip` forward.
+- **Cursors are scoped.** A `nextCursor` from one node is rejected against a different node, build, or job,
+  so paginating loops cannot silently splice unrelated logs together.
+- **`errorMessage` pinpoints failures.** Combined with `status: "FAILED"`, it usually tells you which node
+  to read without fetching any log at all.
+- Both tools error if `nodeId` is supplied for a non-Pipeline build; omit it to read the whole log.
+
+### Why scope by node
+
+An end-relative read (negative `skip`/`limit`) has to make a full pass over the log to count lines before
+it can resolve the requested window, so its cost tracks the size of the whole build log. On builds with
+very large logs that pass dominates the call. Supplying `nodeId` changes what gets scanned — one node's
+byte ranges instead of every line in the build — so the cost tracks the size of that step's output rather
+than the build's.
+
+The secondary benefit is response size: one step's output instead of a whole build's, which matters when
+the consumer is an LLM paying per token.
+
 ### Enhanced Parameter Support
 
 The MCP Server Plugin now provides comprehensive support for Jenkins parameters:
