@@ -44,6 +44,7 @@ import hudson.model.ParametersDefinitionProperty;
 import hudson.model.Queue;
 import hudson.model.Run;
 import hudson.model.User;
+import hudson.security.AccessControlled;
 import hudson.slaves.Cloud;
 import io.jenkins.plugins.mcp.server.McpServerExtension;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
@@ -309,7 +310,19 @@ public class DefaultMcpServer implements McpServerExtension {
             treePruneSupported = true,
             annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
     public QueueItem getQueueItem(@ToolParam(description = "The queue item id") long id) {
-        return Jenkins.get().getQueue().getItem(id);
+        Queue.Item item = Jenkins.get().getQueue().getItem(id);
+        if (item == null) {
+            return null;
+        }
+        // Only expose the queue item if the caller can read the job behind it. Core hides this
+        // data the same way in Queue.Item#getApi(); we serialize the item directly, so we have to
+        // apply the check here or we leak details of jobs the caller cannot see.
+        if (item.task instanceof AccessControlled ac) {
+            ac.checkPermission(Item.READ);
+            return item;
+        }
+        // Task isn't access-controlled: play it safe and hide it, like core does.
+        return null;
     }
 
     @Tool(
