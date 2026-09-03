@@ -46,4 +46,11 @@ public @interface ToolParam {
      * The description of the tool argument.
      */
     String description() default "";
+
+    /**
+     * Extra JSON Schema to use as this parameter's {@code additionalProperties}. Handy for a {@link java.util.Map}
+     * parameter: it limits the values while still allowing any key. Must be a JSON object or a boolean. Leave it
+     * empty (the default) to keep the generated schema as-is; bad JSON fails when the tool is registered.
+     */
+    String additionalProperties() default "";
 }

@@ -484,6 +484,26 @@ public class MyCustomMcpExtension implements McpServerExtension {
 }
 ```
 
+#### Constraining parameter values
+
+For an object-shaped parameter (typically a `Map`), you can advertise a JSON Schema constraint on the
+*values* while keeping the keys open, using `@ToolParam(additionalProperties = "<json>")`. The value is a
+raw JSON sub-schema — a JSON object or a boolean — emitted verbatim as the parameter's `additionalProperties`:
+
+```java
+@Tool(description = "My custom tool")
+public String myCustomTool(
+        @ToolParam(
+                description = "Extra options",
+                required = false,
+                additionalProperties = "{\"type\":[\"string\",\"boolean\",\"integer\",\"number\",\"array\"]}")
+        Map<String, Object> options) {
+    // Tool implementation
+}
+```
+
+Invalid JSON, or a value that isn't a JSON object or boolean, fails fast when the tool is registered.
+
 ### Overriding a Built-in Tool
 
 You can replace a built-in tool (or any tool contributed by another plugin) with your own

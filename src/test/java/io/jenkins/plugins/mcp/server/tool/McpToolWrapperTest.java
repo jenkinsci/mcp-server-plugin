@@ -26,11 +26,16 @@
 
 package io.jenkins.plugins.mcp.server.tool;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
 import io.jenkins.plugins.mcp.server.annotation.Tool;
+import io.jenkins.plugins.mcp.server.annotation.ToolParam;
 import java.util.Map;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 class McpToolWrapperTest {
@@ -65,6 +70,63 @@ class McpToolWrapperTest {
         System.out.println(output);
     }
 
+    @Test
+    void additionalPropertiesOverridesGeneratedValueSchema() throws Exception {
+        McpToolWrapper wrapper = new McpToolWrapper(
+                objectMapper, target, MockMethods.class.getDeclaredMethod("openMapParam", Map.class));
+
+        JsonNode parametersSchema = objectMapper
+                .readTree(wrapper.generateForMethodInput())
+                .path("properties")
+                .path("parameters");
+
+        // the annotation value shows up as-is under additionalProperties
+        JsonNode expected =
+                objectMapper.readTree("{\"type\":[\"string\",\"boolean\",\"integer\",\"number\",\"array\"]}");
+        assertThat(parametersSchema.path("additionalProperties")).isEqualTo(expected);
+        // no fixed properties, so any key is still allowed
+        assertThat(parametersSchema.path("properties").isMissingNode()).isTrue();
+    }
+
+    @Test
+    void additionalPropertiesAcceptsBoolean() throws Exception {
+        McpToolWrapper wrapper = new McpToolWrapper(
+                objectMapper, target, MockMethods.class.getDeclaredMethod("booleanMapParam", Map.class));
+
+        JsonNode additionalProperties = objectMapper
+                .readTree(wrapper.generateForMethodInput())
+                .path("properties")
+                .path("parameters")
+                .path("additionalProperties");
+
+        // a boolean is valid here too and passes straight through
+        assertThat(additionalProperties.isBoolean()).isTrue();
+        assertThat(additionalProperties).isEqualTo(objectMapper.readTree("false"));
+    }
+
+    @Test
+    void malformedAdditionalPropertiesFailsFast() throws Exception {
+        McpToolWrapper wrapper =
+                new McpToolWrapper(objectMapper, target, MockMethods.class.getDeclaredMethod("badMapParam", Map.class));
+
+        assertThatThrownBy(() -> wrapper.generateForMethodInput())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("badMapParam")
+                .hasMessageContaining("parameters")
+                .hasCauseInstanceOf(tools.jackson.core.JacksonException.class);
+    }
+
+    @Test
+    void nonObjectOrBooleanAdditionalPropertiesFailsFast() throws Exception {
+        McpToolWrapper wrapper = new McpToolWrapper(
+                objectMapper, target, MockMethods.class.getDeclaredMethod("wrongTypeMapParam", Map.class));
+
+        assertThatThrownBy(() -> wrapper.generateForMethodInput())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("must be a JSON object or boolean")
+                .hasMessageContaining("wrongTypeMapParam");
+    }
+
     public static class MockMethods {
         @Tool
         public boolean boolMethod() {
@@ -84,6 +146,31 @@ class McpToolWrapperTest {
         @Tool
         public ComplexTypeClass complexMethodA() {
             return new ComplexTypeClass(true, Map.of("result", "ok"), 200);
+        }
+
+        @Tool
+        public boolean openMapParam(
+                @ToolParam(
+                                additionalProperties =
+                                        "{\"type\":[\"string\",\"boolean\",\"integer\",\"number\",\"array\"]}")
+                        Map<String, Object> parameters) {
+            return true;
+        }
+
+        @Tool
+        public boolean booleanMapParam(@ToolParam(additionalProperties = "false") Map<String, Object> parameters) {
+            return true;
+        }
+
+        @Tool
+        public boolean badMapParam(
+                @ToolParam(additionalProperties = "{not valid json") Map<String, Object> parameters) {
+            return true;
+        }
+
+        @Tool
+        public boolean wrongTypeMapParam(@ToolParam(additionalProperties = "42") Map<String, Object> parameters) {
+            return true;
         }
 
         public record ComplexType(boolean success, Map<String, Object> data, int code) {}
