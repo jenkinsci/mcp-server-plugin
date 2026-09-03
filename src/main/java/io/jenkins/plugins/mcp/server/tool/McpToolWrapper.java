@@ -167,6 +167,16 @@ public class McpToolWrapper {
         return null;
     }
 
+    @Nullable
+    private static String getMethodParameterAdditionalProperties(Method method, int index) {
+        Parameter parameter = method.getParameters()[index];
+        var toolParamAnnotation = parameter.getAnnotation(ToolParam.class);
+        if (toolParamAnnotation != null && StringUtils.hasText(toolParamAnnotation.additionalProperties())) {
+            return toolParamAnnotation.additionalProperties();
+        }
+        return null;
+    }
+
     private static String toJson(Object item) {
         return toJson(item, null);
     }
@@ -199,6 +209,25 @@ public class McpToolWrapper {
             String parameterDescription = getMethodParameterDescription(method, i);
             if (StringUtils.hasText(parameterDescription)) {
                 parameterNode.put(DESCRIPTION, parameterDescription);
+            }
+            String additionalProperties = getMethodParameterAdditionalProperties(method, i);
+            if (StringUtils.hasText(additionalProperties)) {
+                try {
+                    var additionalPropertiesNode = objectMapper.readTree(additionalProperties);
+                    // JSON Schema only allows an object or a boolean here
+                    if (!additionalPropertiesNode.isObject() && !additionalPropertiesNode.isBoolean()) {
+                        throw new IllegalStateException("@ToolParam additionalProperties for tool '"
+                                + method.getName() + "' parameter '" + parameterName
+                                + "' must be a JSON object or boolean, but was: " + additionalProperties);
+                    }
+                    // replace the generated additionalProperties with the annotation's constraint
+                    parameterNode.set("additionalProperties", additionalPropertiesNode);
+                } catch (tools.jackson.core.JacksonException e) {
+                    throw new IllegalStateException(
+                            "Invalid @ToolParam additionalProperties JSON for tool '" + method.getName()
+                                    + "' parameter '" + parameterName + "': " + additionalProperties,
+                            e);
+                }
             }
             properties.set(parameterName, parameterNode);
         }
