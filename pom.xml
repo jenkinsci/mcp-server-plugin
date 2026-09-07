@@ -168,7 +168,7 @@
     <dependency>
       <groupId>org.jenkins-ci.plugins</groupId>
       <artifactId>junit</artifactId>
-      <version>1403.vd9d1413fd205</version>
+      <version>1425.v9c7318dca_96d</version>
       <optional>true</optional>
     </dependency>
     <dependency>
