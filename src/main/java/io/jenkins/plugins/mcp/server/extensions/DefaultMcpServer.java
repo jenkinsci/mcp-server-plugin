@@ -51,6 +51,8 @@ import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
 import io.jenkins.plugins.mcp.server.tool.JenkinsMcpContext;
 import jakarta.annotation.Nullable;
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -59,6 +61,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import jenkins.model.Jenkins;
+import jenkins.model.ModifiableTopLevelItemGroup;
 import jenkins.model.ParameterizedJobMixIn;
 import jenkins.model.queue.QueueItem;
 import lombok.AllArgsConstructor;
@@ -440,5 +443,44 @@ public class DefaultMcpServer implements McpServerExtension {
         }
         Queue.Item item = replayAction.run2(mainScript, scriptsToUse);
         return item != null ? (QueueItem) item : null;
+    }
+
+    @Tool(
+            description = "Create a new Jenkins pipeline job with the provided script",
+            annotations = @Tool.Annotations(readOnlyHint = false, destructiveHint = true))
+    @SneakyThrows
+    public String createPipeline(
+            @ToolParam(description = "Name (or full path) of the pipeline to create") String jobName,
+            @ToolParam(description = "The Jenkins Declarative or Scripted Pipeline script") String pipelineScript) {
+        var jenkins = Jenkins.get();
+        int lastSlash = jobName.lastIndexOf('/');
+        ModifiableTopLevelItemGroup parent = jenkins;
+        String name = jobName;
+        if (lastSlash != -1) {
+            String parentName = jobName.substring(0, lastSlash);
+            name = jobName.substring(lastSlash + 1);
+            Item parentItem = jenkins.getItemByFullName(parentName);
+            if (parentItem instanceof ModifiableTopLevelItemGroup) {
+                parent = (ModifiableTopLevelItemGroup) parentItem;
+            } else {
+                throw new IllegalArgumentException(
+                        "Parent folder '" + parentName + "' does not exist or cannot contain jobs.");
+            }
+        }
+
+        if (((ItemGroup<?>) parent).getItem(name) != null) {
+            throw new IllegalArgumentException("A job with name '" + jobName + "' already exists.");
+        }
+
+        String xml = "<?xml version='1.1' encoding='UTF-8'?>\n" + "<flow-definition plugin=\"workflow-job\">\n"
+                + "  <definition class=\"org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition\" plugin=\"workflow-cps\">\n"
+                + "    <script>"
+                + hudson.Util.xmlEscape(pipelineScript) + "</script>\n" + "    <sandbox>true</sandbox>\n"
+                + "  </definition>\n"
+                + "</flow-definition>";
+
+        Item createdJob =
+                parent.createProjectFromXML(name, new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+        return jenkins.getRootUrl() + createdJob.getUrl();
     }
 }

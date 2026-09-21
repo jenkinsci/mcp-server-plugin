@@ -377,6 +377,7 @@ For clients that prefer stateless communication without session management:
 The plugin provides the following built-in tools for interacting with Jenkins:
 
 #### Job Management
+- `createPipeline`: Create a new Jenkins pipeline job. Required parameters: `jobName` (name or full path of the pipeline) and `pipelineScript` (Jenkins pipeline script). If a job with the provided name already exists, an error is returned.
 - `getJob`: Get a Jenkins job by its full path.
 - `getJobs`: Get a paginated list of Jenkins jobs, sorted by name.
 - `triggerBuild`: Trigger a build of a job.
