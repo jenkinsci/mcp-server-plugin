@@ -76,6 +76,7 @@ public class DefaultMcpServer implements McpServerExtension {
 
     @Tool(
             description = "Get a specific build or the last build of a Jenkins job",
+            defaultTree = "number,url,result,building,timestamp,duration,displayName,description",
             annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
     public Run getBuild(
             @ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
@@ -89,6 +90,9 @@ public class DefaultMcpServer implements McpServerExtension {
 
     @Tool(
             description = "Get a Jenkins job by its full path",
+            defaultTree = "name,fullName,url,description,buildable,color,inQueue,"
+                    + "lastBuild[number,url,result,building,timestamp],"
+                    + "lastCompletedBuild[number,url,result],healthReport[score,description]",
             annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
     public Job getJob(
             @ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName) {
@@ -166,6 +170,7 @@ public class DefaultMcpServer implements McpServerExtension {
     @Tool(
             description =
                     "Get a paginated list of Jenkins jobs, sorted by name. Returns up to 'limit' jobs starting from the 'skip' index. If no jobs are available in the requested range, returns an empty list.",
+            defaultTree = "name,fullName,url,color,lastBuild[number,result,timestamp]",
             annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
     public List<Job> getJobs(
             @ToolParam(

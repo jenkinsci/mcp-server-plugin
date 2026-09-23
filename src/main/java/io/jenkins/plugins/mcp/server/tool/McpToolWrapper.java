@@ -244,10 +244,13 @@ public class McpToolWrapper {
 
         if (isTreePruneSupported()) {
             ObjectNode parameterNode = SUBTYPE_SCHEMA_GENERATOR.generateSchema(String.class);
-            parameterNode.put(
-                    DESCRIPTION,
-                    "Field selection expression using the Jenkins Remote REST API tree syntax.\n"
-                            + "Allows limiting returned fields and nested objects (for example executable[number,url]) to reduce response size, especially for polling workflows.");
+            var treeDescription = "Field selection expression using the Jenkins Remote REST API tree syntax.\n"
+                    + "Allows limiting returned fields and nested objects (for example executable[number,url]) to reduce response size, especially for polling workflows.";
+            var defaultTree = method.getAnnotation(Tool.class).defaultTree();
+            if (StringUtils.hasText(defaultTree)) {
+                treeDescription += "\nIf omitted, a compact default is used: " + defaultTree;
+            }
+            parameterNode.put(DESCRIPTION, treeDescription);
             properties.set("tree", parameterNode);
         }
 
@@ -394,6 +397,9 @@ public class McpToolWrapper {
             String pruneTreeExpress = "";
             if (isTreePruneSupported()) {
                 pruneTreeExpress = (String) args.get("tree");
+                if (!StringUtils.hasText(pruneTreeExpress)) {
+                    pruneTreeExpress = method.getAnnotation(Tool.class).defaultTree();
+                }
             }
             return toMcpResult(result, pruneTreeExpress);
 
