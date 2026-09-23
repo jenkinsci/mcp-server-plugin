@@ -67,6 +67,17 @@ public @interface Tool {
      * Any elements marked with @ExportedBean support tree pruning automatically.
      */
     boolean treePruneSupported() default false;
+
+    /**
+     * Permission ids (see {@link hudson.security.Permission#getId()}, e.g.
+     * {@code "hudson.model.Hudson.SystemRead"}) the caller must hold at least one of, or the tool is
+     * hidden and cannot be called. When Jenkins security is off, the tool is always available.
+     *
+     * <p>These are overall permissions, checked against the Jenkins root. Item-level permissions (like
+     * {@code Item.READ} on one folder or job) don't fit here and must be checked inside the tool method.
+     */
+    String[] permissions() default {};
+
     /**
      * To add some _meta content to the tool.
      */
