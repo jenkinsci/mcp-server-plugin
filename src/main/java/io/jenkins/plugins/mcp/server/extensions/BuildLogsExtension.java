@@ -83,7 +83,7 @@ public class BuildLogsExtension implements McpServerExtension {
                     Long skip,
             @ToolParam(
                             description =
-                                    "The number of lines to return (optional, if not provided, returns 100 lines), positive values return lines from the start, negative values return lines from the end",
+                                    "The number of lines to return (optional; if neither limit nor skip is provided, returns the LAST 100 lines — for CI logs errors are usually at the end; with skip set, defaults to 100 lines forward), positive values return lines from the start, negative values return lines from the end",
                             required = false)
                     Integer limit,
             @ToolParam(
@@ -92,7 +92,11 @@ public class BuildLogsExtension implements McpServerExtension {
                             required = false)
                     String cursor) {
         if (limit == null || limit == 0) {
-            limit = 100;
+            // With no explicit window at all, default to the TAIL of the log: for CI logs the
+            // interesting lines (errors, result) live at the end, while the head is checkout
+            // noise. When the caller positions the window via 'skip', keep the historical
+            // forward-reading default.
+            limit = (skip == null) ? -100 : 100;
         }
         if (skip == null) {
             skip = 0L;
