@@ -41,6 +41,7 @@ import com.github.victools.jsonschema.module.jackson.JacksonOption;
 import com.github.victools.jsonschema.module.jackson.JacksonSchemaModule;
 import com.github.victools.jsonschema.module.swagger2.Swagger2Module;
 import hudson.security.ACL;
+import hudson.security.Permission;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
 import io.jenkins.plugins.mcp.server.jackson.JenkinsExportedBeanModule;
@@ -108,10 +109,19 @@ public class McpToolWrapper {
 
     private final JsonMapper objectMapper;
 
+    private final List<Permission> requiredPermissions;
+
     public McpToolWrapper(JsonMapper objectMapper, Object target, Method method) {
         this.objectMapper = objectMapper;
         this.target = target;
         this.method = method;
+        var tool = method.getAnnotation(Tool.class);
+        this.requiredPermissions = ToolPermissions.resolve(tool != null ? tool.permissions() : null);
+    }
+
+    /** Permissions the caller needs (at least one) to see and use this tool; empty means everyone can. */
+    List<Permission> getRequiredPermissions() {
+        return requiredPermissions;
     }
 
     private static boolean isMethodParameterRequired(Method method, int index) {
@@ -345,6 +355,21 @@ public class McpToolWrapper {
                 var jenkinsMcpContext = JenkinsMcpContext.get()) {
             // need Jenkins.READ at least
             Jenkins.get().checkPermission(Jenkins.READ);
+            // plus any permission the tool itself requires
+            if (!ToolPermissions.isAllowed(authn, requiredPermissions)) {
+                log.debug("Denying tool call '{}': caller lacks a required permission", getToolName());
+                ToolResponse denied = new ToolResponse.ToolResponseBuilder()
+                        .message("Access denied: tool '" + getToolName() + "' requires one of "
+                                + requiredPermissions.stream()
+                                        .map(Permission::getId)
+                                        .toList())
+                        .status(ToolResponse.Status.FAILED)
+                        .build();
+                return McpSchema.CallToolResult.builder()
+                        .isError(true)
+                        .addTextContent(toJson(denied))
+                        .build();
+            }
             if (log.isTraceEnabled()) {
                 log.trace(
                         "Tool call: {} as user '{}', arguments: {}",

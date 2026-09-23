@@ -421,6 +421,8 @@ The plugin provides the following built-in tools for interacting with Jenkins:
 #### Management Information
 - `whoAmI`: Get information about the current user.
 - `getStatus`: Checks the health and readiness status of a Jenkins instance. Use this tool to assess Jenkins instance health rather than simple up/down status.
+- `getSystemLog`: Read recent entries from the Jenkins system log (newest first), optionally from a named Log Recorder or filtered by a minimum level. Requires the Overall/SystemRead permission.
+- `getLogRecorders`: List the names of configured Jenkins Log Recorders, for use with `getSystemLog`. Requires the Overall/SystemRead permission.
 
 
 
@@ -503,6 +505,30 @@ public String myCustomTool(
 ```
 
 Invalid JSON, or a value that isn't a JSON object or boolean, fails fast when the tool is registered.
+
+#### Restricting a tool by permission
+
+Add `permissions` to `@Tool` to require the caller to hold a Jenkins permission. List one or more
+permission ids (as returned by `Permission.getId()`, for example `hudson.model.Hudson.SystemRead`):
+
+```java
+@Tool(
+        description = "Read the Jenkins system log",
+        permissions = {"hudson.model.Hudson.SystemRead"})
+public SystemLog readSystemLog() {
+    // ...
+}
+```
+
+The caller must hold **at least one** of the listed permissions. A tool that fails the check is hidden
+from `tools/list` and rejected on `tools/call`. When Jenkins security is disabled, every tool is
+available. Permission ids are resolved when the server starts, so a typo fails fast. For a sensitive
+operation, still call `Jenkins.get().checkPermission(...)` inside the method as defence in depth.
+
+**Overall permissions only.** The check runs against the Jenkins root, so `permissions` is for global
+permissions such as `Overall/SystemRead` or `Overall/Administer`. It cannot express item-scoped
+permissions like `Item.READ` on a particular folder or job — a tool has no item context. Enforce those
+inside the method against the specific item (for example `job.checkPermission(Item.READ)`).
 
 ### Overriding a Built-in Tool
 
