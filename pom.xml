@@ -193,6 +193,20 @@
       <scope>test</scope>
     </dependency>
     <dependency>
+      <groupId>io.github.senor14</groupId>
+      <artifactId>mcp-java-testkit</artifactId>
+      <version>0.6.0</version>
+      <scope>test</scope>
+      <exclusions>
+        <exclusion>
+          <!-- Jackson 2 for the testkit comes from the jackson2-api plugin below,
+               not from the testkit's own pin -->
+          <groupId>com.fasterxml.jackson.core</groupId>
+          <artifactId>jackson-databind</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
       <groupId>org.assertj</groupId>
       <artifactId>assertj-core</artifactId>
       <version>3.27.7</version>
@@ -208,6 +222,12 @@
       <groupId>org.jenkins-ci.plugins</groupId>
       <artifactId>git</artifactId>
       <classifier>tests</classifier>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <!-- Jackson 2 (BOM-managed) for mcp-java-testkit; the plugin itself uses Jackson 3 -->
+      <groupId>org.jenkins-ci.plugins</groupId>
+      <artifactId>jackson2-api</artifactId>
       <scope>test</scope>
     </dependency>
     <dependency>
