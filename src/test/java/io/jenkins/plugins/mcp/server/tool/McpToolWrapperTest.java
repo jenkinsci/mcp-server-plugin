@@ -44,6 +44,15 @@ class McpToolWrapperTest {
     ;
 
     @Test
+    void malformedDefaultTreeFailsAtConstruction() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new McpToolWrapper(
+                        objectMapper, target, MockMethods.class.getDeclaredMethod("malformedDefaultTreeMethod")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("defaultTree")
+                .hasMessageContaining("malformedDefaultTreeMethod");
+    }
+
+    @Test
     void generateForOutputOfBoolean() throws NoSuchMethodException {
 
         McpToolWrapper wrapper =
@@ -131,6 +140,11 @@ class McpToolWrapperTest {
         @Tool
         public boolean boolMethod() {
             return false;
+        }
+
+        @Tool(defaultTree = "name,lastBuild[number") // unbalanced bracket
+        public hudson.model.Job<?, ?> malformedDefaultTreeMethod() {
+            return null;
         }
 
         @Tool

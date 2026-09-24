@@ -79,6 +79,14 @@ public @interface Tool {
     String[] permissions() default {};
 
     /**
+     * Tree expression (Jenkins Remote REST API tree syntax) applied when the client does not
+     * supply the {@code tree} parameter. Keeps default responses compact for LLM contexts;
+     * clients can still pass their own {@code tree} (or {@code tree="*"} semantics via a broad
+     * expression) to request more fields. Empty (the default) preserves the current behaviour
+     * of returning the full exported model.
+     */
+    String defaultTree() default "";
+    /**
      * To add some _meta content to the tool.
      */
     Meta[] metas() default @Meta;

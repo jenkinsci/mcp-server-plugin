@@ -570,6 +570,20 @@ For serialization to text content:
 - **@ExportedBean Annotation**: If the result object is annotated with `@ExportedBean` (from `org.kohsuke.stapler.export`), Jenkins' `org.kohsuke.stapler.export.Flavor.JSON` exporting mechanism is used.
 - **Other Objects**: For objects without the `@ExportedBean` annotation, Jackson is used for JSON serialization.
 
+#### Field selection with `tree` and per-tool defaults
+
+Tools returning `@ExportedBean` objects accept an optional `tree` parameter using the
+[Jenkins Remote REST API tree syntax](https://www.jenkins.io/doc/book/using/remote-access-api/#RemoteaccessAPI-Depthcontrol)
+(for example `tree=name,url,lastBuild[number,result]`) to limit which fields are returned.
+
+A tool may also declare a **default tree** (`@Tool(defaultTree = "...")`), applied only when the
+caller does not pass `tree`. The built-in `getBuild`, `getJob` and `getJobs` tools use such compact
+defaults: without an explicit `tree` they return the identity/status essentials rather than the full
+exported model, which keeps responses small for LLM context windows. Pass your own `tree`
+expression to request any other fields — an explicit `tree` always takes precedence over the
+default, and passing `tree="*"` returns the full exported object (pruning disabled), bypassing the
+default entirely. Tools without a declared default keep returning the full exported object.
+
 This approach ensures flexible and efficient handling of different result types, accommodating both Jenkins-specific exported objects and standard Java objects.
 This flexible approach ensures that tool results are consistently and accurately represented in the MCP response, regardless of their complexity.
 ### Integration with GitHub Copilot

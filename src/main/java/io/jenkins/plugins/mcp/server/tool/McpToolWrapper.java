@@ -69,6 +69,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.kohsuke.stapler.export.ExportedBean;
+import org.kohsuke.stapler.export.NamedPathPruner;
 import org.springframework.lang.Nullable;
 import org.springframework.security.core.Authentication;
 import org.springframework.util.Assert;
@@ -111,12 +112,25 @@ public class McpToolWrapper {
 
     private final List<Permission> requiredPermissions;
 
+    /** Passing this as {@code tree} returns the full exported object, bypassing any {@code defaultTree}. */
+    public static final String FULL_OBJECT_TREE = "*";
+
     public McpToolWrapper(JsonMapper objectMapper, Object target, Method method) {
         this.objectMapper = objectMapper;
         this.target = target;
         this.method = method;
         var tool = method.getAnnotation(Tool.class);
         this.requiredPermissions = ToolPermissions.resolve(tool != null ? tool.permissions() : null);
+        if (tool != null && StringUtils.hasText(tool.defaultTree())) {
+            // Fail fast on a malformed defaultTree: a typo in the annotation should break the
+            // build/startup (and thus unit tests), not every request at runtime.
+            try {
+                new NamedPathPruner(tool.defaultTree());
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException(
+                        "Invalid defaultTree expression for tool '" + toolName(method) + "': " + tool.defaultTree(), e);
+            }
+        }
     }
 
     /** Permissions the caller needs (at least one) to see and use this tool; empty means everyone can. */
@@ -244,10 +258,14 @@ public class McpToolWrapper {
 
         if (isTreePruneSupported()) {
             ObjectNode parameterNode = SUBTYPE_SCHEMA_GENERATOR.generateSchema(String.class);
-            parameterNode.put(
-                    DESCRIPTION,
-                    "Field selection expression using the Jenkins Remote REST API tree syntax.\n"
-                            + "Allows limiting returned fields and nested objects (for example executable[number,url]) to reduce response size, especially for polling workflows.");
+            var treeDescription = "Field selection expression using the Jenkins Remote REST API tree syntax.\n"
+                    + "Allows limiting returned fields and nested objects (for example executable[number,url]) to reduce response size, especially for polling workflows.";
+            var defaultTree = method.getAnnotation(Tool.class).defaultTree();
+            if (StringUtils.hasText(defaultTree)) {
+                treeDescription += "\nIf omitted, a compact default is used: " + defaultTree
+                        + "\nPass \"*\" to get the full object with all fields.";
+            }
+            parameterNode.put(DESCRIPTION, treeDescription);
             properties.set("tree", parameterNode);
         }
 
@@ -394,6 +412,14 @@ public class McpToolWrapper {
             String pruneTreeExpress = "";
             if (isTreePruneSupported()) {
                 pruneTreeExpress = (String) args.get("tree");
+                if (!StringUtils.hasText(pruneTreeExpress)) {
+                    pruneTreeExpress = method.getAnnotation(Tool.class).defaultTree();
+                } else if (FULL_OBJECT_TREE.equals(pruneTreeExpress.trim())) {
+                    // Explicit escape hatch: "*" disables pruning entirely and returns the full
+                    // exported object, bypassing any defaultTree. (A bare "*" in Jenkins tree
+                    // syntax would only cover the top level, which is not what callers mean here.)
+                    pruneTreeExpress = "";
+                }
             }
             return toMcpResult(result, pruneTreeExpress);
 
