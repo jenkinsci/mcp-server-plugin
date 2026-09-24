@@ -48,7 +48,8 @@ import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 public class JobScmExtensionTest {
 
     @McpClientTest
-    void testGetJobScm(JenkinsRule jenkins, GitSampleRepoRule gitRepo, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
+    void testGetJobWithScm(
+            JenkinsRule jenkins, GitSampleRepoRule gitRepo, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
             throws Exception {
         // Setup Git repository
         gitRepo.init();
@@ -64,8 +65,8 @@ public class JobScmExtensionTest {
 
         try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
             // Call getJobScm tool
-            McpSchema.CallToolRequest request =
-                    new McpSchema.CallToolRequest("getJobScm", Map.of("jobFullName", project.getFullName()));
+            McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(
+                    "getJob", Map.of("jobFullName", project.getFullName(), "includeScmConfigurations", Boolean.TRUE));
 
             var response = client.callTool(request);
 
