@@ -69,6 +69,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.kohsuke.stapler.export.ExportedBean;
+import org.kohsuke.stapler.export.NamedPathPruner;
 import org.springframework.lang.Nullable;
 import org.springframework.security.core.Authentication;
 import org.springframework.util.Assert;
@@ -117,6 +118,16 @@ public class McpToolWrapper {
         this.method = method;
         var tool = method.getAnnotation(Tool.class);
         this.requiredPermissions = ToolPermissions.resolve(tool != null ? tool.permissions() : null);
+        if (tool != null && StringUtils.hasText(tool.defaultTree())) {
+            // Fail fast on a malformed defaultTree: a typo in the annotation should break the
+            // build/startup (and thus unit tests), not every request at runtime.
+            try {
+                new NamedPathPruner(tool.defaultTree());
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException(
+                        "Invalid defaultTree expression for tool '" + toolName(method) + "': " + tool.defaultTree(), e);
+            }
+        }
     }
 
     /** Permissions the caller needs (at least one) to see and use this tool; empty means everyone can. */
