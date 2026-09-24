@@ -581,7 +581,8 @@ caller does not pass `tree`. The built-in `getBuild`, `getJob` and `getJobs` too
 defaults: without an explicit `tree` they return the identity/status essentials rather than the full
 exported model, which keeps responses small for LLM context windows. Pass your own `tree`
 expression to request any other fields — an explicit `tree` always takes precedence over the
-default. Tools without a declared default keep returning the full exported object.
+default, and passing `tree="*"` returns the full exported object (pruning disabled), bypassing the
+default entirely. Tools without a declared default keep returning the full exported object.
 
 This approach ensures flexible and efficient handling of different result types, accommodating both Jenkins-specific exported objects and standard Java objects.
 This flexible approach ensures that tool results are consistently and accurately represented in the MCP response, regardless of their complexity.

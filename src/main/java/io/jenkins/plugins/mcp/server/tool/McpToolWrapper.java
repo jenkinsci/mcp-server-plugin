@@ -112,6 +112,9 @@ public class McpToolWrapper {
 
     private final List<Permission> requiredPermissions;
 
+    /** Passing this as {@code tree} returns the full exported object, bypassing any {@code defaultTree}. */
+    public static final String FULL_OBJECT_TREE = "*";
+
     public McpToolWrapper(JsonMapper objectMapper, Object target, Method method) {
         this.objectMapper = objectMapper;
         this.target = target;
@@ -259,7 +262,8 @@ public class McpToolWrapper {
                     + "Allows limiting returned fields and nested objects (for example executable[number,url]) to reduce response size, especially for polling workflows.";
             var defaultTree = method.getAnnotation(Tool.class).defaultTree();
             if (StringUtils.hasText(defaultTree)) {
-                treeDescription += "\nIf omitted, a compact default is used: " + defaultTree;
+                treeDescription += "\nIf omitted, a compact default is used: " + defaultTree
+                        + "\nPass \"*\" to get the full object with all fields.";
             }
             parameterNode.put(DESCRIPTION, treeDescription);
             properties.set("tree", parameterNode);
@@ -410,6 +414,11 @@ public class McpToolWrapper {
                 pruneTreeExpress = (String) args.get("tree");
                 if (!StringUtils.hasText(pruneTreeExpress)) {
                     pruneTreeExpress = method.getAnnotation(Tool.class).defaultTree();
+                } else if (FULL_OBJECT_TREE.equals(pruneTreeExpress.trim())) {
+                    // Explicit escape hatch: "*" disables pruning entirely and returns the full
+                    // exported object, bypassing any defaultTree. (A bare "*" in Jenkins tree
+                    // syntax would only cover the top level, which is not what callers mean here.)
+                    pruneTreeExpress = "";
                 }
             }
             return toMcpResult(result, pruneTreeExpress);

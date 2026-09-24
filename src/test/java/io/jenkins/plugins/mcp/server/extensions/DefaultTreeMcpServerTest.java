@@ -99,6 +99,29 @@ class DefaultTreeMcpServerTest {
     }
 
     @McpClientTest
+    void testStarTreeReturnsFullObject(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
+            throws Exception {
+        WorkflowJob project = jenkins.createProject(WorkflowJob.class, "demo-job");
+        project.setDefinition(new CpsFlowDefinition("", true));
+        project.scheduleBuild2(0).get();
+
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+            McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(
+                    "getBuild", Map.of("jobFullName", project.getFullName(), "tree", "*"));
+
+            var response = client.callTool(request);
+            assertThat(response.isError()).isFalse();
+            assertThat(response.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                DocumentContext documentContext =
+                        JsonPath.using(Configuration.defaultConfiguration()).parse(textContent.text());
+                var contentMap = documentContext.read("$.result", Map.class);
+                // "*" bypasses the compact default: the full exported model is back.
+                assertThat(contentMap).containsKeys("number", "result", "actions", "changeSets");
+            });
+        }
+    }
+
+    @McpClientTest
     void testGetJobsWithoutTreeReturnsCompactDefault(
             JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder) throws Exception {
         WorkflowJob project = jenkins.createProject(WorkflowJob.class, "demo-job");
