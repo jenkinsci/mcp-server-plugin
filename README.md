@@ -35,29 +35,37 @@ The following system properties can be used to configure the MCP Server plugin:
 
 #### Origin header validation
 
-The MCP specification mark as `MUST` validate the `Origin` header of incoming requests.
-By default, the MCP Server plugin does not enforce this validation to facilitate usage by AI Agent not providing the header.
-You can enable different levels of validation, if the header is available with the request you can enforce his validation using
-the system property `io.jenkins.plugins.mcp.server.Endpoint.requireOriginMatch=true`
-When enforcing the validation, the header value must match the configured Jenkins root url.
+The MCP specification marks validating the `Origin` header of incoming requests as a `MUST`.
 
-If receiving the header is mandatory the system property `io.jenkins.plugins.mcp.server.Endpoint.requireOriginHeader=true`
-will make it mandatory as well.
+By default, when an `Origin` header is present it is validated against the configured Jenkins root URL
+(`io.jenkins.plugins.mcp.server.Endpoint.requireOriginMatch` defaults to `true`). Requests that do not send
+an `Origin` header are still allowed, so AI agents that omit it keep working
+(`io.jenkins.plugins.mcp.server.Endpoint.requireOriginHeader` defaults to `false`).
+
+- To also reject requests that omit the `Origin` header, set
+  `io.jenkins.plugins.mcp.server.Endpoint.requireOriginHeader=true`.
+- To disable Origin matching entirely (not recommended), set
+  `io.jenkins.plugins.mcp.server.Endpoint.requireOriginMatch=false`.
 
 ### Connection Resilience
 
-The MCP Server plugin includes several features to improve connection reliability:
+The MCP Server plugin includes several features to improve connection reliability.
+
+The keep-alive and timeout tuning described below primarily concern the **SSE** transport (`/mcp-server/sse`), which holds a single long-lived server→client connection open and is therefore sensitive to idle timeouts in Jenkins, proxies, and load balancers. If you use **Streamable HTTP** (`/mcp-server/mcp`) with the usual request/response pattern, you are unlikely to need any of it (see [Transport Recommendation](#transport-recommendation)). The health, metrics, and graceful-shutdown features apply to all transports.
 
 #### Keep-Alive Messages
 
-The server sends periodic keep-alive messages to detect broken connections. By default, keep-alive messages are sent every 30 seconds.
+For the **SSE** transport, the server sends periodic keep-alive pings over the open connection to detect broken connections and to stop idle timeouts (in Jenkins, proxies, or load balancers) from closing it. By default, pings are sent every 30 seconds.
 
 You can configure this interval with the system property:
 ```
 io.jenkins.plugins.mcp.server.Endpoint.keepAliveInterval=30
 ```
 
-Set to `0` to disable keep-alive messages (not recommended).
+Set to `0` to disable keep-alive messages (not recommended for SSE).
+
+> [!NOTE]
+> A ping is only delivered when there is an open server→client stream. SSE always has one. Streamable HTTP only has one while the client keeps a long-lived GET stream open; for a plain POST request/response client there is no stream to ping, so this setting has no effect.
 
 #### Health Endpoint
 
@@ -117,11 +125,11 @@ For better connection reliability, we recommend using **Streamable HTTP** (`/mcp
 
 #### Production Deployment
 
-When deploying behind a reverse proxy or in production environments, configure these timeout settings to prevent premature connection drops:
+When deploying the **SSE** transport behind a reverse proxy or in production environments, configure the timeout settings below so the long-lived connection is not dropped prematurely. Streamable HTTP users generally don't need this (see the note at the end of this section).
 
-**Jenkins/Jetty Configuration**
+**Jenkins/Jetty Configuration (SSE)**
 
-Jenkins uses Winstone (embedded Jetty) which defaults `httpKeepAliveTimeout` to 30 seconds. Since MCP keep-alive pings are also sent every 30 seconds, this creates a race condition where Jetty may close the connection before the next ping arrives.
+Jenkins uses Winstone (embedded Jetty) which defaults `httpKeepAliveTimeout` to 30 seconds. Since MCP keep-alive pings are also sent every 30 seconds, this creates a race condition where Jetty may close the SSE connection before the next ping arrives.
 
 Add this argument to your Jenkins startup command:
 ```
@@ -138,7 +146,7 @@ services:
 
 **Reverse Proxy Configuration (Nginx)**
 
-For Nginx, extend timeouts for MCP endpoints:
+For Nginx, extend timeouts for the MCP endpoints. This keeps SSE connections from being closed while idle:
 ```nginx
 location ~ ^/(mcp-server|mcp-health)/ {
     proxy_pass http://jenkins;
@@ -150,6 +158,9 @@ location ~ ^/(mcp-server|mcp-health)/ {
     proxy_send_timeout 600s;
 }
 ```
+
+> [!NOTE]
+> The one timeout that can also affect **Streamable HTTP** is `proxy_read_timeout`: a single long-running tool call (for example a slow `triggerBuild`) can exceed a short default and return `504 Gateway Timeout`. Raising `proxy_read_timeout` as shown above prevents that regardless of transport. The `httpKeepAliveTimeout` race condition above is SSE-only.
 
 #### Transport Endpoints
 
@@ -411,6 +422,8 @@ The plugin provides the following built-in tools for interacting with Jenkins:
 #### Management Information
 - `whoAmI`: Get information about the current user.
 - `getStatus`: Checks the health and readiness status of a Jenkins instance. Use this tool to assess Jenkins instance health rather than simple up/down status.
+- `getSystemLog`: Read recent entries from the Jenkins system log (newest first), optionally from a named Log Recorder or filtered by a minimum level. Requires the Overall/SystemRead permission.
+- `getLogRecorders`: List the names of configured Jenkins Log Recorders, for use with `getSystemLog`. Requires the Overall/SystemRead permission.
 
 
 
@@ -474,6 +487,50 @@ public class MyCustomMcpExtension implements McpServerExtension {
 }
 ```
 
+#### Constraining parameter values
+
+For an object-shaped parameter (typically a `Map`), you can advertise a JSON Schema constraint on the
+*values* while keeping the keys open, using `@ToolParam(additionalProperties = "<json>")`. The value is a
+raw JSON sub-schema — a JSON object or a boolean — emitted verbatim as the parameter's `additionalProperties`:
+
+```java
+@Tool(description = "My custom tool")
+public String myCustomTool(
+        @ToolParam(
+                description = "Extra options",
+                required = false,
+                additionalProperties = "{\"type\":[\"string\",\"boolean\",\"integer\",\"number\",\"array\"]}")
+        Map<String, Object> options) {
+    // Tool implementation
+}
+```
+
+Invalid JSON, or a value that isn't a JSON object or boolean, fails fast when the tool is registered.
+
+#### Restricting a tool by permission
+
+Add `permissions` to `@Tool` to require the caller to hold a Jenkins permission. List one or more
+permission ids (as returned by `Permission.getId()`, for example `hudson.model.Hudson.SystemRead`):
+
+```java
+@Tool(
+        description = "Read the Jenkins system log",
+        permissions = {"hudson.model.Hudson.SystemRead"})
+public SystemLog readSystemLog() {
+    // ...
+}
+```
+
+The caller must hold **at least one** of the listed permissions. A tool that fails the check is hidden
+from `tools/list` and rejected on `tools/call`. When Jenkins security is disabled, every tool is
+available. Permission ids are resolved when the server starts, so a typo fails fast. For a sensitive
+operation, still call `Jenkins.get().checkPermission(...)` inside the method as defence in depth.
+
+**Overall permissions only.** The check runs against the Jenkins root, so `permissions` is for global
+permissions such as `Overall/SystemRead` or `Overall/Administer`. It cannot express item-scoped
+permissions like `Item.READ` on a particular folder or job — a tool has no item context. Enforce those
+inside the method against the specific item (for example `job.checkPermission(Item.READ)`).
+
 ### Overriding a Built-in Tool
 
 You can replace a built-in tool (or any tool contributed by another plugin) with your own
@@ -513,6 +570,20 @@ For serialization to text content:
 
 - **@ExportedBean Annotation**: If the result object is annotated with `@ExportedBean` (from `org.kohsuke.stapler.export`), Jenkins' `org.kohsuke.stapler.export.Flavor.JSON` exporting mechanism is used.
 - **Other Objects**: For objects without the `@ExportedBean` annotation, Jackson is used for JSON serialization.
+
+#### Field selection with `tree` and per-tool defaults
+
+Tools returning `@ExportedBean` objects accept an optional `tree` parameter using the
+[Jenkins Remote REST API tree syntax](https://www.jenkins.io/doc/book/using/remote-access-api/#RemoteaccessAPI-Depthcontrol)
+(for example `tree=name,url,lastBuild[number,result]`) to limit which fields are returned.
+
+A tool may also declare a **default tree** (`@Tool(defaultTree = "...")`), applied only when the
+caller does not pass `tree`. The built-in `getBuild`, `getJob` and `getJobs` tools use such compact
+defaults: without an explicit `tree` they return the identity/status essentials rather than the full
+exported model, which keeps responses small for LLM context windows. Pass your own `tree`
+expression to request any other fields — an explicit `tree` always takes precedence over the
+default, and passing `tree="*"` returns the full exported object (pruning disabled), bypassing the
+default entirely. Tools without a declared default keep returning the full exported object.
 
 This approach ensures flexible and efficient handling of different result types, accommodating both Jenkins-specific exported objects and standard Java objects.
 This flexible approach ensures that tool results are consistently and accurately represented in the MCP response, regardless of their complexity.

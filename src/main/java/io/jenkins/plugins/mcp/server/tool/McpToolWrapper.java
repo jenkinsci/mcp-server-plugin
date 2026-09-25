@@ -31,30 +31,28 @@ import static io.jenkins.plugins.mcp.server.Endpoint.HTTP_SERVLET_REQUEST;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.github.victools.jsonschema.generator.Option;
 import com.github.victools.jsonschema.generator.OptionPreset;
 import com.github.victools.jsonschema.generator.SchemaGenerator;
 import com.github.victools.jsonschema.generator.SchemaGeneratorConfig;
 import com.github.victools.jsonschema.generator.SchemaGeneratorConfigBuilder;
 import com.github.victools.jsonschema.generator.SchemaVersion;
-import com.github.victools.jsonschema.module.jackson.JacksonModule;
 import com.github.victools.jsonschema.module.jackson.JacksonOption;
+import com.github.victools.jsonschema.module.jackson.JacksonSchemaModule;
 import com.github.victools.jsonschema.module.swagger2.Swagger2Module;
 import hudson.security.ACL;
+import hudson.security.Permission;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
 import io.jenkins.plugins.mcp.server.jackson.JenkinsExportedBeanModule;
 import io.modelcontextprotocol.common.McpTransportContext;
-import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
+import io.modelcontextprotocol.json.jackson3.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.server.McpStatelessServerFeatures;
 import io.modelcontextprotocol.server.McpSyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.servlet.http.HttpServletRequest;
-import java.io.IOException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.lang.reflect.ParameterizedType;
@@ -71,26 +69,27 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.kohsuke.stapler.export.ExportedBean;
+import org.kohsuke.stapler.export.NamedPathPruner;
 import org.springframework.lang.Nullable;
 import org.springframework.security.core.Authentication;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 @Slf4j
 public class McpToolWrapper {
 
     private static final SchemaGenerator SUBTYPE_SCHEMA_GENERATOR;
     private static final boolean PROPERTY_REQUIRED_BY_DEFAULT = true;
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final ObjectMapper OBJECT_MAPPER =
+            JsonMapper.builder().addModule(new JenkinsExportedBeanModule()).build();
     public static final String DESCRIPTION = "description";
 
     static {
-        OBJECT_MAPPER.registerModule(new JenkinsExportedBeanModule());
-    }
-
-    static {
         com.github.victools.jsonschema.generator.Module jacksonModule =
-                new JacksonModule(JacksonOption.RESPECT_JSONPROPERTY_REQUIRED);
+                new JacksonSchemaModule(JacksonOption.RESPECT_JSONPROPERTY_REQUIRED);
         com.github.victools.jsonschema.generator.Module openApiModule = new Swagger2Module();
         SchemaGeneratorConfigBuilder schemaGeneratorConfigBuilder = new SchemaGeneratorConfigBuilder(
                         SchemaVersion.DRAFT_2020_12, OptionPreset.PLAIN_JSON)
@@ -109,12 +108,34 @@ public class McpToolWrapper {
     private final Method method;
     private final Object target;
 
-    private final ObjectMapper objectMapper;
+    private final JsonMapper objectMapper;
 
-    public McpToolWrapper(ObjectMapper objectMapper, Object target, Method method) {
+    private final List<Permission> requiredPermissions;
+
+    /** Passing this as {@code tree} returns the full exported object, bypassing any {@code defaultTree}. */
+    public static final String FULL_OBJECT_TREE = "*";
+
+    public McpToolWrapper(JsonMapper objectMapper, Object target, Method method) {
         this.objectMapper = objectMapper;
         this.target = target;
         this.method = method;
+        var tool = method.getAnnotation(Tool.class);
+        this.requiredPermissions = ToolPermissions.resolve(tool != null ? tool.permissions() : null);
+        if (tool != null && StringUtils.hasText(tool.defaultTree())) {
+            // Fail fast on a malformed defaultTree: a typo in the annotation should break the
+            // build/startup (and thus unit tests), not every request at runtime.
+            try {
+                new NamedPathPruner(tool.defaultTree());
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException(
+                        "Invalid defaultTree expression for tool '" + toolName(method) + "': " + tool.defaultTree(), e);
+            }
+        }
+    }
+
+    /** Permissions the caller needs (at least one) to see and use this tool; empty means everyone can. */
+    List<Permission> getRequiredPermissions() {
+        return requiredPermissions;
     }
 
     private static boolean isMethodParameterRequired(Method method, int index) {
@@ -170,6 +191,16 @@ public class McpToolWrapper {
         return null;
     }
 
+    @Nullable
+    private static String getMethodParameterAdditionalProperties(Method method, int index) {
+        Parameter parameter = method.getParameters()[index];
+        var toolParamAnnotation = parameter.getAnnotation(ToolParam.class);
+        if (toolParamAnnotation != null && StringUtils.hasText(toolParamAnnotation.additionalProperties())) {
+            return toolParamAnnotation.additionalProperties();
+        }
+        return null;
+    }
+
     private static String toJson(Object item) {
         return toJson(item, null);
     }
@@ -177,7 +208,7 @@ public class McpToolWrapper {
     private static String toJson(Object item, String tree) {
         try {
             return OBJECT_MAPPER.writer().withAttribute("tree", tree).writeValueAsString(item);
-        } catch (IOException e) {
+        } catch (tools.jackson.core.JacksonException e) {
             log.atError().setCause(e).log("This error should not happen");
             throw new RuntimeException(e);
         }
@@ -203,15 +234,38 @@ public class McpToolWrapper {
             if (StringUtils.hasText(parameterDescription)) {
                 parameterNode.put(DESCRIPTION, parameterDescription);
             }
+            String additionalProperties = getMethodParameterAdditionalProperties(method, i);
+            if (StringUtils.hasText(additionalProperties)) {
+                try {
+                    var additionalPropertiesNode = objectMapper.readTree(additionalProperties);
+                    // JSON Schema only allows an object or a boolean here
+                    if (!additionalPropertiesNode.isObject() && !additionalPropertiesNode.isBoolean()) {
+                        throw new IllegalStateException("@ToolParam additionalProperties for tool '"
+                                + method.getName() + "' parameter '" + parameterName
+                                + "' must be a JSON object or boolean, but was: " + additionalProperties);
+                    }
+                    // replace the generated additionalProperties with the annotation's constraint
+                    parameterNode.set("additionalProperties", additionalPropertiesNode);
+                } catch (tools.jackson.core.JacksonException e) {
+                    throw new IllegalStateException(
+                            "Invalid @ToolParam additionalProperties JSON for tool '" + method.getName()
+                                    + "' parameter '" + parameterName + "': " + additionalProperties,
+                            e);
+                }
+            }
             properties.set(parameterName, parameterNode);
         }
 
         if (isTreePruneSupported()) {
             ObjectNode parameterNode = SUBTYPE_SCHEMA_GENERATOR.generateSchema(String.class);
-            parameterNode.put(
-                    DESCRIPTION,
-                    "Field selection expression using the Jenkins Remote REST API tree syntax.\n"
-                            + "Allows limiting returned fields and nested objects (for example executable[number,url]) to reduce response size, especially for polling workflows.");
+            var treeDescription = "Field selection expression using the Jenkins Remote REST API tree syntax.\n"
+                    + "Allows limiting returned fields and nested objects (for example executable[number,url]) to reduce response size, especially for polling workflows.";
+            var defaultTree = method.getAnnotation(Tool.class).defaultTree();
+            if (StringUtils.hasText(defaultTree)) {
+                treeDescription += "\nIf omitted, a compact default is used: " + defaultTree
+                        + "\nPass \"*\" to get the full object with all fields.";
+            }
+            parameterNode.put(DESCRIPTION, treeDescription);
             properties.set("tree", parameterNode);
         }
 
@@ -319,6 +373,21 @@ public class McpToolWrapper {
                 var jenkinsMcpContext = JenkinsMcpContext.get()) {
             // need Jenkins.READ at least
             Jenkins.get().checkPermission(Jenkins.READ);
+            // plus any permission the tool itself requires
+            if (!ToolPermissions.isAllowed(authn, requiredPermissions)) {
+                log.debug("Denying tool call '{}': caller lacks a required permission", getToolName());
+                ToolResponse denied = new ToolResponse.ToolResponseBuilder()
+                        .message("Access denied: tool '" + getToolName() + "' requires one of "
+                                + requiredPermissions.stream()
+                                        .map(Permission::getId)
+                                        .toList())
+                        .status(ToolResponse.Status.FAILED)
+                        .build();
+                return McpSchema.CallToolResult.builder()
+                        .isError(true)
+                        .addTextContent(toJson(denied))
+                        .build();
+            }
             if (log.isTraceEnabled()) {
                 log.trace(
                         "Tool call: {} as user '{}', arguments: {}",
@@ -343,6 +412,14 @@ public class McpToolWrapper {
             String pruneTreeExpress = "";
             if (isTreePruneSupported()) {
                 pruneTreeExpress = (String) args.get("tree");
+                if (!StringUtils.hasText(pruneTreeExpress)) {
+                    pruneTreeExpress = method.getAnnotation(Tool.class).defaultTree();
+                } else if (FULL_OBJECT_TREE.equals(pruneTreeExpress.trim())) {
+                    // Explicit escape hatch: "*" disables pruning entirely and returns the full
+                    // exported object, bypassing any defaultTree. (A bare "*" in Jenkins tree
+                    // syntax would only cover the top level, which is not what callers mean here.)
+                    pruneTreeExpress = "";
+                }
             }
             return toMcpResult(result, pruneTreeExpress);
 

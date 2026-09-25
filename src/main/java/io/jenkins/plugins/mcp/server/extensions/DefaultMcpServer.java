@@ -45,6 +45,7 @@ import hudson.model.ParametersDefinitionProperty;
 import hudson.model.Queue;
 import hudson.model.Run;
 import hudson.model.User;
+import hudson.security.AccessControlled;
 import hudson.slaves.Cloud;
 import io.jenkins.plugins.mcp.server.McpServerExtension;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
@@ -121,6 +122,7 @@ public class DefaultMcpServer implements McpServerExtension {
 
     @Tool(
             description = "Get a specific build or the last build of a Jenkins job",
+            defaultTree = "number,url,result,building,timestamp,duration,displayName,description",
             annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
     public Run getBuild(
             @ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
@@ -134,6 +136,9 @@ public class DefaultMcpServer implements McpServerExtension {
 
     @Tool(
             description = "Get a Jenkins job by its full path",
+            defaultTree = "name,fullName,url,description,buildable,color,inQueue,"
+                    + "lastBuild[number,url,result,building,timestamp],"
+                    + "lastCompletedBuild[number,url,result],healthReport[score,description]",
             annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
     public Job getJob(
             @ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName) {
@@ -169,7 +174,11 @@ public class DefaultMcpServer implements McpServerExtension {
     @Tool(description = "Trigger a build for a Jenkins job", treePruneSupported = true)
     public QueueItem triggerBuild(
             @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
-            @ToolParam(description = "Build parameters (optional, e.g., {key1=value1,key2=value2})", required = false)
+            @ToolParam(
+                            description = "Build parameters (optional, e.g., {key1=value1,key2=value2})",
+                            required = false,
+                            additionalProperties =
+                                    "{\"type\":[\"string\",\"boolean\",\"integer\",\"number\",\"array\"]}")
                     Map<String, Object> parameters) {
         var job = Jenkins.get().getItemByFullName(jobFullName, ParameterizedJobMixIn.ParameterizedJob.class);
 
@@ -207,6 +216,7 @@ public class DefaultMcpServer implements McpServerExtension {
     @Tool(
             description =
                     "Get a paginated list of Jenkins jobs, sorted by name. Returns up to 'limit' jobs starting from the 'skip' index. If no jobs are available in the requested range, returns an empty list.",
+            defaultTree = "name,fullName,url,color,lastBuild[number,result,timestamp]",
             annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
     public List<Job> getJobs(
             @ToolParam(
@@ -355,7 +365,19 @@ public class DefaultMcpServer implements McpServerExtension {
             treePruneSupported = true,
             annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
     public QueueItem getQueueItem(@ToolParam(description = "The queue item id") long id) {
-        return Jenkins.get().getQueue().getItem(id);
+        Queue.Item item = Jenkins.get().getQueue().getItem(id);
+        if (item == null) {
+            return null;
+        }
+        // Only expose the queue item if the caller can read the job behind it. Core hides this
+        // data the same way in Queue.Item#getApi(); we serialize the item directly, so we have to
+        // apply the check here or we leak details of jobs the caller cannot see.
+        if (item.task instanceof AccessControlled ac) {
+            ac.checkPermission(Item.READ);
+            return item;
+        }
+        // Task isn't access-controlled: play it safe and hide it, like core does.
+        return null;
     }
 
     @Tool(

@@ -26,19 +26,23 @@
 
 package io.jenkins.plugins.mcp.server;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.Extension;
 import hudson.ExtensionComponent;
 import hudson.PluginWrapper;
 import hudson.model.RootAction;
+import hudson.security.Permission;
 import hudson.security.csrf.CrumbExclusion;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
+import io.jenkins.plugins.mcp.server.authz.PermissionFilteringServerTransportProvider;
+import io.jenkins.plugins.mcp.server.authz.PermissionFilteringStatelessTransport;
+import io.jenkins.plugins.mcp.server.authz.ToolListFilteringHttpServletResponse;
 import io.jenkins.plugins.mcp.server.tool.McpToolWrapper;
+import io.jenkins.plugins.mcp.server.tool.ToolPermissions;
 import io.modelcontextprotocol.common.McpTransportContext;
-import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
-import io.modelcontextprotocol.json.schema.jackson2.DefaultJsonSchemaValidator;
+import io.modelcontextprotocol.json.jackson3.JacksonMcpJsonMapper;
+import io.modelcontextprotocol.json.schema.jackson3.DefaultJsonSchemaValidator;
 import io.modelcontextprotocol.server.McpServer;
 import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.server.McpStatelessServerFeatures;
@@ -78,6 +82,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  *
@@ -200,7 +205,9 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
     /**
      * JSON object mapper for serialization/deserialization
      */
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final JsonMapper objectMapper = new JsonMapper();
+
+    private Map<String, List<Permission>> toolPermissions = Map.of();
 
     /**
      * Package hosting the built-in tool extensions shipped with this plugin.
@@ -287,7 +294,11 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
                 return true;
             }
             McpConnectionMetrics.recordStreamableRequest();
-            handleMessage(request, response, httpServletStreamableServerTransportProvider);
+            handleMessage(
+                    request,
+                    new ToolListFilteringHttpServletResponse(
+                            response, Jenkins.getAuthentication2(), toolPermissions, objectMapper),
+                    httpServletStreamableServerTransportProvider);
             return true;
         }
 
@@ -319,6 +330,7 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
         var extensions = McpServerExtension.all();
 
         var resolvedTools = resolveTools(extensions.getComponents());
+        this.toolPermissions = buildToolPermissions(resolvedTools);
 
         var prompts = extensions.stream()
                 .map(McpServerExtension::getSyncPrompts)
@@ -410,6 +422,19 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
         return winners;
     }
 
+    /**
+     * Maps each tool name to its {@code @Tool(permissions = ...)}. Programmatic tools have no annotation
+     * and map to an empty list (always visible). An unknown permission id fails fast at startup.
+     */
+    private static Map<String, List<Permission>> buildToolPermissions(List<ToolCandidate> resolvedTools) {
+        Map<String, List<Permission>> permissions = new HashMap<>();
+        for (ToolCandidate candidate : resolvedTools) {
+            Tool tool = candidate.method() != null ? candidate.method().getAnnotation(Tool.class) : null;
+            permissions.put(candidate.name(), ToolPermissions.resolve(tool != null ? tool.permissions() : null));
+        }
+        return permissions;
+    }
+
     private ToolCandidate selectToolWinner(String name, List<ToolCandidate> candidates) {
         if (candidates.size() == 1) {
             return candidates.get(0);
@@ -496,7 +521,7 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
             Method method,
             McpServerFeatures.SyncToolSpecification spec,
             String description) {
-        McpToolWrapper newWrapper(ObjectMapper objectMapper) {
+        McpToolWrapper newWrapper(JsonMapper objectMapper) {
             return new McpToolWrapper(objectMapper, extension, method);
         }
     }
@@ -525,7 +550,8 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
                 .keepAliveInterval(keepAliveInterval > 0 ? Duration.ofSeconds(keepAliveInterval) : null)
                 .build();
 
-        io.modelcontextprotocol.server.McpServer.sync(httpServletSseServerTransportProvider)
+        io.modelcontextprotocol.server.McpServer.sync(new PermissionFilteringServerTransportProvider(
+                        httpServletSseServerTransportProvider, toolPermissions))
                 .serverInfo(pluginName, pluginVersion)
                 .jsonMapper(new JacksonMcpJsonMapper(objectMapper))
                 .jsonSchemaValidator(new DefaultJsonSchemaValidator(objectMapper))
@@ -578,7 +604,7 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
                 .contextExtractor(createExtractor())
                 .build();
 
-        McpServer.sync(httpServletStatelessServerTransport)
+        McpServer.sync(new PermissionFilteringStatelessTransport(httpServletStatelessServerTransport, toolPermissions))
                 .serverInfo(pluginName, pluginVersion)
                 .jsonMapper(new JacksonMcpJsonMapper(objectMapper))
                 .jsonSchemaValidator(new DefaultJsonSchemaValidator(objectMapper))

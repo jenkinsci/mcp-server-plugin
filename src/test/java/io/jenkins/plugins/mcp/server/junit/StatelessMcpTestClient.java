@@ -28,8 +28,7 @@ package io.jenkins.plugins.mcp.server.junit;
 
 import static io.jenkins.plugins.mcp.server.Endpoint.MCP_SERVER_STATELESS;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
+import io.modelcontextprotocol.json.jackson3.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.io.Closeable;
 import java.io.IOException;
@@ -40,6 +39,7 @@ import java.net.http.HttpResponse;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.jvnet.hudson.test.JenkinsRule;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Test client for stateless MCP server mode.
@@ -54,12 +54,18 @@ public class StatelessMcpTestClient implements Closeable {
     private final JacksonMcpJsonMapper jsonMapper;
     private final AtomicInteger requestId = new AtomicInteger(0);
     private McpSchema.ServerCapabilities serverCapabilities;
+    private final String authorizationHeader;
 
     public StatelessMcpTestClient(JenkinsRule jenkins) throws IOException {
+        this(jenkins, null);
+    }
+
+    public StatelessMcpTestClient(JenkinsRule jenkins, String authorizationHeader) throws IOException {
+        this.authorizationHeader = authorizationHeader;
         var url = jenkins.getURL();
         this.endpointUrl = url.toString() + MCP_SERVER_STATELESS;
         this.httpClient = HttpClient.newHttpClient();
-        ObjectMapper objectMapper = new ObjectMapper();
+        JsonMapper objectMapper = new JsonMapper();
         this.jsonMapper = new JacksonMcpJsonMapper(objectMapper);
 
         // Send initialize request to get server capabilities
@@ -114,10 +120,7 @@ public class StatelessMcpTestClient implements Closeable {
 
             String body = jsonMapper.writeValueAsString(jsonRpcRequest);
 
-            HttpRequest httpRequest = HttpRequest.newBuilder()
-                    .uri(URI.create(endpointUrl))
-                    .header("Content-Type", "application/json")
-                    .header("Accept", "application/json, text/event-stream")
+            HttpRequest httpRequest = newRequestBuilder()
                     .POST(HttpRequest.BodyPublishers.ofString(body))
                     .build();
 
@@ -139,10 +142,7 @@ public class StatelessMcpTestClient implements Closeable {
 
             String body = jsonMapper.writeValueAsString(notification);
 
-            HttpRequest httpRequest = HttpRequest.newBuilder()
-                    .uri(URI.create(endpointUrl))
-                    .header("Content-Type", "application/json")
-                    .header("Accept", "application/json, text/event-stream")
+            HttpRequest httpRequest = newRequestBuilder()
                     .POST(HttpRequest.BodyPublishers.ofString(body))
                     .build();
 
@@ -150,6 +150,17 @@ public class StatelessMcpTestClient implements Closeable {
         } catch (IOException | InterruptedException e) {
             throw new RuntimeException("Failed to send JSON-RPC notification: " + method, e);
         }
+    }
+
+    private HttpRequest.Builder newRequestBuilder() {
+        HttpRequest.Builder builder = HttpRequest.newBuilder()
+                .uri(URI.create(endpointUrl))
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json, text/event-stream");
+        if (authorizationHeader != null) {
+            builder.header("Authorization", authorizationHeader);
+        }
+        return builder;
     }
 
     @Override
