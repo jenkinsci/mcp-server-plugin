@@ -401,6 +401,7 @@ The plugin provides the following built-in tools for interacting with Jenkins:
   This tool returns a queue item if the job is successfully scheduled. You can use the returned queue item ID with the `getQueueItem` tool.
 
 - `getQueueItem`: Get information about a queued item using its ID.
+- `cancelBuild`: Cancel a running build or an item in the queue.
 
 #### Build Information
 - `getBuild`: Retrieve a specific build or the last build of a Jenkins job.

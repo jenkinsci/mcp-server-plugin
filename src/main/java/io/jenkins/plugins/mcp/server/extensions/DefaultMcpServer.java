@@ -30,6 +30,7 @@ import static io.jenkins.plugins.mcp.server.extensions.util.JenkinsUtil.getBuild
 import static io.jenkins.plugins.mcp.server.extensions.util.ParameterValueFactory.createParameterValue;
 
 import hudson.Extension;
+import hudson.model.AbstractBuild;
 import hudson.model.AbstractItem;
 import hudson.model.Action;
 import hudson.model.AdministrativeMonitor;
@@ -51,6 +52,8 @@ import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
 import io.jenkins.plugins.mcp.server.tool.JenkinsMcpContext;
 import jakarta.annotation.Nullable;
+import jakarta.servlet.ServletException;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -66,6 +69,7 @@ import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.jenkinsci.plugins.workflow.cps.replay.ReplayAction;
+import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.kohsuke.stapler.export.Exported;
 
 @Extension
@@ -73,6 +77,48 @@ import org.kohsuke.stapler.export.Exported;
 public class DefaultMcpServer implements McpServerExtension {
 
     public static final String FULL_NAME = "fullName";
+
+    public static boolean isWorkflowJobPluginInstalled() {
+        var plugin = Jenkins.get().getPluginManager().getPlugin("workflow-job");
+        return plugin != null && plugin.isActive();
+    }
+
+    @Tool(description = "Cancel specific build of a job or an entry in the Jenkins queue")
+    public boolean cancelBuild(
+            @ToolParam(description = "Build number or queue id") Integer buildNumber,
+            @Nullable
+                    @ToolParam(
+                            description =
+                                    "Job full name of the Jenkins job (e.g., 'folder/job-name'). If not specified the buildNumber is treated as queue id",
+                            required = false)
+                    String jobFullName)
+            throws ServletException, IOException {
+        if (jobFullName == null || jobFullName.isEmpty()) {
+            Queue queue = Jenkins.get().getQueue();
+            var queueItem = queue.getItem(buildNumber);
+            if (queueItem == null || !queueItem.getTask().hasReadPermission() || !queueItem.hasCancelPermission()) {
+                return false;
+            }
+            return Jenkins.get().getQueue().cancel(queueItem);
+        }
+        var job = Jenkins.get().getItemByFullName(jobFullName, Job.class);
+        if (job == null || !job.hasPermission(Item.CANCEL)) {
+            return false;
+        }
+
+        var build = job.getBuildByNumber(buildNumber);
+        if (build == null || !build.isBuilding()) {
+            return false;
+        }
+        if (build instanceof AbstractBuild<?, ?> ab) {
+            ab.doStop();
+        } else if (isWorkflowJobPluginInstalled() && build instanceof WorkflowRun wr) {
+            wr.doStop();
+        } else {
+            return false;
+        }
+        return true;
+    }
 
     @Tool(
             description = "Get a specific build or the last build of a Jenkins job",
