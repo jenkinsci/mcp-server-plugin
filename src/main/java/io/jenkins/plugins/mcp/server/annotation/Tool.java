@@ -67,6 +67,25 @@ public @interface Tool {
      * Any elements marked with @ExportedBean support tree pruning automatically.
      */
     boolean treePruneSupported() default false;
+
+    /**
+     * Permission ids (see {@link hudson.security.Permission#getId()}, e.g.
+     * {@code "hudson.model.Hudson.SystemRead"}) the caller must hold at least one of, or the tool is
+     * hidden and cannot be called. When Jenkins security is off, the tool is always available.
+     *
+     * <p>These are overall permissions, checked against the Jenkins root. Item-level permissions (like
+     * {@code Item.READ} on one folder or job) don't fit here and must be checked inside the tool method.
+     */
+    String[] permissions() default {};
+
+    /**
+     * Tree expression (Jenkins Remote REST API tree syntax) applied when the client does not
+     * supply the {@code tree} parameter. Keeps default responses compact for LLM contexts;
+     * clients can still pass their own {@code tree} (or {@code tree="*"} semantics via a broad
+     * expression) to request more fields. Empty (the default) preserves the current behaviour
+     * of returning the full exported model.
+     */
+    String defaultTree() default "";
     /**
      * To add some _meta content to the tool.
      */

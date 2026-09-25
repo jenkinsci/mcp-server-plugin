@@ -70,6 +70,8 @@ public class EndPointTest {
                             "getTestResults",
                             "getFlakyFailures",
                             "getQueueItem",
+                            "getSystemLog",
+                            "getLogRecorders".
                             "getAgent",
                             "takeAgentOffline",
                             "takeAgentOnline",

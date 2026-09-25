@@ -26,8 +26,6 @@
 
 package io.jenkins.plugins.mcp.server;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.time.Duration;
@@ -38,6 +36,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
 import org.springframework.security.access.AccessDeniedException;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 /**
  * Tracks and exposes MCP connection metrics.
@@ -65,7 +65,7 @@ public class McpConnectionMetrics {
 
     public static final String URL_NAME = Endpoint.MCP_SERVER + "/metrics";
 
-    private static final ObjectMapper objectMapper = new ObjectMapper();
+    private static final JsonMapper objectMapper = new JsonMapper();
 
     /**
      * Total number of SSE connections established since startup.

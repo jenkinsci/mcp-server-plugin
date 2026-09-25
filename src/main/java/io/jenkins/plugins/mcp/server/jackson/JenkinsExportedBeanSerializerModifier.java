@@ -26,17 +26,17 @@
 
 package io.jenkins.plugins.mcp.server.jackson;
 
-import com.fasterxml.jackson.databind.BeanDescription;
-import com.fasterxml.jackson.databind.JsonSerializer;
-import com.fasterxml.jackson.databind.SerializationConfig;
-import com.fasterxml.jackson.databind.ser.BeanSerializerModifier;
 import org.kohsuke.stapler.export.ExportedBean;
+import tools.jackson.databind.BeanDescription;
+import tools.jackson.databind.SerializationConfig;
+import tools.jackson.databind.ValueSerializer;
+import tools.jackson.databind.ser.ValueSerializerModifier;
 
-public class JenkinsExportedBeanSerializerModifier extends BeanSerializerModifier {
+public class JenkinsExportedBeanSerializerModifier extends ValueSerializerModifier {
 
     @Override
-    public JsonSerializer<?> modifySerializer(
-            SerializationConfig config, BeanDescription beanDesc, JsonSerializer<?> serializer) {
+    public ValueSerializer<?> modifySerializer(
+            SerializationConfig config, BeanDescription.Supplier beanDesc, ValueSerializer<?> serializer) {
 
         if (beanDesc.getClassAnnotations().has(ExportedBean.class)) {
             return new JenkinsExportedBeanSerializer();

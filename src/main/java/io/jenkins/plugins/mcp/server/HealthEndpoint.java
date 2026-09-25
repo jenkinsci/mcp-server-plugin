@@ -26,8 +26,6 @@
 
 package io.jenkins.plugins.mcp.server;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import hudson.Extension;
 import hudson.model.UnprotectedRootAction;
 import jakarta.servlet.http.HttpServletResponse;
@@ -39,6 +37,8 @@ import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
 import org.kohsuke.stapler.StaplerRequest2;
 import org.kohsuke.stapler.StaplerResponse2;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 /**
  * Lightweight health endpoint specifically for MCP Server status monitoring.
@@ -71,7 +71,7 @@ public class HealthEndpoint implements UnprotectedRootAction {
 
     public static final String URL_NAME = "mcp-health";
 
-    private static final ObjectMapper objectMapper = new ObjectMapper();
+    private static final JsonMapper objectMapper = new JsonMapper();
 
     /**
      * Tracks whether Jenkins is in the process of shutting down.
