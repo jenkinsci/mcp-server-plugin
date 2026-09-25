@@ -71,7 +71,7 @@ public class EndPointTest {
                             "getFlakyFailures",
                             "getQueueItem",
                             "getSystemLog",
-                            "getLogRecorders".
+                            "getLogRecorders",
                             "getAgent",
                             "takeAgentOffline",
                             "takeAgentOnline",
