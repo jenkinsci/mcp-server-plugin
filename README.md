@@ -401,6 +401,7 @@ The plugin provides the following built-in tools for interacting with Jenkins:
   This tool returns a queue item if the job is successfully scheduled. You can use the returned queue item ID with the `getQueueItem` tool.
 
 - `getQueueItem`: Get information about a queued item using its ID.
+- `cancelBuild`: Cancel a running build or an item in the queue.
 
 #### Build Information
 - `getBuild`: Retrieve a specific build or the last build of a Jenkins job.
@@ -411,7 +412,6 @@ The plugin provides the following built-in tools for interacting with Jenkins:
 - `getReplayScripts`: Return the main script and loaded scripts of a replayable Pipeline build. Use this to inspect or modify script before calling `replayBuild`. Fails for non-Pipeline jobs. Optional `buildNumber`; defaults to the last build.
 - `replayBuild`: Run a Pipeline build again with a modified script. Provide `mainScript` (required) and optionally `loadedScripts`. Optional `buildNumber`; defaults to the last build. Fails if the build is not replayable or replay is not allowed (e.g. permissions or sandbox).
 - `getTestResults`: Retrieve test results of a specific build or the last build.
-- `cancelBuild`: Cancel a running build.
 
 #### SCM Integration
 - `getJobScm`: Retrieve SCM configurations of a Jenkins job.
