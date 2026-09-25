@@ -82,11 +82,24 @@ public class DefaultMcpServer implements McpServerExtension {
         return plugin != null && plugin.isActive();
     }
 
-    @Tool(description = "Cancel specific build")
+    @Tool(description = "Cancel specific build of a job or an entry in the Jenkins queue")
     public boolean cancelBuild(
-            @ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
-            @ToolParam(description = "Build number") Integer buildNumber)
+            @ToolParam(description = "Build number or queue id") Integer buildNumber,
+            @Nullable
+                    @ToolParam(
+                            description =
+                                    "Job full name of the Jenkins job (e.g., 'folder/job-name'). If not specified the buildNumber is treated as queue id",
+                            required = false)
+                    String jobFullName)
             throws ServletException, IOException {
+        if (jobFullName == null || jobFullName.isEmpty()) {
+            Queue queue = Jenkins.get().getQueue();
+            var queueItem = queue.getItem(buildNumber);
+            if (queueItem == null || !queueItem.getTask().hasReadPermission() || !queueItem.hasCancelPermission()) {
+                return false;
+            }
+            return Jenkins.get().getQueue().cancel(queueItem);
+        }
         var job = Jenkins.get().getItemByFullName(jobFullName, Job.class);
         if (job == null || !job.hasPermission(Item.CANCEL)) {
             return false;

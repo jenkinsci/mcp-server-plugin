@@ -31,6 +31,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import hudson.model.FreeStyleProject;
 import hudson.model.Item;
+import hudson.model.Queue;
+import hudson.model.Result;
+import hudson.model.labels.LabelAtom;
 import io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder;
 import io.jenkins.plugins.mcp.server.junit.McpClientTest;
 import io.jenkins.plugins.mcp.server.junit.TestUtils;
@@ -40,6 +43,7 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 import jenkins.model.Jenkins;
+import jenkins.model.ParameterizedJobMixIn;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -56,17 +60,17 @@ class CancelBuildTest {
     static Stream<Arguments> cancelBuildTestParameters() {
         Stream<Arguments> baseArgs = Stream.of(
                 // run already finished
-                Arguments.of("canceller", 1, "pipeline", false, true),
+                Arguments.of("canceller", 1, "pipeline", false),
                 // run successfully cancelled
-                Arguments.of("canceller", 2, "pipeline", true, false),
+                Arguments.of("canceller", 2, "pipeline", true),
                 // run not existing
-                Arguments.of("canceller", 3, "pipeline", false, true),
+                Arguments.of("canceller", 3, "pipeline", false),
                 // job not existing
-                Arguments.of("canceller", 1, "missing", false, true),
+                Arguments.of("canceller", 1, "missing", false),
                 // missing permission to cancel
-                Arguments.of("reader", 2, "pipeline", false, true),
+                Arguments.of("reader", 2, "pipeline", false),
                 // missing permission to see job
-                Arguments.of("unknown", 2, "pipeline", false, true));
+                Arguments.of("unknown", 2, "pipeline", false));
         return TestUtils.appendMcpClientArgs(baseArgs);
     }
 
@@ -77,7 +81,6 @@ class CancelBuildTest {
             int buildNumber,
             String jobNameToCancel,
             boolean expectedResults,
-            boolean expectedRunning,
             JenkinsMcpClientBuilder jenkinsMcpClientBuilder,
             JenkinsRule jenkins)
             throws Exception {
@@ -110,7 +113,7 @@ class CancelBuildTest {
                             assertThat(textContent.text()).contains(String.valueOf(expectedResults));
                         });
                 TimeUnit.SECONDS.sleep(2);
-                assertThat(runningBuild.isBuilding()).isEqualTo(expectedRunning);
+                assertThat(runningBuild.isBuilding()).isEqualTo(!expectedResults);
                 runningBuild.doStop();
             }
         }
@@ -148,10 +151,73 @@ class CancelBuildTest {
                             assertThat(textContent.text()).contains("true");
                         });
 
+                jenkins.waitUntilNoActivityUpTo(MIN_1);
+                assertThat(build.getResult()).isEqualTo(Result.ABORTED);
                 assertThat(build.isBuilding()).isFalse();
             }
         }
-        jenkins.waitUntilNoActivityUpTo(MIN_1);
+    }
+
+    static Stream<Arguments> cancelQueueTestParameters() {
+        Stream<Arguments> baseArgs = Stream.of(
+                // queue item successfully cancelled
+                Arguments.of("canceller", true, 0),
+                // queue item not existing
+                Arguments.of("canceller", false, 42),
+                // missing permission to cancel
+                Arguments.of("reader", false, 0),
+                // missing permission to see job
+                Arguments.of("unknown", false, 0));
+        return TestUtils.appendMcpClientArgs(baseArgs);
+    }
+
+    @ParameterizedTest
+    @MethodSource("cancelQueueTestParameters")
+    void testMcpToolCallCancelQueueItemAsUser(
+            String user,
+            boolean expectedResults,
+            int queueId,
+            JenkinsMcpClientBuilder jenkinsMcpClientBuilder,
+            JenkinsRule jenkins)
+            throws Exception {
+        enableSecurity(jenkins);
+        FreeStyleProject project = jenkins.createFreeStyleProject("freestyle");
+        project.setAssignedLabel(new LabelAtom("non-existing-label"));
+        var queueItem = ParameterizedJobMixIn.scheduleBuild2(project, 0);
+
+        String authString = user + ":" + user;
+        String encodedAuth = Base64.getEncoder().encodeToString(authString.getBytes());
+        var queueItemId = queueId == 0 ? queueItem.getId() : queueId;
+        try (var client = jenkinsMcpClientBuilder
+                .jenkins(jenkins)
+                .requestCustomizer((builder, method, endpoint, body, context) ->
+                        builder.setHeader("Authorization", "Basic " + encodedAuth))
+                .build()) {
+            {
+                McpSchema.CallToolRequest request =
+                        new McpSchema.CallToolRequest("cancelBuild", Map.of("buildNumber", queueItemId), null);
+
+                var response = client.callTool(request);
+                assertThat(response.isError()).isFalse();
+                assertThat(response.content().get(0).type()).isEqualTo("text");
+                assertThat(response.content())
+                        .first()
+                        .isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                            assertThat(textContent.type()).isEqualTo("text");
+                            assertThat(textContent.text()).contains(String.valueOf(expectedResults));
+                        });
+
+                queueItem = jenkins.jenkins.getQueue().getItem(queueItem.getId());
+                if (expectedResults) {
+                    assertThat(queueItem).isInstanceOf(Queue.LeftItem.class);
+                    assertThat(((Queue.LeftItem) queueItem).isCancelled()).isTrue();
+                    assertThat(project.getLastBuild()).isNull();
+                } else {
+                    assertThat(queueItem).isInstanceOf(Queue.NotWaitingItem.class);
+                    Jenkins.get().getQueue().cancel(queueItem);
+                }
+            }
+        }
     }
 
     private void enableSecurity(JenkinsRule jenkins) throws Exception {
