@@ -26,16 +26,14 @@ import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 @WithJenkins
 class PipelineInputExtensionTest {
 
-    private static final String PIPELINE_WITH_PARAMS =
-            "pipeline { agent any; stages { stage('S') { steps {"
-                    + " input(id: 'deploy', message: 'Deploy?',"
-                    + " parameters: [string(name: 'env', defaultValue: 'staging', description: 'Target env')])"
-                    + " } } } }";
+    private static final String PIPELINE_WITH_PARAMS = "pipeline { agent any; stages { stage('S') { steps {"
+            + " input(id: 'deploy', message: 'Deploy?',"
+            + " parameters: [string(name: 'env', defaultValue: 'staging', description: 'Target env')])"
+            + " } } } }";
 
-    private static final String PIPELINE_APPROVAL_ONLY =
-            "pipeline { agent any; stages { stage('S') { steps {"
-                    + " input(id: 'gate', message: 'Approve?')"
-                    + " } } } }";
+    private static final String PIPELINE_APPROVAL_ONLY = "pipeline { agent any; stages { stage('S') { steps {"
+            + " input(id: 'gate', message: 'Approve?')"
+            + " } } } }";
 
     @McpClientTest
     void testGetPendingInputs_withBuildNumber(JenkinsRule jenkins, JenkinsMcpClientBuilder builder) throws Exception {
@@ -51,11 +49,13 @@ class PipelineInputExtensionTest {
             assertThat(response.isError()).isFalse();
             assertThat(response.content()).hasSize(1);
             assertThat(response.content().get(0)).isInstanceOfSatisfying(McpSchema.TextContent.class, tc -> {
-                DocumentContext doc = JsonPath.using(Configuration.defaultConfiguration()).parse(tc.text());
+                DocumentContext doc =
+                        JsonPath.using(Configuration.defaultConfiguration()).parse(tc.text());
                 List<Map<String, Object>> inputs = doc.read("$.result");
                 assertThat(inputs).hasSize(1);
                 // pipeline-input-step capitalizes the configured id (InputStep#setId)
-                assertThat(inputs.get(0)).containsEntry("inputId", "Deploy")
+                assertThat(inputs.get(0))
+                        .containsEntry("inputId", "Deploy")
                         .containsEntry("message", "Deploy?")
                         .containsKey("parameters");
             });
@@ -65,20 +65,21 @@ class PipelineInputExtensionTest {
     }
 
     @McpClientTest
-    void testGetPendingInputs_withoutBuildNumber_findsRunningBuild(
-            JenkinsRule jenkins, JenkinsMcpClientBuilder builder) throws Exception {
+    void testGetPendingInputs_withoutBuildNumber_findsRunningBuild(JenkinsRule jenkins, JenkinsMcpClientBuilder builder)
+            throws Exception {
         WorkflowJob project = jenkins.createProject(WorkflowJob.class, "input-job-scoped");
         project.setDefinition(new CpsFlowDefinition(PIPELINE_APPROVAL_ONLY, true));
         WorkflowRun run = project.scheduleBuild2(0).waitForStart();
         waitForPendingInput(run);
 
         try (var client = builder.jenkins(jenkins).build()) {
-            var response = client.callTool(new McpSchema.CallToolRequest(
-                    "getPendingInputs", Map.of("jobFullName", "input-job-scoped")));
+            var response = client.callTool(
+                    new McpSchema.CallToolRequest("getPendingInputs", Map.of("jobFullName", "input-job-scoped")));
 
             assertThat(response.isError()).isFalse();
             assertThat(response.content().get(0)).isInstanceOfSatisfying(McpSchema.TextContent.class, tc -> {
-                DocumentContext doc = JsonPath.using(Configuration.defaultConfiguration()).parse(tc.text());
+                DocumentContext doc =
+                        JsonPath.using(Configuration.defaultConfiguration()).parse(tc.text());
                 List<Map<String, Object>> inputs = doc.read("$.result");
                 assertThat(inputs).hasSize(1);
                 // pipeline-input-step capitalizes the configured id (InputStep#setId)
@@ -92,19 +93,21 @@ class PipelineInputExtensionTest {
     }
 
     @McpClientTest
-    void testGetPendingInputs_noPendingInput_returnsEmptyList(
-            JenkinsRule jenkins, JenkinsMcpClientBuilder builder) throws Exception {
+    void testGetPendingInputs_noPendingInput_returnsEmptyList(JenkinsRule jenkins, JenkinsMcpClientBuilder builder)
+            throws Exception {
         WorkflowJob project = jenkins.createProject(WorkflowJob.class, "no-pending-input");
-        project.setDefinition(new CpsFlowDefinition("pipeline { agent any; stages { stage('S') { steps { echo 'hi' } } } }", true));
+        project.setDefinition(
+                new CpsFlowDefinition("pipeline { agent any; stages { stage('S') { steps { echo 'hi' } } } }", true));
         project.scheduleBuild2(0).get();
 
         try (var client = builder.jenkins(jenkins).build()) {
-            var response = client.callTool(new McpSchema.CallToolRequest(
-                    "getPendingInputs", Map.of("jobFullName", "no-pending-input")));
+            var response = client.callTool(
+                    new McpSchema.CallToolRequest("getPendingInputs", Map.of("jobFullName", "no-pending-input")));
 
             assertThat(response.isError()).isFalse();
             assertThat(response.content().get(0)).isInstanceOfSatisfying(McpSchema.TextContent.class, tc -> {
-                DocumentContext doc = JsonPath.using(Configuration.defaultConfiguration()).parse(tc.text());
+                DocumentContext doc =
+                        JsonPath.using(Configuration.defaultConfiguration()).parse(tc.text());
                 // an empty collection result omits the "result" field entirely; see McpToolWrapper#toMcpResult
                 String message = doc.read("$.message");
                 assertThat(message).isEqualTo(ToolResponse.NO_DATA_MSG);
@@ -113,8 +116,8 @@ class PipelineInputExtensionTest {
     }
 
     @McpClientTest
-    void testSubmitPipelineInput_withParameters_resumesBuild(
-            JenkinsRule jenkins, JenkinsMcpClientBuilder builder) throws Exception {
+    void testSubmitPipelineInput_withParameters_resumesBuild(JenkinsRule jenkins, JenkinsMcpClientBuilder builder)
+            throws Exception {
         WorkflowJob project = jenkins.createProject(WorkflowJob.class, "submit-with-params");
         project.setDefinition(new CpsFlowDefinition(PIPELINE_WITH_PARAMS, true));
         WorkflowRun run = project.scheduleBuild2(0).waitForStart();
@@ -124,14 +127,19 @@ class PipelineInputExtensionTest {
             var response = client.callTool(new McpSchema.CallToolRequest(
                     "submitPipelineInput",
                     Map.of(
-                            "jobFullName", "submit-with-params",
-                            "buildNumber", run.getNumber(),
-                            "inputId", "deploy",
-                            "parameters", Map.of("env", "production"))));
+                            "jobFullName",
+                            "submit-with-params",
+                            "buildNumber",
+                            run.getNumber(),
+                            "inputId",
+                            "deploy",
+                            "parameters",
+                            Map.of("env", "production"))));
 
             assertThat(response.isError()).isFalse();
             assertThat(response.content().get(0)).isInstanceOfSatisfying(McpSchema.TextContent.class, tc -> {
-                DocumentContext doc = JsonPath.using(Configuration.defaultConfiguration()).parse(tc.text());
+                DocumentContext doc =
+                        JsonPath.using(Configuration.defaultConfiguration()).parse(tc.text());
                 String result = doc.read("$.result");
                 assertThat(result).contains("deploy").contains(String.valueOf(run.getNumber()));
             });
@@ -142,8 +150,8 @@ class PipelineInputExtensionTest {
     }
 
     @McpClientTest
-    void testSubmitPipelineInput_approvalOnly_resumesBuild(
-            JenkinsRule jenkins, JenkinsMcpClientBuilder builder) throws Exception {
+    void testSubmitPipelineInput_approvalOnly_resumesBuild(JenkinsRule jenkins, JenkinsMcpClientBuilder builder)
+            throws Exception {
         WorkflowJob project = jenkins.createProject(WorkflowJob.class, "submit-approval");
         project.setDefinition(new CpsFlowDefinition(PIPELINE_APPROVAL_ONLY, true));
         WorkflowRun run = project.scheduleBuild2(0).waitForStart();
@@ -159,7 +167,8 @@ class PipelineInputExtensionTest {
 
             assertThat(response.isError()).isFalse();
             assertThat(response.content().get(0)).isInstanceOfSatisfying(McpSchema.TextContent.class, tc -> {
-                DocumentContext doc = JsonPath.using(Configuration.defaultConfiguration()).parse(tc.text());
+                DocumentContext doc =
+                        JsonPath.using(Configuration.defaultConfiguration()).parse(tc.text());
                 String result = doc.read("$.result");
                 assertThat(result).contains("gate").contains(String.valueOf(run.getNumber()));
             });
@@ -186,7 +195,8 @@ class PipelineInputExtensionTest {
 
             assertThat(response.isError()).isFalse();
             assertThat(response.content().get(0)).isInstanceOfSatisfying(McpSchema.TextContent.class, tc -> {
-                DocumentContext doc = JsonPath.using(Configuration.defaultConfiguration()).parse(tc.text());
+                DocumentContext doc =
+                        JsonPath.using(Configuration.defaultConfiguration()).parse(tc.text());
                 String result = doc.read("$.result");
                 assertThat(result).contains("gate").contains(String.valueOf(run.getNumber()));
             });
@@ -200,8 +210,8 @@ class PipelineInputExtensionTest {
     void testGetPendingInputs_jobNotFound_returnsError(JenkinsRule jenkins, JenkinsMcpClientBuilder builder)
             throws Exception {
         try (var client = builder.jenkins(jenkins).build()) {
-            var response = client.callTool(new McpSchema.CallToolRequest(
-                    "getPendingInputs", Map.of("jobFullName", "nonexistent-job")));
+            var response = client.callTool(
+                    new McpSchema.CallToolRequest("getPendingInputs", Map.of("jobFullName", "nonexistent-job")));
             assertThat(response.isError()).isTrue();
         }
     }

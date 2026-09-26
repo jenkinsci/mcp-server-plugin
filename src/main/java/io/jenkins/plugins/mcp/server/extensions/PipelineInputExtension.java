@@ -90,16 +90,14 @@ public class PipelineInputExtension implements McpServerExtension {
         return result;
     }
 
-    @Tool(description = "Submit a response to a pending pipeline input step to allow the build to proceed",
+    @Tool(
+            description = "Submit a response to a pending pipeline input step to allow the build to proceed",
             annotations = @Tool.Annotations(destructiveHint = true))
     public String submitPipelineInput(
             @ToolParam(description = "Job full name") String jobFullName,
             @ToolParam(description = "Build number") int buildNumber,
             @ToolParam(description = "Input step ID (from getPendingInputs)") String inputId,
-            @Nullable
-                    @ToolParam(
-                            description = "Input parameter values (optional, e.g., {key=value})",
-                            required = false)
+            @Nullable @ToolParam(description = "Input parameter values (optional, e.g., {key=value})", required = false)
                     Map<String, Object> parameters)
             throws IOException, InterruptedException, TimeoutException {
         var execution = getExecution(jobFullName, buildNumber, inputId);
@@ -108,7 +106,8 @@ public class PipelineInputExtension implements McpServerExtension {
         return "Input step '" + inputId + "' submitted for build #" + buildNumber;
     }
 
-    @Tool(description = "Abort a pending pipeline input step, causing the build to be aborted",
+    @Tool(
+            description = "Abort a pending pipeline input step, causing the build to be aborted",
             annotations = @Tool.Annotations(destructiveHint = true))
     public String abortPipelineInput(
             @ToolParam(description = "Job full name") String jobFullName,
