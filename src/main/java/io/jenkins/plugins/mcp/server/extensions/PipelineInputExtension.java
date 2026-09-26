@@ -134,10 +134,11 @@ public class PipelineInputExtension implements McpServerExtension {
         if (inputAction == null) {
             throw new IllegalStateException("No pending inputs for build #" + buildNumber);
         }
-        var execution = inputAction.getExecution(inputId);
-        if (execution == null) {
-            throw new IllegalStateException("Input step not found: " + inputId);
+        for (var execution : inputAction.getExecutions()) {
+            if (execution.getId().equalsIgnoreCase(inputId)) {
+                return execution;
+            }
         }
-        return execution;
+        throw new IllegalStateException("Input step not found: " + inputId);
     }
 }

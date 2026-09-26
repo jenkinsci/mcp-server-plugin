@@ -11,6 +11,7 @@ import com.jayway.jsonpath.JsonPath;
 import hudson.model.Result;
 import io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder;
 import io.jenkins.plugins.mcp.server.junit.McpClientTest;
+import io.jenkins.plugins.mcp.server.tool.ToolResponse;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.List;
 import java.util.Map;
@@ -53,7 +54,8 @@ class PipelineInputExtensionTest {
                 DocumentContext doc = JsonPath.using(Configuration.defaultConfiguration()).parse(tc.text());
                 List<Map<String, Object>> inputs = doc.read("$.result");
                 assertThat(inputs).hasSize(1);
-                assertThat(inputs.get(0)).containsEntry("inputId", "deploy")
+                // pipeline-input-step capitalizes the configured id (InputStep#setId)
+                assertThat(inputs.get(0)).containsEntry("inputId", "Deploy")
                         .containsEntry("message", "Deploy?")
                         .containsKey("parameters");
             });
@@ -79,8 +81,9 @@ class PipelineInputExtensionTest {
                 DocumentContext doc = JsonPath.using(Configuration.defaultConfiguration()).parse(tc.text());
                 List<Map<String, Object>> inputs = doc.read("$.result");
                 assertThat(inputs).hasSize(1);
+                // pipeline-input-step capitalizes the configured id (InputStep#setId)
                 assertThat(inputs.get(0))
-                        .containsEntry("inputId", "gate")
+                        .containsEntry("inputId", "Gate")
                         .containsEntry("buildNumber", run.getNumber());
             });
         }
@@ -102,8 +105,9 @@ class PipelineInputExtensionTest {
             assertThat(response.isError()).isFalse();
             assertThat(response.content().get(0)).isInstanceOfSatisfying(McpSchema.TextContent.class, tc -> {
                 DocumentContext doc = JsonPath.using(Configuration.defaultConfiguration()).parse(tc.text());
-                List<Map<String, Object>> inputs = doc.read("$.result");
-                assertThat(inputs).isEmpty();
+                // an empty collection result omits the "result" field entirely; see McpToolWrapper#toMcpResult
+                String message = doc.read("$.message");
+                assertThat(message).isEqualTo(ToolResponse.NO_DATA_MSG);
             });
         }
     }
