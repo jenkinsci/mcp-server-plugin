@@ -122,6 +122,23 @@ public class SimpleMcpServerTest {
         }
     }
 
+    @McpClientTest
+    void testMcpToolCallWithNullPointerDoesNotLeakJvmMessage(
+            JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder) {
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+            var response = client.callTool(new McpSchema.CallToolRequest("testWithNpe", Map.of()));
+
+            assertThat(response.isError()).isTrue();
+            assertThat(response.content()).hasSize(1);
+            assertThat(response.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                assertThat(textContent.text()).contains("Error invoking method: testWithNpe");
+                assertThat(textContent.text()).doesNotContain("NullPointerException");
+                assertThat(textContent.text()).doesNotContain("marked non-null");
+                assertThat(textContent.text()).doesNotContain("fullJobName");
+            });
+        }
+    }
+
     @TestExtension
     public static class SampleMcpServer implements McpServerExtension {
         @Tool(
@@ -149,6 +166,11 @@ public class SimpleMcpServerTest {
         @Tool
         public int testWithError() {
             throw new IllegalArgumentException("Error occurred during execution");
+        }
+
+        @Tool
+        public int testWithNpe() {
+            throw new NullPointerException("fullJobName is marked non-null but is null");
         }
     }
 }
