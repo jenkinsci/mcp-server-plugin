@@ -247,13 +247,13 @@ public class BuildLogExtensionTest {
 
         try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
             var missing = client.callTool(new McpSchema.CallToolRequest("searchBuildLog", Map.of("pattern", "ERROR")));
-            assertThat(failedMessage(missing)).isEqualTo("Missing required parameter: jobFullName");
+            assertCleanJobFullNameError(missing);
 
             // The old NPE told agents to send fullJobName. That key is not in the schema and must
-            // still fail cleanly, naming jobFullName rather than the Java parameter.
+            // still fail cleanly, naming jobFullName.
             var wrongKey = client.callTool(
                     new McpSchema.CallToolRequest("searchBuildLog", Map.of("fullJobName", project.getFullName())));
-            assertThat(failedMessage(wrongKey)).isEqualTo("Missing required parameters: jobFullName, pattern");
+            assertCleanJobFullNameError(wrongKey);
 
             Map<String, Object> params = new HashMap<>();
             params.put("jobFullName", project.getFullName());
@@ -271,17 +271,22 @@ public class BuildLogExtensionTest {
         }
     }
 
-    private static String failedMessage(McpSchema.CallToolResult response) {
+    /**
+     * A missing {@code jobFullName} must name that schema property. The MCP SDK schema check usually
+     * answers first ({@code required property 'jobFullName'}); {@code McpToolWrapper} uses
+     * {@code Missing required parameter: jobFullName} when the call reaches the tool. Neither may
+     * quote the Java parameter {@code fullJobName} or a raw {@code NullPointerException}.
+     */
+    private static void assertCleanJobFullNameError(McpSchema.CallToolResult response) {
         assertThat(response.isError()).isTrue();
         assertThat(response.content()).hasSize(1);
         String text = ((McpSchema.TextContent) response.content().get(0)).text();
+        assertThat(text).contains("jobFullName");
+        assertThat(text.contains("Missing required parameter") || text.contains("required property"))
+                .isTrue();
+        assertThat(text).doesNotContain("fullJobName");
         assertThat(text).doesNotContain("NullPointerException");
         assertThat(text).doesNotContain("marked non-null");
-        assertThat(text).doesNotContain("fullJobName");
-        DocumentContext documentContext =
-                JsonPath.using(Configuration.defaultConfiguration()).parse(text);
-        assertThat(documentContext.read("$.status", String.class)).isEqualTo("FAILED");
-        return documentContext.read("$.message", String.class);
     }
 
     @McpClientTest
