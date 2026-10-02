@@ -276,13 +276,30 @@ I tested GitHub Copilot Chat in VS Code with the Streamable HTTP endpoint, and i
 
 ```json
 {
-  "servers": {
-    "jenkins": {
-      "type": "http",
-      "url": "https://jenkins-host/mcp-server/mcp",
-      "requestInit": {
+  "mcp": {
+    "servers": {
+      "jenkins": {
+        "type": "http",
+        "url": "https://jenkins-host/mcp-server/mcp",
         "headers": {
           "Authorization": "Basic <user:token base64>"
+        }
+      }
+    }
+  }
+}
+```
+
+Streamable example:
+```json
+{
+  "servers":{
+    "jenkins":{
+      "type":"http",
+      "url":"http://jenkins-host/mcp-server/mcp",
+      "requestInit":{
+        "headers":{
+          "Authorization":"Basic <user:token base64>"
         }
       }
     }
