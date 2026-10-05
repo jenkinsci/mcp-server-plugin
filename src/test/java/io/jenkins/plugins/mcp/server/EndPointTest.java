@@ -72,6 +72,8 @@ public class EndPointTest {
                             "getQueueItem",
                             "getSystemLog",
                             "getLogRecorders",
+                            "listBuildArtifacts",
+                            "getBuildArtifact",
                             "getPendingInputs",
                             "submitPipelineInput",
                             "abortPipelineInput");
@@ -114,7 +116,9 @@ public class EndPointTest {
                 "getJobScm",
                 "getBuildScm",
                 "getBuildChangeSets",
-                "findJobsWithScmUrl"
+                "findJobsWithScmUrl",
+                "listBuildArtifacts",
+                "getBuildArtifact"
             }) {
                 assertReadOnly.accept(name);
             }
