@@ -530,6 +530,62 @@ permissions such as `Overall/SystemRead` or `Overall/Administer`. It cannot expr
 permissions like `Item.READ` on a particular folder or job — a tool has no item context. Enforce those
 inside the method against the specific item (for example `job.checkPermission(Item.READ)`).
 
+### Interactive views (MCP Apps)
+
+Clients that support [MCP Apps](https://github.com/modelcontextprotocol/ext-apps) show the result of every
+read-only tool as the Jenkins page it belongs to, drawn with the stylesheet, logo and symbols of the Jenkins it
+comes from:
+
+| Page | Tools |
+|---|---|
+| `ui://jenkins/build-log` Console Output | `getBuildLog`, `searchBuildLog` |
+| `ui://jenkins/build` Build | `getBuild`, `getBuildChangeSets`, `getBuildScm`, `getReplayScripts` |
+| `ui://jenkins/job` Job | `getJob`, `getJobScm` |
+| `ui://jenkins/jobs` Jobs | `getJobs`, `findJobsWithScmUrl` |
+| `ui://jenkins/test-results` Test Result | `getTestResults`, `getFlakyFailures` |
+| `ui://jenkins/queue-item` Queue item | `getQueueItem` |
+| `ui://jenkins/system-log` System Log | `getSystemLog`, `getLogRecorders` |
+| `ui://jenkins/status` Status | `getStatus`, `whoAmI` |
+
+From any page the user can move between the jobs, a job, its builds, their console and test result.
+
+**The pages are read-only.** They get no access the tools don't already have:
+
+* A page never talks to Jenkins. Everything it shows comes from a `tools/call` the client sends over the
+  user's own MCP connection, so the same authentication, tool permissions and item ACLs apply.
+* Every tool that is not annotated `readOnlyHint = true, destructiveHint = false` is advertised with
+  `_meta.ui.visibility: ["model"]`, so MCP Apps hosts refuse to let a view call it.
+* A page lists only the read-only tools it may call, and refuses any other.
+* Reading the page requires Overall/Read. It is the same static HTML for every user, with no build or user
+  data, and hosts run it in a sandboxed iframe with no network access and no Jenkins cookies.
+* Job names, log lines and every other value are HTML-escaped.
+
+To show a page for your own read-only tool, point the tool at it:
+
+```java
+@Tool(
+        description = "Retrieves some log lines of a build",
+        annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false),
+        ui = @Tool.Ui(resourceUri = JenkinsApps.BUILD_LOG))
+```
+
+A plugin can contribute its own page by registering an `McpApp`. Tools it names that are not
+read-only are dropped from the page:
+
+```java
+@Extension
+public static final McpApp PIPELINE_GRAPH = new McpApp(
+        "ui://my-plugin/pipeline-graph",
+        "Pipeline graph",
+        "The stages of a pipeline run",
+        List.of("getBuild"),
+        "my/plugin/pipeline-graph.html");
+```
+
+The page must contain a `<meta name="jenkins:head">` slot, where the Jenkins look, the callable tools and the
+page name (the last segment of its URI) are injected. The built-in pages share one page built from
+`src/main/frontend` with Vite during `mvn package`.
+
 ### Overriding a Built-in Tool
 
 You can replace a built-in tool (or any tool contributed by another plugin) with your own

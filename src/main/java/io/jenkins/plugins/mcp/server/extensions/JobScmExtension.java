@@ -39,6 +39,7 @@ import hudson.scm.SCM;
 import io.jenkins.plugins.mcp.server.McpServerExtension;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
+import io.jenkins.plugins.mcp.server.apps.JenkinsApps;
 import io.jenkins.plugins.mcp.server.extensions.scm.GitScmUtil;
 import jakarta.annotation.Nullable;
 import java.net.URISyntaxException;
@@ -64,7 +65,8 @@ public class JobScmExtension implements McpServerExtension {
 
     @Tool(
             description = "Retrieves scm configurations of a Jenkins job",
-            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
+            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false),
+            ui = @Tool.Ui(resourceUri = JenkinsApps.JOB))
     public List getJobScm(
             @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName) {
         var job = Jenkins.get().getItemByFullName(jobFullName, Job.class);
@@ -87,7 +89,8 @@ public class JobScmExtension implements McpServerExtension {
 
     @Tool(
             description = "Retrieves scm configurations of a Jenkins build",
-            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
+            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false),
+            ui = @Tool.Ui(resourceUri = JenkinsApps.BUILD))
     public List getBuildScm(
             @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
             @Nullable
@@ -107,7 +110,8 @@ public class JobScmExtension implements McpServerExtension {
 
     @Tool(
             description = "Retrieves change log sets of a Jenkins build",
-            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
+            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false),
+            ui = @Tool.Ui(resourceUri = JenkinsApps.BUILD))
     public List getBuildChangeSets(
             @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
             @Nullable
@@ -125,7 +129,8 @@ public class JobScmExtension implements McpServerExtension {
 
     @Tool(
             description = "Get a paginated list of Jenkins jobs that use the specified git SCM URL",
-            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
+            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false),
+            ui = @Tool.Ui(resourceUri = JenkinsApps.JOBS))
     public List<SimpleJob> findJobsWithScmUrl(
             @ToolParam(description = "SCM URL to search for (e.g., 'git@github.com:jenkinsci/mcp-server-plugin.git')")
                     String scmUrl,
