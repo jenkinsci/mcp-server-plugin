@@ -105,6 +105,15 @@ public @interface Tool {
         String parameter() default "";
     }
 
+    Ui ui() default @Ui;
+
+    @Retention(RetentionPolicy.RUNTIME)
+    @Target(ElementType.ANNOTATION_TYPE)
+    @interface Ui {
+
+        String resourceUri() default "";
+    }
+
     /**
      * Additional hints for clients.
      * There is no default value for this. If you need it you need to explicitly add it.

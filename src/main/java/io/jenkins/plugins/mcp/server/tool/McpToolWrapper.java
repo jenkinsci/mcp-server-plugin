@@ -44,6 +44,7 @@ import hudson.security.ACL;
 import hudson.security.Permission;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
+import io.jenkins.plugins.mcp.server.apps.McpAppToolMeta;
 import io.jenkins.plugins.mcp.server.jackson.JenkinsExportedBeanModule;
 import io.modelcontextprotocol.common.McpTransportContext;
 import io.modelcontextprotocol.json.jackson3.JacksonMcpJsonMapper;
@@ -60,6 +61,7 @@ import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
@@ -459,14 +461,15 @@ public class McpToolWrapper {
 
     private Supplier<Map<String, Object>> _meta() {
         var tool = method.getAnnotation(Tool.class);
+        Map<String, Object> metaMap = new LinkedHashMap<>();
         if (tool.metas().length > 0) {
-            Map<String, Object> metaMap = Arrays.stream(tool.metas())
+            metaMap.putAll(Arrays.stream(tool.metas())
                     .sequential()
                     .filter(meta -> StringUtils.hasText(meta.property()) && StringUtils.hasText(meta.parameter()))
-                    .collect(Collectors.toMap(Tool.Meta::property, Tool.Meta::parameter));
-            return () -> metaMap;
+                    .collect(Collectors.toMap(Tool.Meta::property, Tool.Meta::parameter)));
         }
-        return Map::of;
+        metaMap.putAll(McpAppToolMeta.of(tool));
+        return () -> metaMap;
     }
 
     private Supplier<McpSchema.ToolAnnotations> toolAnnotations() {

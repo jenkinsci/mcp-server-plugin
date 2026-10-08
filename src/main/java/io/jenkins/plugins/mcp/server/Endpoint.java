@@ -32,6 +32,7 @@ import hudson.Extension;
 import hudson.ExtensionComponent;
 import hudson.PluginWrapper;
 import hudson.model.RootAction;
+import hudson.security.ACL;
 import hudson.security.Permission;
 import hudson.security.csrf.CrumbExclusion;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
@@ -74,6 +75,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import jenkins.model.Jenkins;
 import jenkins.util.HttpServletFilter;
@@ -82,6 +84,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
+import org.springframework.security.core.Authentication;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
@@ -540,6 +543,8 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
                         ? candidate.newWrapper(objectMapper).asSyncToolSpecification()
                         : candidate.spec())
                 .toList();
+        List<McpServerFeatures.SyncResourceSpecification> callerCheckedResources =
+                resources.stream().map(Endpoint::readableWithOverallRead).toList();
 
         httpServletSseServerTransportProvider = HttpServletSseServerTransportProvider.builder()
                 .jsonMapper(new JacksonMcpJsonMapper(objectMapper))
@@ -558,7 +563,7 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
                 .capabilities(serverCapabilities)
                 .tools(allTools)
                 .prompts(prompts)
-                .resources(resources)
+                .resources(callerCheckedResources)
                 .build();
 
         httpServletStreamableServerTransportProvider = HttpServletStreamableServerTransportProvider.builder()
@@ -575,7 +580,7 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
                 .capabilities(serverCapabilities)
                 .tools(allTools)
                 .prompts(prompts)
-                .resources(resources)
+                .resources(callerCheckedResources)
                 .build();
 
         initialized = true;
@@ -653,9 +658,27 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
                     resource.resource().uri(),
                     new McpStatelessServerFeatures.SyncResourceSpecification(
                             resource.resource(),
-                            (context, request) -> resource.readHandler().apply(null, request)));
+                            (context, request) -> readAsCallerWithOverallRead(
+                                    context, () -> resource.readHandler().apply(null, request))));
         }
         return result;
+    }
+
+    private static McpServerFeatures.SyncResourceSpecification readableWithOverallRead(
+            McpServerFeatures.SyncResourceSpecification resource) {
+        return new McpServerFeatures.SyncResourceSpecification(
+                resource.resource(),
+                (exchange, request) -> readAsCallerWithOverallRead(
+                        exchange.transportContext(),
+                        () -> resource.readHandler().apply(exchange, request)));
+    }
+
+    private static McpSchema.ReadResourceResult readAsCallerWithOverallRead(
+            McpTransportContext context, Supplier<McpSchema.ReadResourceResult> read) {
+        try (var ignored = ACL.as2((Authentication) context.get(AUTHENTICATION))) {
+            Jenkins.get().checkPermission(Jenkins.READ);
+            return read.get();
+        }
     }
 
     @Override

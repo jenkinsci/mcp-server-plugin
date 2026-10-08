@@ -147,3 +147,7 @@ Temporary Items
 .apdisk
 .factorypath
 .jackknife/
+
+# MCP Apps frontend (frontend-maven-plugin downloads node here)
+/node/
+/node_modules/

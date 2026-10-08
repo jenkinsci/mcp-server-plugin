@@ -1,0 +1,27 @@
+html,
+body {
+  margin: 0;
+}
+
+body {
+  min-height: 0 !important;
+}
+
+#page-body {
+  padding-top: 0;
+}
+
+.jenkins-app-bar {
+  flex-wrap: wrap;
+  row-gap: 0.75rem;
+}
+
+[data-action] {
+  cursor: pointer;
+}
+
+pre.console-output {
+  margin: 0;
+  max-height: 360px;
+  overflow: auto;
+}

@@ -32,6 +32,7 @@ import hudson.logging.LogRecorder;
 import io.jenkins.plugins.mcp.server.McpServerExtension;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
+import io.jenkins.plugins.mcp.server.apps.JenkinsApps;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -55,7 +56,8 @@ public class SystemLogExtension implements McpServerExtension {
                     "Read recent Jenkins log entries, newest first. Reads the global system log, or a named Log Recorder when 'recorder' is set. Requires the Overall/SystemRead permission.",
             permissions = {"hudson.model.Hudson.SystemRead"},
             structuredOutput = true,
-            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false, idempotentHint = true))
+            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false, idempotentHint = true),
+            ui = @Tool.Ui(resourceUri = JenkinsApps.SYSTEM_LOG))
     public SystemLogResponse getSystemLog(
             @ToolParam(
                             description = "Maximum number of entries to return, newest first. Defaults to 50.",
@@ -98,7 +100,8 @@ public class SystemLogExtension implements McpServerExtension {
             description =
                     "List the names of configured Jenkins Log Recorders, for use with getSystemLog's 'recorder' parameter. Requires the Overall/SystemRead permission.",
             permissions = {"hudson.model.Hudson.SystemRead"},
-            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false, idempotentHint = true))
+            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false, idempotentHint = true),
+            ui = @Tool.Ui(resourceUri = JenkinsApps.SYSTEM_LOG))
     public List<String> getLogRecorders() {
         Jenkins.get().checkPermission(Jenkins.SYSTEM_READ);
         return Jenkins.get().getLog().getRecorders().stream()

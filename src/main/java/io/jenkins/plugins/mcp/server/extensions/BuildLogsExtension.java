@@ -36,6 +36,7 @@ import hudson.model.Run;
 import io.jenkins.plugins.mcp.server.McpServerExtension;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
+import io.jenkins.plugins.mcp.server.apps.JenkinsApps;
 import io.jenkins.plugins.mcp.server.extensions.util.SlidingWindow;
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
@@ -69,7 +70,8 @@ public class BuildLogsExtension implements McpServerExtension {
                             + " If 'nextCursor' is set but 'hasMoreContent' is false, you've read everything written"
                             + " so far but the build is still going; keep the cursor and call again later to pick up"
                             + " whatever was appended in the meantime.",
-            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
+            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false),
+            ui = @Tool.Ui(resourceUri = JenkinsApps.BUILD_LOG))
     public BuildLogResponse getBuildLog(
             @ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
             @ToolParam(
@@ -125,7 +127,8 @@ public class BuildLogsExtension implements McpServerExtension {
             description =
                     "Search for log lines matching a pattern in a specific build or the last build of a Jenkins job. "
                             + "Returns matching lines with their line numbers and context.",
-            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
+            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false),
+            ui = @Tool.Ui(resourceUri = JenkinsApps.BUILD_LOG))
     public SearchLogResponse searchBuildLog(
             @ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
             @ToolParam(
