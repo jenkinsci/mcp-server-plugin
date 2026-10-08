@@ -62,7 +62,6 @@ public class EndPointTest {
                             "getJobs",
                             "getBuild",
                             "getJob",
-                            "getJobScm",
                             "getBuildScm",
                             "findJobsWithScmUrl",
                             "getBuildChangeSets",
@@ -108,7 +107,6 @@ public class EndPointTest {
                 "searchBuildLog",
                 "getTestResults",
                 "getFlakyFailures",
-                "getJobScm",
                 "getBuildScm",
                 "getBuildChangeSets",
                 "findJobsWithScmUrl"
