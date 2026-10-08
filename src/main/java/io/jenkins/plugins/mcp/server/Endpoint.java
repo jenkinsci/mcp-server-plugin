@@ -863,7 +863,8 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
         String requestedResource = getRequestedResourcePath(request);
         return requestedResource.startsWith("/" + MCP_SERVER_STREAMABLE)
                 && (request.getMethod().equalsIgnoreCase("GET")
-                        || (request.getMethod().equalsIgnoreCase("POST")));
+                        || request.getMethod().equalsIgnoreCase("POST")
+                        || request.getMethod().equalsIgnoreCase("DELETE"));
     }
 
     private boolean isStatelessRequest(HttpServletRequest request) {
