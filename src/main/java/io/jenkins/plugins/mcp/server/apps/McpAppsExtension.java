@@ -28,21 +28,20 @@ package io.jenkins.plugins.mcp.server.apps;
 
 import hudson.Extension;
 import hudson.ExtensionList;
-import hudson.Main;
 import io.jenkins.plugins.mcp.server.McpServerExtension;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.tool.McpToolWrapper;
 import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.spec.McpSchema;
-import java.io.IOException;
 import java.io.InputStream;
-import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import jenkins.model.Jenkins;
+import lombok.SneakyThrows;
 
 @Extension
 public class McpAppsExtension implements McpServerExtension {
@@ -73,7 +72,7 @@ public class McpAppsExtension implements McpServerExtension {
     }
 
     private McpSchema.ReadResourceResult read(McpApp app) {
-        var page = Main.isDevelopmentMode ? pageOf(app) : this.pages.computeIfAbsent(app.uri(), uri -> pageOf(app));
+        var page = this.pages.computeIfAbsent(app.uri(), uri -> pageOf(app));
         var contents = McpSchema.TextResourceContents.builder(app.uri(), page)
                 .mimeType(RESOURCE_MIME_TYPE)
                 .meta(RESOURCE_META)
@@ -86,14 +85,13 @@ public class McpAppsExtension implements McpServerExtension {
         return McpAppPage.assemble(builtPage(app), app.name(), readOnly(app.callableTools()), look);
     }
 
+    @SneakyThrows
     private static String builtPage(McpApp app) {
         try (InputStream in = Jenkins.get().getPluginManager().uberClassLoader.getResourceAsStream(app.page())) {
-            if (in == null) {
-                throw new IllegalStateException("The MCP App page " + app.page() + " is missing, run mvn package");
-            }
-            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not read the MCP App page " + app.page(), e);
+            return new String(
+                    Objects.requireNonNull(in, "The MCP App page " + app.page() + " is missing, run mvn package")
+                            .readAllBytes(),
+                    StandardCharsets.UTF_8);
         }
     }
 

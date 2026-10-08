@@ -675,8 +675,7 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
 
     private static McpSchema.ReadResourceResult readAsCallerWithOverallRead(
             McpTransportContext context, Supplier<McpSchema.ReadResourceResult> read) {
-        var caller = context != null ? (Authentication) context.get(AUTHENTICATION) : null;
-        try (var ignored = ACL.as2(caller != null ? caller : Jenkins.ANONYMOUS2)) {
+        try (var ignored = ACL.as2((Authentication) context.get(AUTHENTICATION))) {
             Jenkins.get().checkPermission(Jenkins.READ);
             return read.get();
         }

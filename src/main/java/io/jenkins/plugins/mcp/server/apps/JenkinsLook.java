@@ -28,16 +28,16 @@ package io.jenkins.plugins.mcp.server.apps;
 
 import hudson.Functions;
 import jakarta.servlet.ServletContext;
-import java.io.IOException;
 import java.io.InputStream;
-import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import lombok.SneakyThrows;
 import org.jenkins.ui.symbol.Symbol;
 import org.jenkins.ui.symbol.SymbolRequest;
 
@@ -101,19 +101,15 @@ record JenkinsLook(String stylesheet, String logo, String version, Map<String, S
     }
 
     private static String dataUri(ServletContext context, String path) {
-        var mimeType = context.getMimeType(path);
-        return "data:" + (mimeType == null ? "application/octet-stream" : mimeType) + ";base64,"
+        return "data:" + context.getMimeType(path) + ";base64,"
                 + Base64.getEncoder().encodeToString(read(context, path));
     }
 
+    @SneakyThrows
     private static byte[] read(ServletContext context, String path) {
         try (InputStream in = context.getResourceAsStream(path)) {
-            if (in == null) {
-                throw new IllegalStateException("The Jenkins web app has no " + path);
-            }
-            return in.readAllBytes();
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not read " + path + " from the Jenkins web app", e);
+            return Objects.requireNonNull(in, "The Jenkins web app has no " + path)
+                    .readAllBytes();
         }
     }
 }
