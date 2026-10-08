@@ -71,7 +71,10 @@ public class EndPointTest {
                             "getFlakyFailures",
                             "getQueueItem",
                             "getSystemLog",
-                            "getLogRecorders");
+                            "getLogRecorders",
+                            "getPendingInputs",
+                            "submitPipelineInput",
+                            "abortPipelineInput");
         }
     }
 
