@@ -271,14 +271,16 @@ Store the encoded credential in a secure location for later use.
 }
 ```
 #### Copilot Configuration
-Copilot doesn't work well with the Streamable transport as of now, and I'm still investigating the issues. Please continue to use the SSE endpoint.
+
+I tested GitHub Copilot Chat in VS Code with the Streamable HTTP endpoint, and it successfully called the Jenkins `getStatus` tool. The Copilot CLI and desktop app have not been tested.
+
 ```json
 {
   "mcp": {
     "servers": {
       "jenkins": {
-        "type": "sse",
-        "url": "https://jenkins-host/mcp-server/sse",
+        "type": "http",
+        "url": "https://jenkins-host/mcp-server/mcp",
         "headers": {
           "Authorization": "Basic <user:token base64>"
         }
@@ -287,22 +289,24 @@ Copilot doesn't work well with the Streamable transport as of now, and I'm still
   }
 }
 ```
+
 Streamable example:
 ```json
 {
-  "servers": {
-    "jenkins": {
-      "type": "http",
-      "url": "http://jenkins-host/mcp-server/mcp",
-      "requestInit": {
-        "headers": {
-          "Authorization": "Basic <user:token base64>"
+  "servers":{
+    "jenkins":{
+      "type":"http",
+      "url":"http://jenkins-host/mcp-server/mcp",
+      "requestInit":{
+        "headers":{
+          "Authorization":"Basic <user:token base64>"
         }
       }
     }
   }
 }
 ```
+
 #### Windsurf Configuration
 ```json
 {
