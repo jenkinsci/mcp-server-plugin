@@ -169,6 +169,59 @@ public class McpToolWrapper {
         return PROPERTY_REQUIRED_BY_DEFAULT;
     }
 
+    /**
+     * Schema parameter names that are required but missing or null. Uses the same rules as
+     * {@link #generateForMethodInput()} so the error names the property from {@code tools/list}
+     * (for example {@code jobFullName}).
+     */
+    List<String> missingRequiredArguments(Map<String, Object> args) {
+        List<String> missing = new ArrayList<>();
+        Parameter[] parameters = method.getParameters();
+        for (int i = 0; i < parameters.length; i++) {
+            if (!isMethodParameterRequired(method, i)) {
+                continue;
+            }
+            String name = parameters[i].getName();
+            if (args == null || args.get(name) == null) {
+                missing.add(name);
+            }
+        }
+        return missing;
+    }
+
+    static String missingRequiredMessage(List<String> missing) {
+        String label = missing.size() == 1 ? "parameter" : "parameters";
+        return "Missing required " + label + ": " + String.join(", ", missing);
+    }
+
+    /**
+     * Text safe to put in a FAILED tool result. Lombok {@code @NonNull} and other
+     * {@link NullPointerException}s quote internal Java names, so those are replaced with a generic
+     * message; the full stack is logged server-side. Intentional argument errors keep their text.
+     */
+    static String clientSafeFailureMessage(Throwable error, String methodName) {
+        Throwable root = ExceptionUtils.getRootCause(error);
+        if (root == null) {
+            root = error;
+        }
+        if (root != null && isInternalNullFailure(root)) {
+            return "Error invoking method: " + methodName;
+        }
+        String rootCauseMessage = ExceptionUtils.getRootCauseMessage(error);
+        if (rootCauseMessage == null || rootCauseMessage.isEmpty()) {
+            return "Error invoking method: " + methodName;
+        }
+        return rootCauseMessage;
+    }
+
+    private static boolean isInternalNullFailure(Throwable error) {
+        if (error instanceof NullPointerException) {
+            return true;
+        }
+        String message = error.getMessage();
+        return message != null && message.contains("is marked non-null but is null");
+    }
+
     @Nullable
     private static String getMethodParameterDescription(Method method, int index) {
         Parameter parameter = method.getParameters()[index];
@@ -395,7 +448,16 @@ public class McpToolWrapper {
                         Jenkins.getAuthentication2().getName(),
                         request.arguments());
             }
-            var args = request.arguments();
+            // Reject missing required arguments before invoke so the error names the schema property
+            // (for example jobFullName) instead of leaking a Lombok @NonNull failure.
+            var suppliedArgs = request.arguments();
+            var args = suppliedArgs != null ? suppliedArgs : Map.<String, Object>of();
+            var missing = missingRequiredArguments(args);
+            if (!missing.isEmpty()) {
+                var message = missingRequiredMessage(missing);
+                log.debug("Rejecting tool call '{}': {}", getToolName(), message);
+                return failedToolResult(message);
+            }
             var methodArgs = Arrays.stream(method.getParameters())
                     .map(param -> {
                         var arg = args.get(param.getName());
@@ -424,23 +486,34 @@ public class McpToolWrapper {
             return toMcpResult(result, pruneTreeExpress);
 
         } catch (Exception e) {
-            var rootCauseMessage = ExceptionUtils.getRootCauseMessage(e);
-            if (rootCauseMessage.isEmpty()) {
-                rootCauseMessage = "Error invoking method: " + method.getName();
+            Throwable root = ExceptionUtils.getRootCause(e);
+            if (root == null) {
+                root = e;
             }
-            if (log.isDebugEnabled()) {
-                log.atError().setCause(e).log("Error invoking tool method: {}: {}", method.getName(), rootCauseMessage);
+            // Raw @NonNull / NPE text stays in the server log. Clients get a generic failure.
+            if (isInternalNullFailure(root)) {
+                log.atError().setCause(e).log("Error invoking tool method: {}", method.getName());
+            } else if (log.isDebugEnabled()) {
+                log.atError()
+                        .setCause(e)
+                        .log(
+                                "Error invoking tool method: {}: {}",
+                                method.getName(),
+                                ExceptionUtils.getRootCauseMessage(e));
             }
-            ToolResponse toolResponse = new ToolResponse.ToolResponseBuilder()
-                    .message(rootCauseMessage)
-                    .status(ToolResponse.Status.FAILED)
-                    .build();
-
-            return McpSchema.CallToolResult.builder()
-                    .isError(true)
-                    .addTextContent(toJson(toolResponse))
-                    .build();
+            return failedToolResult(clientSafeFailureMessage(e, method.getName()));
         }
+    }
+
+    private McpSchema.CallToolResult failedToolResult(String message) {
+        ToolResponse toolResponse = new ToolResponse.ToolResponseBuilder()
+                .message(message)
+                .status(ToolResponse.Status.FAILED)
+                .build();
+        return McpSchema.CallToolResult.builder()
+                .isError(true)
+                .addTextContent(toJson(toolResponse))
+                .build();
     }
 
     private static Authentication tryGetAuthentication(McpTransportContext context) {

@@ -238,6 +238,58 @@ public class BuildLogExtensionTest {
     }
 
     @McpClientTest
+    void testSearchBuildLogMissingJobFullNameIsCleanError(
+            JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder) throws Exception {
+        WorkflowJob project = jenkins.createProject(WorkflowJob.class, "search-required-job");
+        project.setDefinition(new CpsFlowDefinition("echo 'ERROR: Something went wrong'", true));
+        project.scheduleBuild2(0).get();
+        await().atMost(10, SECONDS).until(() -> project.getLastBuild() != null);
+
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+            var missing = client.callTool(new McpSchema.CallToolRequest("searchBuildLog", Map.of("pattern", "ERROR")));
+            assertCleanJobFullNameError(missing);
+
+            // The old NPE told agents to send fullJobName. That key is not in the schema and must
+            // still fail cleanly, naming jobFullName.
+            var wrongKey = client.callTool(
+                    new McpSchema.CallToolRequest("searchBuildLog", Map.of("fullJobName", project.getFullName())));
+            assertCleanJobFullNameError(wrongKey);
+
+            Map<String, Object> params = new HashMap<>();
+            params.put("jobFullName", project.getFullName());
+            params.put("pattern", "ERROR");
+            var response = client.callTool(new McpSchema.CallToolRequest("searchBuildLog", params));
+            assertThat(response.isError()).isFalse();
+            assertThat(response.content()).hasSize(1);
+            assertThat(response.content().get(0)).isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                DocumentContext documentContext =
+                        JsonPath.using(Configuration.defaultConfiguration()).parse(textContent.text());
+                var contentMap = documentContext.read("$.result", Map.class);
+                assertThat((String) contentMap.get("pattern")).isEqualTo("ERROR");
+                assertThat((Integer) contentMap.get("matchCount")).isGreaterThan(0);
+            });
+        }
+    }
+
+    /**
+     * A missing {@code jobFullName} must name that schema property. The MCP SDK schema check usually
+     * answers first ({@code required property 'jobFullName'}); {@code McpToolWrapper} uses
+     * {@code Missing required parameter: jobFullName} when the call reaches the tool. Neither may
+     * quote the Java parameter {@code fullJobName} or a raw {@code NullPointerException}.
+     */
+    private static void assertCleanJobFullNameError(McpSchema.CallToolResult response) {
+        assertThat(response.isError()).isTrue();
+        assertThat(response.content()).hasSize(1);
+        String text = ((McpSchema.TextContent) response.content().get(0)).text();
+        assertThat(text).contains("jobFullName");
+        assertThat(text.contains("Missing required parameter") || text.contains("required property"))
+                .isTrue();
+        assertThat(text).doesNotContain("fullJobName");
+        assertThat(text).doesNotContain("NullPointerException");
+        assertThat(text).doesNotContain("marked non-null");
+    }
+
+    @McpClientTest
     void testSearchBuildLogWithRegex(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
             throws Exception {
         WorkflowJob project = jenkins.createProject(WorkflowJob.class, "regex-test-job");
