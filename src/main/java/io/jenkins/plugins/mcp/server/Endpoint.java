@@ -245,7 +245,11 @@ public class Endpoint extends CrumbExclusion implements UnprotectedRootAction {
     HttpServletStreamableServerTransportProvider httpServletStreamableServerTransportProvider;
     HttpServletStatelessServerTransport httpServletStatelessServerTransport;
 
-    private boolean initialized = false;
+    /**
+     * Set once {@link #init()} has finished publishing the transports. Volatile so later requests can
+     * skip the monitor (double-checked locking) without an unsynchronized read of a plain flag.
+     */
+    private volatile boolean initialized = false;
 
     public static String getRequestedResourcePath(HttpServletRequest httpServletRequest) {
         return httpServletRequest
@@ -285,58 +289,69 @@ public class Endpoint extends CrumbExclusion implements UnprotectedRootAction {
                 || isSseEndpointPost(request, requestedResource);
     }
 
-    protected synchronized void init() throws ServletException {
-
+    /**
+     * Builds the MCP transports once. The unsynchronized read of {@link #initialized} avoids taking the
+     * lock on every request; the second check runs while holding the monitor.
+     */
+    protected void init() throws ServletException {
         if (initialized) {
             return;
         }
-        PluginWrapper wrapper = Jenkins.get().getPluginManager().whichPlugin(Endpoint.class);
-        // should not be null here in production. Only for testing purposes
-        String pluginName;
-        String pluginVersion;
-        if (wrapper == null) {
-            pluginName = "Jenkins MCP Server Plugin";
-            pluginVersion = "Unknown Version";
-        } else {
-            pluginName = "Jenkins " + wrapper.getDisplayName();
-            pluginVersion = wrapper.getVersion();
+        synchronized (this) {
+            if (initialized) {
+                return;
+            }
+            PluginWrapper wrapper = Jenkins.get().getPluginManager().whichPlugin(Endpoint.class);
+            // should not be null here in production. Only for testing purposes
+            String pluginName;
+            String pluginVersion;
+            if (wrapper == null) {
+                pluginName = "Jenkins MCP Server Plugin";
+                pluginVersion = "Unknown Version";
+            } else {
+                pluginName = "Jenkins " + wrapper.getDisplayName();
+                pluginVersion = wrapper.getVersion();
+            }
+
+            McpSchema.ServerCapabilities serverCapabilities = McpSchema.ServerCapabilities.builder()
+                    .tools(true)
+                    .prompts(true)
+                    .resources(true, true)
+                    .build();
+            var extensions = McpServerExtension.all();
+
+            var resolvedTools = resolveTools(extensions.getComponents());
+            this.toolPermissions = buildToolPermissions(resolvedTools);
+
+            var prompts = extensions.stream()
+                    .map(McpServerExtension::getSyncPrompts)
+                    .flatMap(List::stream)
+                    .toList();
+            var resources = extensions.stream()
+                    .map(McpServerExtension::getSyncResources)
+                    .flatMap(List::stream)
+                    .toList();
+
+            var rootUrl = jenkins.model.JenkinsLocationConfiguration.get().getUrl();
+            if (rootUrl == null) {
+                rootUrl = "";
+            }
+
+            // Initialize session-based transports if SSE or Streamable enabled
+            if (!DISABLE_MCP_SSE || !DISABLE_MCP_STREAMABLE) {
+                initSessionBased(
+                        serverCapabilities, resolvedTools, prompts, resources, rootUrl, pluginName, pluginVersion);
+            }
+
+            // Initialize stateless transport if enabled
+            if (!DISABLE_MCP_STATELESS) {
+                initStateless(serverCapabilities, resolvedTools, prompts, resources, pluginName, pluginVersion);
+            }
+
+            // Publish only after every transport exists. An earlier write would let a concurrent
+            // request observe initialized == true and call a transport that is still null.
+            initialized = true;
         }
-
-        McpSchema.ServerCapabilities serverCapabilities = McpSchema.ServerCapabilities.builder()
-                .tools(true)
-                .prompts(true)
-                .resources(true, true)
-                .build();
-        var extensions = McpServerExtension.all();
-
-        var resolvedTools = resolveTools(extensions.getComponents());
-        this.toolPermissions = buildToolPermissions(resolvedTools);
-
-        var prompts = extensions.stream()
-                .map(McpServerExtension::getSyncPrompts)
-                .flatMap(List::stream)
-                .toList();
-        var resources = extensions.stream()
-                .map(McpServerExtension::getSyncResources)
-                .flatMap(List::stream)
-                .toList();
-
-        var rootUrl = jenkins.model.JenkinsLocationConfiguration.get().getUrl();
-        if (rootUrl == null) {
-            rootUrl = "";
-        }
-
-        // Initialize session-based transports if SSE or Streamable enabled
-        if (!DISABLE_MCP_SSE || !DISABLE_MCP_STREAMABLE) {
-            initSessionBased(serverCapabilities, resolvedTools, prompts, resources, rootUrl, pluginName, pluginVersion);
-        }
-
-        // Initialize stateless transport if enabled
-        if (!DISABLE_MCP_STATELESS) {
-            initStateless(serverCapabilities, resolvedTools, prompts, resources, pluginName, pluginVersion);
-        }
-
-        initialized = true;
     }
 
     /**
@@ -558,7 +573,6 @@ public class Endpoint extends CrumbExclusion implements UnprotectedRootAction {
                 .resources(resources)
                 .build();
 
-        initialized = true;
         log.info(
                 "MCP Server initialized with {} tools, keep-alive interval: {} seconds",
                 allTools.size(),
@@ -641,16 +655,20 @@ public class Endpoint extends CrumbExclusion implements UnprotectedRootAction {
     /**
      * Stapler entry point for {@code /mcp-server/**}. Invoked only after the servlet filter chain,
      * including every {@link hudson.util.PluginServletFilter}, has completed.
+     *
+     * <p>{@code @RequirePOST} cannot be used: MCP clients are not browsers, and the SSE and streamable
+     * endpoints must accept GET. POST requests are exempted from crumbs by {@link #process}. Each tool
+     * and the metrics endpoint check permissions themselves.
      */
-    public void doDynamic(StaplerRequest2 req, StaplerResponse2 rsp) throws IOException, ServletException {
+    public void doDynamic(StaplerRequest2 req, StaplerResponse2 rsp) // lgtm[jenkins/csrf]
+            throws IOException, ServletException {
         if (!dispatch(req, rsp)) {
             rsp.sendError(HttpServletResponse.SC_NOT_FOUND);
         }
     }
 
     private boolean dispatch(HttpServletRequest req, HttpServletResponse resp) throws IOException, ServletException {
-        // init() is synchronized and returns immediately once initialization has finished.
-        // Reading `initialized` here would be an unsynchronized access (IS2_INCONSISTENT_SYNC).
+        // Fast path after startup is the volatile read inside init(); the lock is taken only once.
         init();
 
         String requestedResource = getRequestedResourcePath(req);
