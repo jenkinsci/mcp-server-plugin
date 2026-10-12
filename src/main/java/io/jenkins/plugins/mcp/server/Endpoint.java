@@ -649,9 +649,9 @@ public class Endpoint extends CrumbExclusion implements UnprotectedRootAction {
     }
 
     private boolean dispatch(HttpServletRequest req, HttpServletResponse resp) throws IOException, ServletException {
-        if (!initialized) {
-            init();
-        }
+        // init() is synchronized and returns immediately once initialization has finished.
+        // Reading `initialized` here would be an unsynchronized access (IS2_INCONSISTENT_SYNC).
+        init();
 
         String requestedResource = getRequestedResourcePath(req);
 
