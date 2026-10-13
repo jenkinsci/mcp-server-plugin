@@ -285,6 +285,27 @@
           </execution>
         </executions>
       </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <!-- JenkinsRule installs TestCrumbIssuer. Anonymous MCP calls in tests have no
+               Authorization header, so they need the same opt-in hpi:run uses. Tests that
+               cover the default (false) set Endpoint.ALLOW_UNAUTHENTICATED_MCP themselves. -->
+          <systemPropertyVariables>
+            <io.jenkins.plugins.mcp.server.Endpoint.allowUnauthenticatedMcp>true</io.jenkins.plugins.mcp.server.Endpoint.allowUnauthenticatedMcp>
+          </systemPropertyVariables>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.jenkins-ci.tools</groupId>
+        <artifactId>maven-hpi-plugin</artifactId>
+        <configuration>
+          <systemProperties>
+            <io.jenkins.plugins.mcp.server.Endpoint.allowUnauthenticatedMcp>true</io.jenkins.plugins.mcp.server.Endpoint.allowUnauthenticatedMcp>
+          </systemProperties>
+        </configuration>
+      </plugin>
     </plugins>
   </build>
 </project>

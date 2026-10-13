@@ -34,6 +34,7 @@ import com.jayway.jsonpath.DocumentContext;
 import com.jayway.jsonpath.JsonPath;
 import hudson.model.User;
 import hudson.security.FullControlOnceLoggedInAuthorizationStrategy;
+import hudson.security.csrf.DefaultCrumbIssuer;
 import hudson.util.PluginServletFilter;
 import io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder;
 import io.jenkins.plugins.mcp.server.junit.McpClientTest;
@@ -101,6 +102,9 @@ class PluginServletFilterAuthenticationTest {
         FullControlOnceLoggedInAuthorizationStrategy authStrategy = new FullControlOnceLoggedInAuthorizationStrategy();
         authStrategy.setAllowAnonymousRead(false);
         jenkins.jenkins.setAuthorizationStrategy(authStrategy);
+        // Crumb exclusion must keep calling chain.doFilter. With an issuer installed, a regression that
+        // returns true without continuing the chain fails these crumb-free tool calls.
+        jenkins.jenkins.setCrumbIssuer(new DefaultCrumbIssuer(true));
         User.getById(USERNAME, true);
 
         BearerAuthenticationFilter filter = new BearerAuthenticationFilter(USERNAME, TOKEN);

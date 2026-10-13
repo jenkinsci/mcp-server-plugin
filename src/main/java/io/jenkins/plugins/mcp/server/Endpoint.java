@@ -96,8 +96,9 @@ import tools.jackson.databind.json.JsonMapper;
  * can establish a user. Tool calls would then run as anonymous.
  *
  * <p>The URL is an {@link UnprotectedRootAction} so anonymous callers without {@code Overall/Read} still
- * reach the MCP layer, matching the previous filter-based behavior. Tool invocations enforce their own
- * permissions.
+ * reach the MCP layer, matching the previous filter-based behavior. Every tool invocation, including
+ * programmatic {@link McpServerExtension#getSyncTools()} handlers, restores the caller captured on the
+ * request and requires {@code Overall/Read}.
  */
 @Restricted(NoExternalUse.class)
 @Extension
@@ -215,6 +216,19 @@ public class Endpoint extends CrumbExclusion implements UnprotectedRootAction {
             SystemProperties.getInteger(Endpoint.class.getName() + ".sseMessageMaxThreads", 50);
 
     /**
+     * Whether anonymous MCP POSTs (no {@code Authorization} header) may skip the CSRF crumb.
+     * Default is {@code false}. Requests that send {@code Authorization} stay exempt, because a
+     * cross-site page cannot set that header. Set
+     * {@code io.jenkins.plugins.mcp.server.Endpoint.allowUnauthenticatedMcp=true} only when anonymous
+     * agents must call MCP without a crumb. That weakens CSRF protection: the Origin check allows a
+     * missing {@code Origin}, and does nothing when the Jenkins root URL is unset.
+     * {@code mvn hpi:run} sets the property so a local controller can be called without a crumb.
+     */
+    @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "Accessible via System Groovy Scripts")
+    public static boolean ALLOW_UNAUTHENTICATED_MCP =
+            SystemProperties.getBoolean(Endpoint.class.getName() + ".allowUnauthenticatedMcp", false);
+
+    /**
      * JSON object mapper for serialization/deserialization
      */
     private final JsonMapper objectMapper = new JsonMapper();
@@ -264,6 +278,10 @@ public class Endpoint extends CrumbExclusion implements UnprotectedRootAction {
      * Returning {@code true} without calling {@code chain.doFilter} would swallow the request there, so
      * authentication filters registered later would never see it. Continuing the chain lets those filters
      * run; Stapler then dispatches to {@link #doDynamic}.
+     *
+     * <p>The path comes from {@link HttpServletRequest#getPathInfo()}. For POST requests {@code CrumbFilter}
+     * wraps the request so that value is the canonical path (SECURITY-1774). A raw URI such as
+     * {@code /mcp-server/mcp/../../script} is therefore seen as {@code /script} and keeps its crumb check.
      */
     @Override
     public boolean process(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
@@ -276,17 +294,19 @@ public class Endpoint extends CrumbExclusion implements UnprotectedRootAction {
     }
 
     /**
-     * MCP POSTs that this endpoint serves. GET requests are not subject to the crumb filter.
+     * MCP POSTs that may skip the crumb: canonical paths under {@code /mcp-server/} that carry an
+     * {@code Authorization} header, or any such path when {@link #ALLOW_UNAUTHENTICATED_MCP} is set.
+     * GET requests are not subject to the crumb filter.
      */
     private boolean isCrumbExcludedRequest(HttpServletRequest request) {
         if (!request.getMethod().equalsIgnoreCase("POST")) {
             return false;
         }
-        String requestedResource = getRequestedResourcePath(request);
-        return isStatelessRequest(request)
-                || isStreamableRequest(request)
-                || isSseMessageRequest(requestedResource)
-                || isSseEndpointPost(request, requestedResource);
+        if (request.getHeader("Authorization") == null && !ALLOW_UNAUTHENTICATED_MCP) {
+            return false;
+        }
+        String pathInfo = request.getPathInfo();
+        return pathInfo != null && pathInfo.startsWith("/" + MCP_SERVER + "/");
     }
 
     /**
@@ -419,7 +439,9 @@ public class Endpoint extends CrumbExclusion implements UnprotectedRootAction {
 
     /**
      * Maps each tool name to its {@code @Tool(permissions = ...)}. Programmatic tools have no annotation
-     * and map to an empty list (always visible). An unknown permission id fails fast at startup.
+     * and map to an empty list, so {@code tools/list} still shows them. Calling one restores the captured
+     * caller and requires {@link Jenkins#READ}; see {@link #secureSyncTool}. An unknown permission id
+     * fails fast at startup.
      */
     private static Map<String, List<Permission>> buildToolPermissions(List<ToolCandidate> resolvedTools) {
         Map<String, List<Permission>> permissions = new HashMap<>();
@@ -533,7 +555,7 @@ public class Endpoint extends CrumbExclusion implements UnprotectedRootAction {
         List<McpServerFeatures.SyncToolSpecification> allTools = resolvedTools.stream()
                 .map(candidate -> candidate.method() != null
                         ? candidate.newWrapper(objectMapper).asSyncToolSpecification()
-                        : candidate.spec())
+                        : secureSyncTool(candidate.spec()))
                 .toList();
 
         httpServletSseServerTransportProvider = HttpServletSseServerTransportProvider.builder()
@@ -620,9 +642,34 @@ public class Endpoint extends CrumbExclusion implements UnprotectedRootAction {
 
     private McpStatelessServerFeatures.SyncToolSpecification convertToolToStateless(
             McpServerFeatures.SyncToolSpecification sessionTool) {
+        return secureStatelessTool(sessionTool);
+    }
+
+    /**
+     * Session-scoped programmatic tools skip {@link McpToolWrapper}, which is where annotation-backed
+     * tools restore the captured caller and require {@link Jenkins#READ}. SSE handling runs on another
+     * thread, so a handler that reads {@code Jenkins.getAuthentication2()} would otherwise see anonymous.
+     */
+    static McpServerFeatures.SyncToolSpecification secureSyncTool(McpServerFeatures.SyncToolSpecification spec) {
+        return McpServerFeatures.SyncToolSpecification.builder()
+                .tool(spec.tool())
+                .callHandler((exchange, request) -> McpToolWrapper.callWithCapturedAuth(
+                        exchange == null ? null : exchange.transportContext(),
+                        () -> spec.callHandler().apply(exchange, request)))
+                .build();
+    }
+
+    /**
+     * Stateless programmatic tools receive the captured caller on the transport context. The original
+     * handler is still invoked with a null exchange, which is the contract {@code getSyncTools()}
+     * implementations already have on this transport.
+     */
+    static McpStatelessServerFeatures.SyncToolSpecification secureStatelessTool(
+            McpServerFeatures.SyncToolSpecification sessionTool) {
         return McpStatelessServerFeatures.SyncToolSpecification.builder()
                 .tool(sessionTool.tool())
-                .callHandler((context, request) -> sessionTool.callHandler().apply(null, request))
+                .callHandler((context, request) -> McpToolWrapper.callWithCapturedAuth(
+                        context, () -> sessionTool.callHandler().apply(null, request)))
                 .build();
     }
 

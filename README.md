@@ -32,6 +32,10 @@ The following system properties can be used to configure the MCP Server plugin:
 - disable stateless endpoint with `io.jenkins.plugins.mcp.server.Endpoint.disableMcpStateless=true` (default false)
 - disable SSE endpoint with `io.jenkins.plugins.mcp.server.Endpoint.disableMcpSse=true` (default false)
 - disable streamable HTTP endpoint with `io.jenkins.plugins.mcp.server.Endpoint.disableMcpStreamable=true` (default false)
+- allow anonymous MCP clients to skip the CSRF crumb with `io.jenkins.plugins.mcp.server.Endpoint.allowUnauthenticatedMcp=true` (default false)
+
+> [!WARNING]
+> `io.jenkins.plugins.mcp.server.Endpoint.allowUnauthenticatedMcp=true` weakens CSRF protection. MCP POSTs that send an `Authorization` header are exempt from the crumb, because a page on another site cannot add that header. Anonymous and session-cookie clients are not exempt unless this property is set. With it on, those POSTs rely on the Origin check, which allows a missing `Origin` and does nothing when the Jenkins root URL is unset. Leave the property `false` on any controller that browsers or anonymous users can reach. `mvn hpi:run` sets it so a local development controller accepts an MCP client without a crumb.
 
 #### Origin header validation
 
