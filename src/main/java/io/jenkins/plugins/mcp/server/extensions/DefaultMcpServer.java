@@ -49,6 +49,7 @@ import hudson.slaves.Cloud;
 import io.jenkins.plugins.mcp.server.McpServerExtension;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
+import io.jenkins.plugins.mcp.server.apps.JenkinsApps;
 import io.jenkins.plugins.mcp.server.tool.JenkinsMcpContext;
 import jakarta.annotation.Nullable;
 import java.util.ArrayList;
@@ -77,7 +78,8 @@ public class DefaultMcpServer implements McpServerExtension {
     @Tool(
             description = "Get a specific build or the last build of a Jenkins job",
             defaultTree = "number,url,result,building,timestamp,duration,displayName,description",
-            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
+            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false),
+            ui = @Tool.Ui(resourceUri = JenkinsApps.BUILD))
     public Run getBuild(
             @ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
             @Nullable
@@ -93,7 +95,8 @@ public class DefaultMcpServer implements McpServerExtension {
             defaultTree = "name,fullName,url,description,buildable,color,inQueue,"
                     + "lastBuild[number,url,result,building,timestamp],"
                     + "lastCompletedBuild[number,url,result],healthReport[score,description]",
-            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
+            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false),
+            ui = @Tool.Ui(resourceUri = JenkinsApps.JOB))
     public Job getJob(
             @ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName) {
         return Jenkins.get().getItemByFullName(jobFullName, Job.class);
@@ -171,7 +174,8 @@ public class DefaultMcpServer implements McpServerExtension {
             description =
                     "Get a paginated list of Jenkins jobs, sorted by name. Returns up to 'limit' jobs starting from the 'skip' index. If no jobs are available in the requested range, returns an empty list.",
             defaultTree = "name,fullName,url,color,lastBuild[number,result,timestamp]",
-            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
+            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false),
+            ui = @Tool.Ui(resourceUri = JenkinsApps.JOBS))
     public List<Job> getJobs(
             @ToolParam(
                             description =
@@ -251,7 +255,8 @@ public class DefaultMcpServer implements McpServerExtension {
             description =
                     "Get information about the currently authenticated user/principal, including their full name or 'anonymous' if not authenticated",
             structuredOutput = true,
-            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
+            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false),
+            ui = @Tool.Ui(resourceUri = JenkinsApps.STATUS))
     @SneakyThrows
     public WhoAmIResponse whoAmI() {
         var name = Jenkins.getAuthentication2().getName();
@@ -266,7 +271,8 @@ public class DefaultMcpServer implements McpServerExtension {
                             + " This tool provides a comprehensive overview of the controller's operational state to determine if"
                             + " it's stable and ready to build. Use this tool to assess Jenkins instance health rather than"
                             + " simple up/down status.",
-            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
+            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false),
+            ui = @Tool.Ui(resourceUri = JenkinsApps.STATUS))
     public Map<String, Object> getStatus() {
         var map = new HashMap<String, Object>();
         var jenkins = Jenkins.get();
@@ -317,7 +323,8 @@ public class DefaultMcpServer implements McpServerExtension {
             description =
                     "Get the queue item details by its ID. The caller can check the queue item's status, build details, and other relevant information.",
             treePruneSupported = true,
-            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
+            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false),
+            ui = @Tool.Ui(resourceUri = JenkinsApps.QUEUE_ITEM))
     public QueueItem getQueueItem(@ToolParam(description = "The queue item id") long id) {
         Queue.Item item = Jenkins.get().getQueue().getItem(id);
         if (item == null) {
@@ -379,7 +386,8 @@ public class DefaultMcpServer implements McpServerExtension {
             description =
                     "Get the pipeline script(s) of a build for replay. Returns the main script and loaded scripts. Only available for Pipeline (replayable) builds.",
             structuredOutput = true,
-            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
+            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false),
+            ui = @Tool.Ui(resourceUri = JenkinsApps.BUILD))
     public GetReplayScriptsResult getReplayScripts(
             @ToolParam(description = "Full path of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
             @Nullable

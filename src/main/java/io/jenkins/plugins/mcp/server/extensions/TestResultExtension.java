@@ -7,6 +7,7 @@ import hudson.tasks.junit.TestResultAction;
 import io.jenkins.plugins.mcp.server.McpServerExtension;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
+import io.jenkins.plugins.mcp.server.apps.JenkinsApps;
 import io.jenkins.plugins.mcp.server.extensions.util.JenkinsUtil;
 import jakarta.annotation.Nullable;
 import java.util.Collection;
@@ -23,7 +24,8 @@ public class TestResultExtension implements McpServerExtension {
 
     @Tool(
             description = "Retrieves the test results associated to a Jenkins build",
-            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
+            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false),
+            ui = @Tool.Ui(resourceUri = JenkinsApps.TEST_RESULTS))
     public Map<String, Object> getTestResults(
             @ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
             @Nullable
@@ -65,7 +67,8 @@ public class TestResultExtension implements McpServerExtension {
 
     @Tool(
             description = "Retrieves the flaky failures associated to a Jenkins build if any found",
-            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
+            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false),
+            ui = @Tool.Ui(resourceUri = JenkinsApps.TEST_RESULTS))
     public Map<String, Object> getFlakyFailures(
             @ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName,
             @Nullable

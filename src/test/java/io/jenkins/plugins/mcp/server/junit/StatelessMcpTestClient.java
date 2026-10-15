@@ -113,6 +113,10 @@ public class StatelessMcpTestClient implements Closeable {
         return this.callTool(new McpSchema.CallToolRequest(toolName, arguments));
     }
 
+    public McpSchema.JSONRPCResponse readResource(McpSchema.ReadResourceRequest request) {
+        return sendRequest(McpSchema.METHOD_RESOURCES_READ, request);
+    }
+
     private McpSchema.JSONRPCResponse sendRequest(String method, Object params) {
         try {
             var jsonRpcRequest = new McpSchema.JSONRPCRequest(
