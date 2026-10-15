@@ -36,6 +36,7 @@ import hudson.model.Result;
 import hudson.plugins.git.GitSCM;
 import io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder;
 import io.jenkins.plugins.mcp.server.junit.McpClientTest;
+import io.jenkins.plugins.mcp.server.junit.TestCrumbIssuerMcpExtension;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.io.File;
 import java.util.List;
@@ -48,7 +49,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
-@ExtendWith(GitSampleRepoExtension.class)
+@ExtendWith({GitSampleRepoExtension.class, TestCrumbIssuerMcpExtension.class})
 @WithJenkins
 public class JobScmExtensionTest {
 

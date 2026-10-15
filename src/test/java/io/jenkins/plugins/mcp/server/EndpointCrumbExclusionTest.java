@@ -33,6 +33,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
@@ -46,6 +47,15 @@ import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 class EndpointCrumbExclusionTest {
 
     private static final String ITEM_NAME = "x";
+
+    @BeforeEach
+    void unauthenticatedMcpStaysOptInOff() {
+        // Surefire must not turn the opt-in on for the suite. This class installs DefaultCrumbIssuer and covers
+        // the production default itself.
+        assertThat(Endpoint.ALLOW_UNAUTHENTICATED_MCP).isFalse();
+        assertThat(System.getProperty(Endpoint.class.getName() + ".allowUnauthenticatedMcp"))
+                .isNull();
+    }
 
     @Test
     void dotDotPostDoesNotSkipTheCrumb(JenkinsRule jenkins) throws Exception {

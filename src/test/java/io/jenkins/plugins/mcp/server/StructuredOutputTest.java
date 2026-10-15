@@ -32,16 +32,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder;
 import io.jenkins.plugins.mcp.server.junit.McpClientTest;
+import io.jenkins.plugins.mcp.server.junit.TestCrumbIssuerMcpExtension;
 import io.modelcontextprotocol.spec.McpSchema;
 import jakarta.annotation.Nullable;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.TestExtension;
 import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
 @WithJenkins
+@ExtendWith(TestCrumbIssuerMcpExtension.class)
 public class StructuredOutputTest {
     @McpClientTest
     void testIntStructuredOutput(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder) {

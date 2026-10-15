@@ -31,6 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder;
 import io.jenkins.plugins.mcp.server.junit.McpClientTest;
+import io.jenkins.plugins.mcp.server.junit.TestCrumbIssuerMcpExtension;
 import io.modelcontextprotocol.spec.McpSchema;
 import jakarta.servlet.http.HttpServletResponse;
 import java.net.URL;
@@ -38,10 +39,12 @@ import java.util.function.Consumer;
 import org.htmlunit.HttpMethod;
 import org.htmlunit.WebRequest;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
 @WithJenkins
+@ExtendWith(TestCrumbIssuerMcpExtension.class)
 public class EndPointTest {
     @McpClientTest
     void testListTools(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder) {

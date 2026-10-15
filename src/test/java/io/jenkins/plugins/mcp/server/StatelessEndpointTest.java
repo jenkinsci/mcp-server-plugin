@@ -31,9 +31,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
 import io.jenkins.plugins.mcp.server.junit.StatelessMcpTestClient;
+import io.jenkins.plugins.mcp.server.junit.TestCrumbIssuerMcpExtension;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.TestExtension;
 import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
@@ -44,6 +46,7 @@ import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
  * the SSE and streamable endpoints.
  */
 @WithJenkins
+@ExtendWith(TestCrumbIssuerMcpExtension.class)
 public class StatelessEndpointTest {
 
     @Test

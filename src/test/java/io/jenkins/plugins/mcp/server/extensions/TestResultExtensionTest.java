@@ -15,6 +15,7 @@ import hudson.tasks.junit.TestResult;
 import hudson.tasks.junit.TestResultAction;
 import io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder;
 import io.jenkins.plugins.mcp.server.junit.McpClientTest;
+import io.jenkins.plugins.mcp.server.junit.TestCrumbIssuerMcpExtension;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.Collection;
 import java.util.List;
@@ -23,10 +24,12 @@ import java.util.Objects;
 import java.util.UUID;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
 @WithJenkins
+@ExtendWith(TestCrumbIssuerMcpExtension.class)
 public class TestResultExtensionTest {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
