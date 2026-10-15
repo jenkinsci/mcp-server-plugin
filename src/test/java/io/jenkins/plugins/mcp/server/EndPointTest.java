@@ -71,7 +71,12 @@ public class EndPointTest {
                             "getFlakyFailures",
                             "getQueueItem",
                             "getSystemLog",
-                            "getLogRecorders");
+                            "getLogRecorders",
+                            "listBuildArtifacts",
+                            "getBuildArtifact",
+                            "getPendingInputs",
+                            "submitPipelineInput",
+                            "abortPipelineInput");
         }
     }
 
@@ -111,7 +116,9 @@ public class EndPointTest {
                 "getJobScm",
                 "getBuildScm",
                 "getBuildChangeSets",
-                "findJobsWithScmUrl"
+                "findJobsWithScmUrl",
+                "listBuildArtifacts",
+                "getBuildArtifact"
             }) {
                 assertReadOnly.accept(name);
             }

@@ -415,6 +415,8 @@ The plugin provides the following built-in tools for interacting with Jenkins:
 - `getReplayScripts`: Return the main script and loaded scripts of a replayable Pipeline build. Use this to inspect or modify script before calling `replayBuild`. Fails for non-Pipeline jobs. Optional `buildNumber`; defaults to the last build.
 - `replayBuild`: Run a Pipeline build again with a modified script. Provide `mainScript` (required) and optionally `loadedScripts`. Optional `buildNumber`; defaults to the last build. Fails if the build is not replayable or replay is not allowed (e.g. permissions or sandbox).
 - `getTestResults`: Retrieve test results of a specific build or the last build.
+- `listBuildArtifacts`: List the archived artifacts of a specific build or the last build, with relative path, size and download URL. Lists at most 1000; `truncated` is true if there are more.
+- `getBuildArtifact`: Read one archived artifact by its `relativePath`, in byte-range chunks (default 64 KB, max 1 MB per call via `limit`). Text is returned as UTF-8 (`encoding: "text"`), anything else as base64 (`encoding: "base64"`); text chunks never split a multi-byte character. When `hasMore` is true, pass `nextOffset` back as `offset` to read the next chunk. MCP has no streaming or ranged transfer of its own, so large files are read this way. Paths with `..`, absolute paths and archived symlinks are refused. Needs Job/Read, plus Run/Artifacts when that permission is enabled (`hudson.security.ArtifactsPermission`), the same as the web UI.
 
 #### SCM Integration
 - `getJobScm`: Retrieve SCM configurations of a Jenkins job.
