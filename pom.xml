@@ -5,7 +5,7 @@
   <parent>
     <groupId>org.jenkins-ci.plugins</groupId>
     <artifactId>plugin</artifactId>
-    <version>6.2221.va_045130417c9</version>
+    <version>6.2236.v12dd4c483242</version>
     <relativePath />
   </parent>
   <groupId>io.jenkins.plugins</groupId>
@@ -64,14 +64,14 @@
       <dependency>
         <groupId>io.modelcontextprotocol.sdk</groupId>
         <artifactId>mcp-bom</artifactId>
-        <version>2.0.0</version>
+        <version>2.0.1</version>
         <type>pom</type>
         <scope>import</scope>
       </dependency>
       <dependency>
         <groupId>com.networknt</groupId>
         <artifactId>json-schema-validator</artifactId>
-        <version>3.0.6</version>
+        <version>3.0.7</version>
       </dependency>
     </dependencies>
   </dependencyManagement>
@@ -158,7 +158,7 @@
     <dependency>
       <groupId>io.swagger.core.v3</groupId>
       <artifactId>swagger-annotations</artifactId>
-      <version>2.2.52</version>
+      <version>2.2.55</version>
     </dependency>
     <dependency>
       <groupId>org.jenkins-ci.plugins</groupId>
@@ -181,7 +181,7 @@
     <dependency>
       <groupId>org.projectlombok</groupId>
       <artifactId>lombok</artifactId>
-      <version>1.18.46</version>
+      <version>1.18.48</version>
       <scope>provided</scope>
     </dependency>
 

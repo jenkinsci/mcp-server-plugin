@@ -245,6 +245,28 @@ class DefaultMcpServerTest {
     }
 
     @McpClientTest
+    @SuppressWarnings("unchecked")
+    void testTriggerBuildParametersSchemaConstrainsValues(
+            JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder) throws Exception {
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+            var tool = TestUtils.findToolByName(client.listTools(), "triggerBuild");
+
+            var properties = (Map<String, Object>) tool.inputSchema().get("properties");
+            var parametersSchema = (Map<String, Object>) properties.get("parameters");
+
+            // values are constrained to the scalar + array union the plugin actually consumes
+            var additionalProperties = parametersSchema.get("additionalProperties");
+            assertThat(additionalProperties).isInstanceOf(Map.class);
+            assertThat((List<String>) ((Map<String, Object>) additionalProperties).get("type"))
+                    .containsExactlyInAnyOrder("string", "boolean", "integer", "number", "array");
+
+            // keys stay open, and plain (non-object) parameters are left untouched
+            assertThat(parametersSchema).doesNotContainKey("properties");
+            assertThat((Map<String, Object>) properties.get("jobFullName")).doesNotContainKey("additionalProperties");
+        }
+    }
+
+    @McpClientTest
     void testMcpToolCallGetJobNotExist(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
             throws Exception {
         WorkflowJob project = jenkins.createProject(WorkflowJob.class, "demo-job");

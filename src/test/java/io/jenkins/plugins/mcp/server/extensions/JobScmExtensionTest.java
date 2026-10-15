@@ -28,12 +28,17 @@ package io.jenkins.plugins.mcp.server.extensions;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.jayway.jsonpath.Configuration;
+import com.jayway.jsonpath.DocumentContext;
+import com.jayway.jsonpath.JsonPath;
 import hudson.model.FreeStyleProject;
+import hudson.model.Result;
 import hudson.plugins.git.GitSCM;
 import io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder;
 import io.jenkins.plugins.mcp.server.junit.McpClientTest;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.io.File;
+import java.util.List;
 import java.util.Map;
 import jenkins.plugins.git.GitSampleRepoRule;
 import jenkins.plugins.git.junit.jupiter.GitSampleRepoExtension;
@@ -218,6 +223,48 @@ public class JobScmExtensionTest {
                 assertThat(jobsListContent).contains("git-scm-test-job-1a");
                 assertThat(jobsListContent).contains("git-scm-test-job-1b");
                 assertThat(jobsListContent).doesNotContain("git-scm-test-job-2");
+            });
+        }
+    }
+
+    @McpClientTest
+    void testFindJobsWithScmUrlNeverBuilt(
+            JenkinsRule jenkins, GitSampleRepoRule gitRepo, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
+            throws Exception {
+        gitRepo.init();
+        gitRepo.write("file", "content");
+        gitRepo.git("add", "file");
+        gitRepo.git("commit", "--message=initial commit");
+
+        String repoRoot = gitRepo.getRoot().getAbsolutePath().replace(File.separator, "/");
+        String scmUrl = "file://" + repoRoot;
+
+        FreeStyleProject neverBuilt = jenkins.createFreeStyleProject("never-built-job");
+        neverBuilt.setScm(new GitSCM(scmUrl));
+        assertThat(neverBuilt.getLastBuild()).isNull();
+
+        FreeStyleProject built = jenkins.createFreeStyleProject("built-job");
+        built.setScm(new GitSCM(scmUrl));
+        jenkins.buildAndAssertSuccess(built);
+
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+            McpSchema.CallToolRequest request =
+                    new McpSchema.CallToolRequest("findJobsWithScmUrl", Map.of("scmUrl", scmUrl));
+
+            var response = client.callTool(request);
+
+            assertThat(response.isError())
+                    .as("Expected successful message. Content:", response.content())
+                    .isFalse();
+            assertThat(response.content()).hasSize(1);
+            assertThat(response.content().get(0).type()).isEqualTo("text");
+            assertThat(response.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                DocumentContext documentContext =
+                        JsonPath.using(Configuration.defaultConfiguration()).parse(textContent.text());
+                assertThat(documentContext.read("$.result[?(@.fullName == 'never-built-job')].lastResult", List.class))
+                        .containsExactly(Result.NOT_BUILT.toString());
+                assertThat(documentContext.read("$.result[?(@.fullName == 'built-job')].lastResult", List.class))
+                        .containsExactly(Result.SUCCESS.toString());
             });
         }
     }

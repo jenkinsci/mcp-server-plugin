@@ -356,6 +356,30 @@ public class BuildLogExtensionTest {
     }
 
     @McpClientTest
+    void testDefaultWindowIsTail(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
+            throws Exception {
+        WorkflowJob project = jenkins.createProject(WorkflowJob.class, "default-tail-job");
+        project.setDefinition(new CpsFlowDefinition("for (int i = 1; i <= 150; i++) { echo \"LINE-\" + i }", true));
+        project.scheduleBuild2(0).get();
+        await().atMost(10, SECONDS).until(() -> project.getLastBuild() != null);
+
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+            long total = project.getLastBuild().getLog(Integer.MAX_VALUE).size();
+
+            // No skip and no limit: the default window is the TAIL of the log (last 100 lines),
+            // because for CI logs the errors and the result live at the end.
+            Map<String, Object> defaultWindow = getBuildLogResult(client, project.getFullName(), null, null, null);
+            assertThat(toStringList(defaultWindow.get("lines"))).hasSize(100);
+            assertThat(((Number) defaultWindow.get("endLine")).longValue()).isEqualTo(total);
+
+            // With an explicit skip the historical forward default (100 lines) is preserved.
+            Map<String, Object> forward = getBuildLogResult(client, project.getFullName(), 0L, null, null);
+            assertThat(toStringList(forward.get("lines"))).hasSize(100);
+            assertThat(toStringList(forward.get("lines")).get(0)).contains("Started");
+        }
+    }
+
+    @McpClientTest
     void testReadingLogOfRunningBuildDoesNotBlock(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
             throws Exception {
         WorkflowJob project = jenkins.createProject(WorkflowJob.class, "running-job");

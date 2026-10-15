@@ -32,6 +32,7 @@ import hudson.Extension;
 import hudson.model.Item;
 import hudson.model.Job;
 import hudson.model.Result;
+import hudson.model.Run;
 import hudson.plugins.git.BranchSpec;
 import hudson.plugins.git.GitSCM;
 import hudson.plugins.git.GitStatus;
@@ -160,7 +161,8 @@ public class JobScmExtension implements McpServerExtension {
     }
 
     private static SimpleJob toSimpleJob(Job<?, ?> job) {
-        String lastResult = Optional.ofNullable(job.getLastBuild().getResult())
+        String lastResult = Optional.ofNullable(job.getLastBuild())
+                .map(Run::getResult)
                 .orElse(Result.NOT_BUILT)
                 .toString();
         return new SimpleJob(

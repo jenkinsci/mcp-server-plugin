@@ -271,14 +271,16 @@ Store the encoded credential in a secure location for later use.
 }
 ```
 #### Copilot Configuration
-Copilot doesn't work well with the Streamable transport as of now, and I'm still investigating the issues. Please continue to use the SSE endpoint.
+
+I tested GitHub Copilot Chat in VS Code with the Streamable HTTP endpoint, and it successfully called the Jenkins `getStatus` tool. The Copilot CLI and desktop app have not been tested.
+
 ```json
 {
   "mcp": {
     "servers": {
       "jenkins": {
-        "type": "sse",
-        "url": "https://jenkins-host/mcp-server/sse",
+        "type": "http",
+        "url": "https://jenkins-host/mcp-server/mcp",
         "headers": {
           "Authorization": "Basic <user:token base64>"
         }
@@ -287,22 +289,24 @@ Copilot doesn't work well with the Streamable transport as of now, and I'm still
   }
 }
 ```
+
 Streamable example:
 ```json
 {
-  "servers": {
-    "jenkins": {
-      "type": "http",
-      "url": "http://jenkins-host/mcp-server/mcp",
-      "requestInit": {
-        "headers": {
-          "Authorization": "Basic <user:token base64>"
+  "servers":{
+    "jenkins":{
+      "type":"http",
+      "url":"http://jenkins-host/mcp-server/mcp",
+      "requestInit":{
+        "headers":{
+          "Authorization":"Basic <user:token base64>"
         }
       }
     }
   }
 }
 ```
+
 #### Windsurf Configuration
 ```json
 {
@@ -422,6 +426,8 @@ The plugin provides the following built-in tools for interacting with Jenkins:
 #### Management Information
 - `whoAmI`: Get information about the current user.
 - `getStatus`: Checks the health and readiness status of a Jenkins instance. Use this tool to assess Jenkins instance health rather than simple up/down status.
+- `getSystemLog`: Read recent entries from the Jenkins system log (newest first), optionally from a named Log Recorder or filtered by a minimum level. Requires the Overall/SystemRead permission.
+- `getLogRecorders`: List the names of configured Jenkins Log Recorders, for use with `getSystemLog`. Requires the Overall/SystemRead permission.
 
 
 
@@ -485,6 +491,50 @@ public class MyCustomMcpExtension implements McpServerExtension {
 }
 ```
 
+#### Constraining parameter values
+
+For an object-shaped parameter (typically a `Map`), you can advertise a JSON Schema constraint on the
+*values* while keeping the keys open, using `@ToolParam(additionalProperties = "<json>")`. The value is a
+raw JSON sub-schema — a JSON object or a boolean — emitted verbatim as the parameter's `additionalProperties`:
+
+```java
+@Tool(description = "My custom tool")
+public String myCustomTool(
+        @ToolParam(
+                description = "Extra options",
+                required = false,
+                additionalProperties = "{\"type\":[\"string\",\"boolean\",\"integer\",\"number\",\"array\"]}")
+        Map<String, Object> options) {
+    // Tool implementation
+}
+```
+
+Invalid JSON, or a value that isn't a JSON object or boolean, fails fast when the tool is registered.
+
+#### Restricting a tool by permission
+
+Add `permissions` to `@Tool` to require the caller to hold a Jenkins permission. List one or more
+permission ids (as returned by `Permission.getId()`, for example `hudson.model.Hudson.SystemRead`):
+
+```java
+@Tool(
+        description = "Read the Jenkins system log",
+        permissions = {"hudson.model.Hudson.SystemRead"})
+public SystemLog readSystemLog() {
+    // ...
+}
+```
+
+The caller must hold **at least one** of the listed permissions. A tool that fails the check is hidden
+from `tools/list` and rejected on `tools/call`. When Jenkins security is disabled, every tool is
+available. Permission ids are resolved when the server starts, so a typo fails fast. For a sensitive
+operation, still call `Jenkins.get().checkPermission(...)` inside the method as defence in depth.
+
+**Overall permissions only.** The check runs against the Jenkins root, so `permissions` is for global
+permissions such as `Overall/SystemRead` or `Overall/Administer`. It cannot express item-scoped
+permissions like `Item.READ` on a particular folder or job — a tool has no item context. Enforce those
+inside the method against the specific item (for example `job.checkPermission(Item.READ)`).
+
 ### Overriding a Built-in Tool
 
 You can replace a built-in tool (or any tool contributed by another plugin) with your own
@@ -524,6 +574,20 @@ For serialization to text content:
 
 - **@ExportedBean Annotation**: If the result object is annotated with `@ExportedBean` (from `org.kohsuke.stapler.export`), Jenkins' `org.kohsuke.stapler.export.Flavor.JSON` exporting mechanism is used.
 - **Other Objects**: For objects without the `@ExportedBean` annotation, Jackson is used for JSON serialization.
+
+#### Field selection with `tree` and per-tool defaults
+
+Tools returning `@ExportedBean` objects accept an optional `tree` parameter using the
+[Jenkins Remote REST API tree syntax](https://www.jenkins.io/doc/book/using/remote-access-api/#RemoteaccessAPI-Depthcontrol)
+(for example `tree=name,url,lastBuild[number,result]`) to limit which fields are returned.
+
+A tool may also declare a **default tree** (`@Tool(defaultTree = "...")`), applied only when the
+caller does not pass `tree`. The built-in `getBuild`, `getJob` and `getJobs` tools use such compact
+defaults: without an explicit `tree` they return the identity/status essentials rather than the full
+exported model, which keeps responses small for LLM context windows. Pass your own `tree`
+expression to request any other fields — an explicit `tree` always takes precedence over the
+default, and passing `tree="*"` returns the full exported object (pruning disabled), bypassing the
+default entirely. Tools without a declared default keep returning the full exported object.
 
 This approach ensures flexible and efficient handling of different result types, accommodating both Jenkins-specific exported objects and standard Java objects.
 This flexible approach ensures that tool results are consistently and accurately represented in the MCP response, regardless of their complexity.

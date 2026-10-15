@@ -70,7 +70,9 @@ public class EndPointTest {
                             "getTestResults",
                             "getFlakyFailures",
                             "getQueueItem",
-                            "createPipeline");
+                            "createPipeline",
+                            "getSystemLog",
+                            "getLogRecorders");
         }
     }
 
