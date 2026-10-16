@@ -74,7 +74,8 @@ public class EndPointTest {
                             "getFlakyFailures",
                             "getQueueItem",
                             "getSystemLog",
-                            "getLogRecorders");
+                            "getLogRecorders",
+                            "cancelBuild");
         }
     }
 
