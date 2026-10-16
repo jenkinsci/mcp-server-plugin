@@ -35,13 +35,16 @@ import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
 import io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder;
 import io.jenkins.plugins.mcp.server.junit.McpClientTest;
+import io.jenkins.plugins.mcp.server.junit.TestCrumbIssuerMcpExtension;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.Map;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.TestExtension;
 import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
 @WithJenkins
+@ExtendWith(TestCrumbIssuerMcpExtension.class)
 public class SimpleMcpServerTest {
     @McpClientTest
     void testSampleTool(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder) {

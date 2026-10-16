@@ -28,8 +28,10 @@ package io.jenkins.plugins.mcp.server.junit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.jvnet.hudson.test.JenkinsRule;
 
+@ExtendWith(TestCrumbIssuerMcpExtension.class)
 public class McpClientExtensionTest {
     @McpClientTest
     void testMcpClient(JenkinsRule jenkins, JenkinsMcpClientBuilder builder) {

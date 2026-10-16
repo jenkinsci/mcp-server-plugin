@@ -31,7 +31,7 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.Extension;
 import hudson.ExtensionComponent;
 import hudson.PluginWrapper;
-import hudson.model.RootAction;
+import hudson.model.UnprotectedRootAction;
 import hudson.security.Permission;
 import hudson.security.csrf.CrumbExclusion;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
@@ -76,21 +76,34 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import jenkins.model.Jenkins;
-import jenkins.util.HttpServletFilter;
 import jenkins.util.SystemProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
+import org.kohsuke.stapler.StaplerRequest2;
+import org.kohsuke.stapler.StaplerResponse2;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
+ * MCP HTTP endpoint.
  *
+ * <p>Requests are served by Stapler ({@link #doDynamic}), which runs only after every
+ * {@link hudson.util.PluginServletFilter} has had a chance to run. This class deliberately does not
+ * implement {@link jenkins.util.HttpServletFilter}: that extension is installed at the front of
+ * {@code PluginServletFilter} and, if it handles the request, returns before authentication filters
+ * registered later (OpenShift Login bearer tokens, Blue Ocean JWT, and anything added after startup)
+ * can establish a user. Tool calls would then run as anonymous.
+ *
+ * <p>The URL is an {@link UnprotectedRootAction} so anonymous callers without {@code Overall/Read} still
+ * reach the MCP layer, matching the previous filter-based behavior. Every tool invocation, including
+ * programmatic {@link McpServerExtension#getSyncTools()} handlers, restores the caller captured on the
+ * request and requires {@code Overall/Read}.
  */
 @Restricted(NoExternalUse.class)
 @Extension
 @Slf4j
-public class Endpoint extends CrumbExclusion implements RootAction, HttpServletFilter {
+public class Endpoint extends CrumbExclusion implements UnprotectedRootAction {
 
     public static final String MCP_SERVER = "mcp-server";
 
@@ -203,6 +216,19 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
             SystemProperties.getInteger(Endpoint.class.getName() + ".sseMessageMaxThreads", 50);
 
     /**
+     * Whether anonymous MCP POSTs (no {@code Authorization} header) may skip the CSRF crumb.
+     * Default is {@code false}. Requests that send {@code Authorization} stay exempt, because a
+     * cross-site page cannot set that header. Set
+     * {@code io.jenkins.plugins.mcp.server.Endpoint.allowUnauthenticatedMcp=true} only when anonymous
+     * agents must call MCP without a crumb. That weakens CSRF protection: the Origin check allows a
+     * missing {@code Origin}, and does nothing when the Jenkins root URL is unset.
+     * {@code mvn hpi:run} sets the property so a local controller can be called without a crumb.
+     */
+    @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "Accessible via System Groovy Scripts")
+    public static boolean ALLOW_UNAUTHENTICATED_MCP =
+            SystemProperties.getBoolean(Endpoint.class.getName() + ".allowUnauthenticatedMcp", false);
+
+    /**
      * JSON object mapper for serialization/deserialization
      */
     private final JsonMapper objectMapper = new JsonMapper();
@@ -233,7 +259,11 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
     HttpServletStreamableServerTransportProvider httpServletStreamableServerTransportProvider;
     HttpServletStatelessServerTransport httpServletStatelessServerTransport;
 
-    private boolean initialized = false;
+    /**
+     * Set once {@link #init()} has finished publishing the transports. Volatile so later requests can
+     * skip the monitor (double-checked locking) without an unsynchronized read of a plain flag.
+     */
+    private volatile boolean initialized = false;
 
     public static String getRequestedResourcePath(HttpServletRequest httpServletRequest) {
         return httpServletRequest
@@ -241,122 +271,107 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
                 .substring(httpServletRequest.getContextPath().length());
     }
 
+    /**
+     * Exempts MCP POSTs from CSRF crumbs without serving them.
+     *
+     * <p>{@link hudson.security.csrf.CrumbFilter} runs before {@link hudson.util.PluginServletFilter}.
+     * Returning {@code true} without calling {@code chain.doFilter} would swallow the request there, so
+     * authentication filters registered later would never see it. Continuing the chain lets those filters
+     * run; Stapler then dispatches to {@link #doDynamic}.
+     *
+     * <p>The path comes from {@link HttpServletRequest#getPathInfo()}. For POST requests {@code CrumbFilter}
+     * wraps the request so that value is the canonical path (SECURITY-1774). A raw URI such as
+     * {@code /mcp-server/mcp/../../script} is therefore seen as {@code /script} and keeps its crumb check.
+     */
     @Override
     public boolean process(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws IOException, ServletException {
-
-        String requestedResource = getRequestedResourcePath(request);
-
-        if (!requestedResource.startsWith("/" + MCP_SERVER)) {
-            // Not a MCP server request, continue the filter chain
+        if (!isCrumbExcludedRequest(request)) {
             return false;
         }
-
-        if (!initialized) {
-            init();
-        }
-
-        // Handle stateless endpoint
-        if (isStatelessRequest(request)) {
-            if (DISABLE_MCP_STATELESS) {
-                response.sendError(HttpServletResponse.SC_NOT_FOUND, "Stateless endpoint is disabled");
-                return true;
-            }
-            handleStatelessMessage(request, response);
-            return true;
-        }
-
-        // Note: Health endpoint is now handled by HealthEndpoint UnprotectedRootAction at /mcp-health
-        // Metrics endpoint is handled in handle() method below after Stapler applies auth
-
-        // Handle SSE message endpoint
-        if (requestedResource.startsWith("/" + MCP_SERVER_MESSAGE)
-                && request.getMethod().equalsIgnoreCase("POST")) {
-            if (DISABLE_MCP_SSE) {
-                response.sendError(HttpServletResponse.SC_NOT_FOUND, "SSE endpoint is disabled");
-                return true;
-            }
-            handleMessage(request, response, httpServletSseServerTransportProvider);
-            return true;
-        }
-
-        // Reject POST to SSE endpoint
-        if (requestedResource.startsWith("/" + MCP_SERVER_SSE)
-                && request.getMethod().equalsIgnoreCase("POST")) {
-            response.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
-            return true;
-        }
-
-        // Handle streamable endpoint
-        if (isStreamableRequest(request)) {
-            if (DISABLE_MCP_STREAMABLE) {
-                response.sendError(HttpServletResponse.SC_NOT_FOUND, "Streamable endpoint is disabled");
-                return true;
-            }
-            McpConnectionMetrics.recordStreamableRequest();
-            handleMessage(
-                    request,
-                    new ToolListFilteringHttpServletResponse(
-                            response, Jenkins.getAuthentication2(), toolPermissions, objectMapper),
-                    httpServletStreamableServerTransportProvider);
-            return true;
-        }
-
-        return false;
+        chain.doFilter(request, response);
+        return true;
     }
 
-    protected synchronized void init() throws ServletException {
+    /**
+     * MCP POSTs that may skip the crumb: canonical paths under {@code /mcp-server/} that carry an
+     * {@code Authorization} header, or any such path when {@link #ALLOW_UNAUTHENTICATED_MCP} is set.
+     * GET requests are not subject to the crumb filter.
+     */
+    private boolean isCrumbExcludedRequest(HttpServletRequest request) {
+        if (!request.getMethod().equalsIgnoreCase("POST")) {
+            return false;
+        }
+        if (request.getHeader("Authorization") == null && !ALLOW_UNAUTHENTICATED_MCP) {
+            return false;
+        }
+        String pathInfo = request.getPathInfo();
+        return pathInfo != null && pathInfo.startsWith("/" + MCP_SERVER + "/");
+    }
 
+    /**
+     * Builds the MCP transports once. The unsynchronized read of {@link #initialized} avoids taking the
+     * lock on every request; the second check runs while holding the monitor.
+     */
+    protected void init() throws ServletException {
         if (initialized) {
             return;
         }
-        PluginWrapper wrapper = Jenkins.get().getPluginManager().whichPlugin(Endpoint.class);
-        // should not be null here in production. Only for testing purposes
-        String pluginName;
-        String pluginVersion;
-        if (wrapper == null) {
-            pluginName = "Jenkins MCP Server Plugin";
-            pluginVersion = "Unknown Version";
-        } else {
-            pluginName = "Jenkins " + wrapper.getDisplayName();
-            pluginVersion = wrapper.getVersion();
+        synchronized (this) {
+            if (initialized) {
+                return;
+            }
+            PluginWrapper wrapper = Jenkins.get().getPluginManager().whichPlugin(Endpoint.class);
+            // should not be null here in production. Only for testing purposes
+            String pluginName;
+            String pluginVersion;
+            if (wrapper == null) {
+                pluginName = "Jenkins MCP Server Plugin";
+                pluginVersion = "Unknown Version";
+            } else {
+                pluginName = "Jenkins " + wrapper.getDisplayName();
+                pluginVersion = wrapper.getVersion();
+            }
+
+            McpSchema.ServerCapabilities serverCapabilities = McpSchema.ServerCapabilities.builder()
+                    .tools(true)
+                    .prompts(true)
+                    .resources(true, true)
+                    .build();
+            var extensions = McpServerExtension.all();
+
+            var resolvedTools = resolveTools(extensions.getComponents());
+            this.toolPermissions = buildToolPermissions(resolvedTools);
+
+            var prompts = extensions.stream()
+                    .map(McpServerExtension::getSyncPrompts)
+                    .flatMap(List::stream)
+                    .toList();
+            var resources = extensions.stream()
+                    .map(McpServerExtension::getSyncResources)
+                    .flatMap(List::stream)
+                    .toList();
+
+            var rootUrl = jenkins.model.JenkinsLocationConfiguration.get().getUrl();
+            if (rootUrl == null) {
+                rootUrl = "";
+            }
+
+            // Initialize session-based transports if SSE or Streamable enabled
+            if (!DISABLE_MCP_SSE || !DISABLE_MCP_STREAMABLE) {
+                initSessionBased(
+                        serverCapabilities, resolvedTools, prompts, resources, rootUrl, pluginName, pluginVersion);
+            }
+
+            // Initialize stateless transport if enabled
+            if (!DISABLE_MCP_STATELESS) {
+                initStateless(serverCapabilities, resolvedTools, prompts, resources, pluginName, pluginVersion);
+            }
+
+            // Publish only after every transport exists. An earlier write would let a concurrent
+            // request observe initialized == true and call a transport that is still null.
+            initialized = true;
         }
-
-        McpSchema.ServerCapabilities serverCapabilities = McpSchema.ServerCapabilities.builder()
-                .tools(true)
-                .prompts(true)
-                .resources(true, true)
-                .build();
-        var extensions = McpServerExtension.all();
-
-        var resolvedTools = resolveTools(extensions.getComponents());
-        this.toolPermissions = buildToolPermissions(resolvedTools);
-
-        var prompts = extensions.stream()
-                .map(McpServerExtension::getSyncPrompts)
-                .flatMap(List::stream)
-                .toList();
-        var resources = extensions.stream()
-                .map(McpServerExtension::getSyncResources)
-                .flatMap(List::stream)
-                .toList();
-
-        var rootUrl = jenkins.model.JenkinsLocationConfiguration.get().getUrl();
-        if (rootUrl == null) {
-            rootUrl = "";
-        }
-
-        // Initialize session-based transports if SSE or Streamable enabled
-        if (!DISABLE_MCP_SSE || !DISABLE_MCP_STREAMABLE) {
-            initSessionBased(serverCapabilities, resolvedTools, prompts, resources, rootUrl, pluginName, pluginVersion);
-        }
-
-        // Initialize stateless transport if enabled
-        if (!DISABLE_MCP_STATELESS) {
-            initStateless(serverCapabilities, resolvedTools, prompts, resources, pluginName, pluginVersion);
-        }
-
-        initialized = true;
     }
 
     /**
@@ -424,7 +439,9 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
 
     /**
      * Maps each tool name to its {@code @Tool(permissions = ...)}. Programmatic tools have no annotation
-     * and map to an empty list (always visible). An unknown permission id fails fast at startup.
+     * and map to an empty list, so {@code tools/list} still shows them. Calling one restores the captured
+     * caller and requires {@link Jenkins#READ}; see {@link #secureSyncTool}. An unknown permission id
+     * fails fast at startup.
      */
     private static Map<String, List<Permission>> buildToolPermissions(List<ToolCandidate> resolvedTools) {
         Map<String, List<Permission>> permissions = new HashMap<>();
@@ -538,7 +555,7 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
         List<McpServerFeatures.SyncToolSpecification> allTools = resolvedTools.stream()
                 .map(candidate -> candidate.method() != null
                         ? candidate.newWrapper(objectMapper).asSyncToolSpecification()
-                        : candidate.spec())
+                        : secureSyncTool(candidate.spec()))
                 .toList();
 
         httpServletSseServerTransportProvider = HttpServletSseServerTransportProvider.builder()
@@ -578,7 +595,6 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
                 .resources(resources)
                 .build();
 
-        initialized = true;
         log.info(
                 "MCP Server initialized with {} tools, keep-alive interval: {} seconds",
                 allTools.size(),
@@ -626,9 +642,34 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
 
     private McpStatelessServerFeatures.SyncToolSpecification convertToolToStateless(
             McpServerFeatures.SyncToolSpecification sessionTool) {
+        return secureStatelessTool(sessionTool);
+    }
+
+    /**
+     * Session-scoped programmatic tools skip {@link McpToolWrapper}, which is where annotation-backed
+     * tools restore the captured caller and require {@link Jenkins#READ}. SSE handling runs on another
+     * thread, so a handler that reads {@code Jenkins.getAuthentication2()} would otherwise see anonymous.
+     */
+    static McpServerFeatures.SyncToolSpecification secureSyncTool(McpServerFeatures.SyncToolSpecification spec) {
+        return McpServerFeatures.SyncToolSpecification.builder()
+                .tool(spec.tool())
+                .callHandler((exchange, request) -> McpToolWrapper.callWithCapturedAuth(
+                        exchange == null ? null : exchange.transportContext(),
+                        () -> spec.callHandler().apply(exchange, request)))
+                .build();
+    }
+
+    /**
+     * Stateless programmatic tools receive the captured caller on the transport context. The original
+     * handler is still invoked with a null exchange, which is the contract {@code getSyncTools()}
+     * implementations already have on this transport.
+     */
+    static McpStatelessServerFeatures.SyncToolSpecification secureStatelessTool(
+            McpServerFeatures.SyncToolSpecification sessionTool) {
         return McpStatelessServerFeatures.SyncToolSpecification.builder()
                 .tool(sessionTool.tool())
-                .callHandler((context, request) -> sessionTool.callHandler().apply(null, request))
+                .callHandler((context, request) -> McpToolWrapper.callWithCapturedAuth(
+                        context, () -> sessionTool.callHandler().apply(null, request)))
                 .build();
     }
 
@@ -658,21 +699,34 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
         return result;
     }
 
-    @Override
-    public boolean handle(HttpServletRequest req, HttpServletResponse resp) throws IOException, ServletException {
-        if (!initialized) {
-            init();
+    /**
+     * Stapler entry point for {@code /mcp-server/**}. Invoked only after the servlet filter chain,
+     * including every {@link hudson.util.PluginServletFilter}, has completed.
+     *
+     * <p>{@code @RequirePOST} cannot be used: MCP clients are not browsers, and the SSE and streamable
+     * endpoints must accept GET. POST requests are exempted from crumbs by {@link #process}. Each tool
+     * and the metrics endpoint check permissions themselves.
+     */
+    public void doDynamic(StaplerRequest2 req, StaplerResponse2 rsp) // lgtm[jenkins/csrf]
+            throws IOException, ServletException {
+        if (!dispatch(req, rsp)) {
+            rsp.sendError(HttpServletResponse.SC_NOT_FOUND);
         }
+    }
 
-        // Note: health endpoint is handled by HealthEndpoint UnprotectedRootAction at /mcp-health
+    private boolean dispatch(HttpServletRequest req, HttpServletResponse resp) throws IOException, ServletException {
+        // Fast path after startup is the volatile read inside init(); the lock is taken only once.
+        init();
 
-        // Handle metrics endpoint (authentication checked in handler)
+        String requestedResource = getRequestedResourcePath(req);
+
+        // Health is HealthEndpoint, an UnprotectedRootAction at /mcp-health.
+        // Metrics checks Overall/Read itself.
         if (isMetricsRequest(req)) {
             handleMetrics(req, resp);
             return true;
         }
 
-        // Handle stateless endpoint
         if (isStatelessRequest(req)) {
             if (DISABLE_MCP_STATELESS) {
                 resp.sendError(HttpServletResponse.SC_NOT_FOUND, "Stateless endpoint is disabled");
@@ -686,7 +740,20 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
             return true;
         }
 
-        // Handle SSE endpoint
+        if (isSseMessageRequest(requestedResource) && req.getMethod().equalsIgnoreCase("POST")) {
+            if (DISABLE_MCP_SSE) {
+                resp.sendError(HttpServletResponse.SC_NOT_FOUND, "SSE endpoint is disabled");
+                return true;
+            }
+            handleMessage(req, resp, httpServletSseServerTransportProvider);
+            return true;
+        }
+
+        if (isSseEndpointPost(req, requestedResource)) {
+            resp.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+            return true;
+        }
+
         if (isSSERequest(req)) {
             if (DISABLE_MCP_SSE) {
                 resp.sendError(HttpServletResponse.SC_NOT_FOUND, "SSE endpoint is disabled");
@@ -696,7 +763,6 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
             return true;
         }
 
-        // Handle streamable endpoint
         if (isStreamableRequest(req)) {
             if (DISABLE_MCP_STREAMABLE) {
                 resp.sendError(HttpServletResponse.SC_NOT_FOUND, "Streamable endpoint is disabled");
@@ -704,6 +770,15 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
             }
             if (isBrowserRequest(req)) {
                 serveBrowserPage(resp);
+            } else if (req.getMethod().equalsIgnoreCase("POST")) {
+                // POST responses carry tools/list as SSE frames. Filter them with the user established
+                // by the filters that ran before Stapler.
+                McpConnectionMetrics.recordStreamableRequest();
+                handleMessage(
+                        req,
+                        new ToolListFilteringHttpServletResponse(
+                                resp, Jenkins.getAuthentication2(), toolPermissions, objectMapper),
+                        httpServletStreamableServerTransportProvider);
             } else {
                 McpConnectionMetrics.recordStreamableRequest();
                 handleMessage(req, resp, httpServletStreamableServerTransportProvider);
@@ -712,6 +787,15 @@ public class Endpoint extends CrumbExclusion implements RootAction, HttpServletF
         }
 
         return false;
+    }
+
+    private static boolean isSseMessageRequest(String requestedResource) {
+        return requestedResource.startsWith("/" + MCP_SERVER_MESSAGE);
+    }
+
+    private static boolean isSseEndpointPost(HttpServletRequest request, String requestedResource) {
+        return requestedResource.startsWith("/" + MCP_SERVER_SSE)
+                && request.getMethod().equalsIgnoreCase("POST");
     }
 
     private void serveBrowserPage(HttpServletResponse resp) throws IOException {

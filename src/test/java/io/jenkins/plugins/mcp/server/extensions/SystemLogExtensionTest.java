@@ -36,6 +36,7 @@ import hudson.security.ACLContext;
 import io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder;
 import io.jenkins.plugins.mcp.server.junit.McpClientTest;
 import io.jenkins.plugins.mcp.server.junit.StatelessMcpTestClient;
+import io.jenkins.plugins.mcp.server.junit.TestCrumbIssuerMcpExtension;
 import io.jenkins.plugins.mcp.server.junit.TestUtils;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.spec.McpSchema;
@@ -43,6 +44,7 @@ import java.util.Base64;
 import java.util.Map;
 import jenkins.model.Jenkins;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.MockAuthorizationStrategy;
 import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
@@ -53,6 +55,7 @@ import org.springframework.security.access.AccessDeniedException;
  * without Overall/SystemRead, but available to permitted users and when security is off. Covers SSE and
  * streamable ({@link McpClientTest}), stateless, and a direct in-process call.
  */
+@ExtendWith(TestCrumbIssuerMcpExtension.class)
 class SystemLogExtensionTest {
 
     @McpClientTest

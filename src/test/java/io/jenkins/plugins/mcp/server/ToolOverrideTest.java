@@ -33,16 +33,19 @@ import hudson.ExtensionList;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder;
 import io.jenkins.plugins.mcp.server.junit.McpClientTest;
+import io.jenkins.plugins.mcp.server.junit.TestCrumbIssuerMcpExtension;
 import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.TestExtension;
 import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
 @WithJenkins
+@ExtendWith(TestCrumbIssuerMcpExtension.class)
 public class ToolOverrideTest {
 
     static final String OVERRIDDEN_BUILD_LOG_DESCRIPTION = "Overridden getBuildLog from a separate extension";

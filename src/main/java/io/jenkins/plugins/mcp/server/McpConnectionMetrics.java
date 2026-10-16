@@ -95,7 +95,7 @@ public class McpConnectionMetrics {
     /**
      * Handles GET requests to the metrics endpoint.
      * Requires authentication (checks Jenkins.READ permission).
-     * This method is called directly from the HttpServletFilter.
+     * Called from {@link Endpoint#doDynamic} after servlet filters have run.
      *
      * @param response the HTTP response to send
      * @throws IOException if writing the response fails

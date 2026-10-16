@@ -71,6 +71,7 @@ import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.kohsuke.stapler.export.ExportedBean;
 import org.kohsuke.stapler.export.NamedPathPruner;
 import org.springframework.lang.Nullable;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
@@ -440,6 +441,40 @@ public class McpToolWrapper {
                     .isError(true)
                     .addTextContent(toJson(toolResponse))
                     .build();
+        }
+    }
+
+    /**
+     * Runs {@code action} as the caller stored on the MCP request, after requiring {@link Jenkins#READ}.
+     *
+     * <p>Annotation-backed tools do this in {@link #call(McpTransportContext, McpSchema.CallToolRequest)}.
+     * Programmatic {@code McpServerExtension#getSyncTools()} handlers must use this entry point as well:
+     * SSE message handling is offloaded to another thread, where the servlet security context is anonymous.
+     * An {@link AccessDeniedException} from the permission check becomes an error tool result, matching
+     * annotation-backed tools.
+     */
+    public static McpSchema.CallToolResult callWithCapturedAuth(
+            McpTransportContext context, Supplier<McpSchema.CallToolResult> action) {
+        Authentication authn = tryGetAuthentication(context);
+        try (var ignored = switchTo(authn)) {
+            Jenkins.get().checkPermission(Jenkins.READ);
+            return action.get();
+        } catch (Exception e) {
+            Throwable root = ExceptionUtils.getRootCause(e);
+            if (e instanceof AccessDeniedException || root instanceof AccessDeniedException) {
+                String message = ExceptionUtils.getRootCauseMessage(e);
+                if (message.isEmpty()) {
+                    message = "Access denied";
+                }
+                return McpSchema.CallToolResult.builder()
+                        .isError(true)
+                        .addTextContent(message)
+                        .build();
+            }
+            if (e instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new IllegalStateException(e);
         }
     }
 

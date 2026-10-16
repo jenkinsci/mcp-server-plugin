@@ -11,6 +11,9 @@ import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
 @WithJenkins
+// Set before Endpoint initializes. TestCrumbIssuerMcpExtension would load Endpoint in a class-level
+// beforeEach, which freezes REQUIRE_ORIGIN_HEADER before the method-level origin properties apply.
+@SetSystemProperty(key = "io.jenkins.plugins.mcp.server.Endpoint.allowUnauthenticatedMcp", value = "true")
 public class OriginHeaderValidationTest {
 
     @McpClientTest

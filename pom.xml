@@ -285,6 +285,15 @@
           </execution>
         </executions>
       </plugin>
+      <plugin>
+        <groupId>org.jenkins-ci.tools</groupId>
+        <artifactId>maven-hpi-plugin</artifactId>
+        <configuration>
+          <systemProperties>
+            <io.jenkins.plugins.mcp.server.Endpoint.allowUnauthenticatedMcp>true</io.jenkins.plugins.mcp.server.Endpoint.allowUnauthenticatedMcp>
+          </systemProperties>
+        </configuration>
+      </plugin>
     </plugins>
   </build>
 </project>

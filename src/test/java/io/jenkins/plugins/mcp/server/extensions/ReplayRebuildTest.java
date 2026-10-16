@@ -42,6 +42,7 @@ import hudson.model.StringParameterValue;
 import hudson.tasks.Shell;
 import io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder;
 import io.jenkins.plugins.mcp.server.junit.McpClientTest;
+import io.jenkins.plugins.mcp.server.junit.TestCrumbIssuerMcpExtension;
 import io.modelcontextprotocol.client.transport.customizer.McpSyncHttpClientRequestCustomizer;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.Base64;
@@ -49,6 +50,7 @@ import java.util.Map;
 import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.MockAuthorizationStrategy;
 import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
@@ -57,6 +59,7 @@ import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
  * Tests for rebuildBuild, getReplayScripts, and replayBuild MCP tools.
  */
 @WithJenkins
+@ExtendWith(TestCrumbIssuerMcpExtension.class)
 class ReplayRebuildTest {
 
     @McpClientTest
