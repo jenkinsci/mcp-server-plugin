@@ -2,15 +2,22 @@ package io.jenkins.plugins.mcp.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.jenkins.plugins.mcp.server.junit.TestCrumbIssuerMcpExtension;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
+/**
+ * Anonymous streamable client. JenkinsRule's TestCrumbIssuer rejects POSTs with no Authorization
+ * header unless this class opts in, matching the other MCP client tests.
+ */
 @WithJenkins
+@ExtendWith(TestCrumbIssuerMcpExtension.class)
 public class StreamableSessionDeleteTest {
 
     private static final String PROTOCOL_VERSION = "2025-06-18";
