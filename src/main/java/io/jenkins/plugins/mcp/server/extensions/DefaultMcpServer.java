@@ -68,6 +68,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.jenkinsci.plugins.workflow.cps.replay.ReplayAction;
 import org.kohsuke.stapler.export.Exported;
 
+// Provides the parser and AST representation used for Declarative Pipeline validation.
+import org.jenkinsci.plugins.pipeline.modeldefinition.parser.Converter;
+import org.jenkinsci.plugins.pipeline.modeldefinition.ast.ModelASTPipelineDef;
+
 @Extension
 @Slf4j
 public class DefaultMcpServer implements McpServerExtension {
@@ -97,6 +101,40 @@ public class DefaultMcpServer implements McpServerExtension {
     public Job getJob(
             @ToolParam(description = "Job full name of the Jenkins job (e.g., 'folder/job-name')") String jobFullName) {
         return Jenkins.get().getItemByFullName(jobFullName, Job.class);
+    }
+
+    // Exposes Jenkins Declarative Pipeline validation as an MCP tool,
+    // allowing an MCP client to submit Jenkinsfile content directly.
+    @Tool(
+            description = "Validate a Jenkins Declarative Pipeline Jenkinsfile",
+            annotations = @Tool.Annotations(readOnlyHint = true, destructiveHint = false))
+    public String validateJenkinsfile(
+            @ToolParam(description = "The complete Jenkinsfile content to validate") String jenkinsfile) {
+
+        // Match the permission requirement of Jenkins' existing validation endpoint.
+        Jenkins.get().checkPermission(Jenkins.READ);
+
+        // Reject empty input before invoking the pipeline parser.
+        if (jenkinsfile == null || jenkinsfile.isBlank()) {
+            return "Validation failed: Jenkinsfile content is empty.";
+        }
+
+        try {
+            // Reuse the parser used by Jenkins' existing Jenkinsfile validation endpoint.
+            ModelASTPipelineDef pipelineDef = Converter.scriptToPipelineDef(jenkinsfile);
+
+            // A missing pipeline definition must not be reported as successful validation.
+            if (pipelineDef == null) {
+                return "Validation failed: Jenkinsfile did not produce a Declarative Pipeline definition.";
+            }
+
+            // Successful parsing confirms a Declarative Pipeline definition was produced.
+            return "Validation succeeded: Jenkinsfile parsed as a Declarative Pipeline.";
+        } catch (Exception e) {
+            // Keep the detailed exception in Jenkins logs while returning an error to the MCP client.
+            log.debug("Jenkinsfile validation failed", e);
+            return "Validation failed: " + e.getMessage();
+        }
     }
 
     /**
