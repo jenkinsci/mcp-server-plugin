@@ -31,6 +31,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
+import java.lang.reflect.InvocationTargetException;
 import java.util.Map;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -126,6 +127,79 @@ class McpToolWrapperTest {
     }
 
     @Test
+    void missingRequiredArgumentUsesSchemaParameterName() throws Exception {
+        McpToolWrapper wrapper = searchLikeWrapper();
+
+        JsonNode required =
+                objectMapper.readTree(wrapper.generateForMethodInput()).path("required");
+        assertThat(required.toString()).contains("jobFullName").doesNotContain("fullJobName");
+
+        assertThat(wrapper.missingRequiredArguments(Map.of("pattern", "ERROR"))).containsExactly("jobFullName");
+        assertThat(McpToolWrapper.missingRequiredMessage(wrapper.missingRequiredArguments(Map.of("pattern", "ERROR"))))
+                .isEqualTo("Missing required parameter: jobFullName")
+                .doesNotContain("fullJobName")
+                .doesNotContain("NullPointerException");
+    }
+
+    @Test
+    void wrongKeyDoesNotSatisfyRequiredSchemaParameter() throws Exception {
+        McpToolWrapper wrapper = searchLikeWrapper();
+
+        assertThat(wrapper.missingRequiredArguments(Map.of("fullJobName", "demo-job")))
+                .containsExactly("jobFullName", "pattern");
+        assertThat(McpToolWrapper.missingRequiredMessage(
+                        wrapper.missingRequiredArguments(Map.of("fullJobName", "demo-job"))))
+                .isEqualTo("Missing required parameters: jobFullName, pattern")
+                .doesNotContain("fullJobName")
+                .doesNotContain("NullPointerException");
+    }
+
+    @Test
+    void presentSchemaParametersAreNotReportedMissing() throws Exception {
+        McpToolWrapper wrapper = searchLikeWrapper();
+
+        assertThat(wrapper.missingRequiredArguments(Map.of("jobFullName", "demo-job", "pattern", "ERROR")))
+                .isEmpty();
+        // optional buildNumber may be omitted
+        assertThat(wrapper.missingRequiredArguments(
+                        Map.of("jobFullName", "demo-job", "pattern", "ERROR", "buildNumber", 1)))
+                .isEmpty();
+    }
+
+    @Test
+    void nullPointerExceptionMessageIsNotReturnedToClients() {
+        var npe = new NullPointerException("fullJobName is marked non-null but is null");
+        assertThat(McpToolWrapper.clientSafeFailureMessage(new InvocationTargetException(npe), "searchBuildLog"))
+                .isEqualTo("Error invoking method: searchBuildLog")
+                .doesNotContain("fullJobName")
+                .doesNotContain("NullPointerException")
+                .doesNotContain("marked non-null");
+    }
+
+    @Test
+    void nonNullGuardOnOtherExceptionTypesIsNotReturnedToClients() {
+        var guarded = new IllegalArgumentException("fullJobName is marked non-null but is null");
+        assertThat(McpToolWrapper.clientSafeFailureMessage(guarded, "searchBuildLog"))
+                .isEqualTo("Error invoking method: searchBuildLog")
+                .doesNotContain("fullJobName");
+    }
+
+    @Test
+    void intentionalIllegalArgumentExceptionMessageIsPreserved() {
+        var error =
+                new InvocationTargetException(new IllegalArgumentException("Search pattern cannot be null or empty"));
+        assertThat(McpToolWrapper.clientSafeFailureMessage(error, "searchBuildLog"))
+                .isEqualTo("IllegalArgumentException: Search pattern cannot be null or empty");
+    }
+
+    private McpToolWrapper searchLikeWrapper() throws NoSuchMethodException {
+        return new McpToolWrapper(
+                objectMapper,
+                target,
+                MockMethods.class.getDeclaredMethod("searchLike", String.class, String.class, Integer.class));
+    }
+
+    @Test
     void nonObjectOrBooleanAdditionalPropertiesFailsFast() throws Exception {
         McpToolWrapper wrapper = new McpToolWrapper(
                 objectMapper, target, MockMethods.class.getDeclaredMethod("wrongTypeMapParam", Map.class));
@@ -185,6 +259,14 @@ class McpToolWrapperTest {
         @Tool
         public boolean wrongTypeMapParam(@ToolParam(additionalProperties = "42") Map<String, Object> parameters) {
             return true;
+        }
+
+        @Tool
+        public String searchLike(
+                @ToolParam(description = "Job full name of the Jenkins job") String jobFullName,
+                @ToolParam(description = "The search pattern") String pattern,
+                @ToolParam(description = "The build number", required = false) Integer buildNumber) {
+            return jobFullName + ":" + pattern + ":" + buildNumber;
         }
 
         public record ComplexType(boolean success, Map<String, Object> data, int code) {}
