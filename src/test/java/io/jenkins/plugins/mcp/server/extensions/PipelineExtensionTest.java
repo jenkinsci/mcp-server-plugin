@@ -36,7 +36,9 @@ import hudson.model.User;
 import hudson.security.ACL;
 import io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder;
 import io.jenkins.plugins.mcp.server.junit.McpClientTest;
+import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.spec.McpSchema;
+import java.util.Base64;
 import java.util.Map;
 import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
@@ -48,13 +50,20 @@ import org.jvnet.hudson.test.MockAuthorizationStrategy;
 import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 import org.springframework.security.access.AccessDeniedException;
 
+/**
+ * The MCP clients here authenticate as {@link #CREATOR} with basic auth. That is what a real client does, and
+ * it is also what exempts the POST from the CSRF crumb, so these tests need no crumb opt-in.
+ */
 @WithJenkins
 class PipelineExtensionTest {
+
+    private static final String CREATOR = "creator";
 
     @McpClientTest
     void testMcpToolCallCreatePipeline(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
             throws Exception {
-        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+        secure(jenkins);
+        try (var client = clientAsCreator(jenkins, jenkinsMcpClientBuilder)) {
             McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(
                     "createPipeline", Map.of("jobName", "new-pipeline-job", "pipelineScript", "echo 'hello'"));
 
@@ -78,7 +87,8 @@ class PipelineExtensionTest {
             JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder) throws Exception {
         var existingJob = jenkins.createProject(WorkflowJob.class, "existing-job");
         existingJob.setDefinition(new CpsFlowDefinition("echo 'original'", true));
-        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+        secure(jenkins);
+        try (var client = clientAsCreator(jenkins, jenkinsMcpClientBuilder)) {
             McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(
                     "createPipeline", Map.of("jobName", "existing-job", "pipelineScript", "echo 'hello'"));
 
@@ -98,7 +108,8 @@ class PipelineExtensionTest {
     void testMcpToolCallCreatePipelineInFolder(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
             throws Exception {
         jenkins.createFolder("my-folder");
-        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+        secure(jenkins);
+        try (var client = clientAsCreator(jenkins, jenkinsMcpClientBuilder)) {
             McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(
                     "createPipeline",
                     Map.of("jobName", "my-folder/new-pipeline-job", "pipelineScript", "echo 'in folder'"));
@@ -120,7 +131,8 @@ class PipelineExtensionTest {
     @McpClientTest
     void testMcpToolCallCreatePipelineInInvalidFolder(
             JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder) throws Exception {
-        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+        secure(jenkins);
+        try (var client = clientAsCreator(jenkins, jenkinsMcpClientBuilder)) {
             McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(
                     "createPipeline",
                     Map.of("jobName", "nonexistent-folder/new-pipeline-job", "pipelineScript", "echo 'hello'"));
@@ -141,7 +153,8 @@ class PipelineExtensionTest {
         var outer = jenkins.createFolder("outer");
         outer.createProject(Folder.class, "inner");
         String script = "echo '<tag> & \"quoted\"'\necho 'second line'";
-        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+        secure(jenkins);
+        try (var client = clientAsCreator(jenkins, jenkinsMcpClientBuilder)) {
             var response = client.callTool(new McpSchema.CallToolRequest(
                     "createPipeline", Map.of("jobName", "outer/inner/pipeline", "pipelineScript", script)));
             assertThat(response.isError()).isFalse();
@@ -164,12 +177,12 @@ class PipelineExtensionTest {
         var authorization = new MockAuthorizationStrategy()
                 .grant(Jenkins.READ, Item.READ)
                 .everywhere()
-                .to("creator");
+                .to(CREATOR);
         if (allowCreate) {
-            authorization.grant(Item.CREATE).everywhere().to("creator");
+            authorization.grant(Item.CREATE).everywhere().to(CREATOR);
         }
         jenkins.jenkins.setAuthorizationStrategy(authorization);
-        try (var ignored = ACL.as2(User.getById("creator", true).impersonate2())) {
+        try (var ignored = ACL.as2(User.getById(CREATOR, true).impersonate2())) {
             var extension = ExtensionList.lookupSingleton(PipelineExtension.class);
             if (allowCreate) {
                 extension.createPipeline("secured-pipeline", "echo 'hello'");
@@ -180,5 +193,26 @@ class PipelineExtensionTest {
                 assertThat(jenkins.jenkins.getItem("secured-pipeline")).isNull();
             }
         }
+    }
+
+    /** Lets {@link #CREATOR} read and create jobs anywhere, and nobody else do anything. */
+    private static void secure(JenkinsRule jenkins) throws Exception {
+        jenkins.jenkins.setSecurityRealm(jenkins.createDummySecurityRealm());
+        jenkins.jenkins.setAuthorizationStrategy(new MockAuthorizationStrategy()
+                .grant(Jenkins.READ, Item.READ, Item.CREATE)
+                .everywhere()
+                .to(CREATOR));
+        jenkins.jenkins.save();
+    }
+
+    private static McpSyncClient clientAsCreator(JenkinsRule jenkins, JenkinsMcpClientBuilder builder) {
+        return builder.jenkins(jenkins)
+                .requestCustomizer((httpRequestBuilder, method, endpoint, body, context) ->
+                        httpRequestBuilder.setHeader("Authorization", basicAuth(CREATOR)))
+                .build();
+    }
+
+    private static String basicAuth(String user) {
+        return "Basic " + Base64.getEncoder().encodeToString((user + ":" + user).getBytes());
     }
 }
