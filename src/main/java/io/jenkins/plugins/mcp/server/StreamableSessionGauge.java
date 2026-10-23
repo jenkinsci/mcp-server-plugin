@@ -76,7 +76,7 @@ final class StreamableSessionGauge {
             return OptionalLong.empty();
         }
         Endpoint endpoint = ExtensionList.lookupFirst(Endpoint.class);
-        if (endpoint == null || endpoint.httpServletStreamableServerTransportProvider == null) {
+        if (endpoint.httpServletStreamableServerTransportProvider == null) {
             return OptionalLong.empty();
         }
         try {
