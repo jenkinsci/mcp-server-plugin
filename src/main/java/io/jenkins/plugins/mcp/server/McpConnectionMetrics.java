@@ -122,6 +122,9 @@ public class McpConnectionMetrics {
         responseJson.put("sseConnectionsTotal", sseConnectionsTotal.get());
         responseJson.put("sseConnectionsActive", sseConnectionsActive.get());
         responseJson.put("streamableRequestsTotal", streamableRequestsTotal.get());
+        // Left out when the count isn't available.
+        StreamableSessionGauge.activeSessions()
+                .ifPresent(sessions -> responseJson.put("streamableSessionsActive", sessions));
         responseJson.put("connectionErrorsTotal", connectionErrorsTotal.get());
 
         Duration uptime = Duration.between(startTime, Instant.now());
