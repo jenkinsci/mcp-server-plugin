@@ -75,7 +75,11 @@ public class EndPointTest {
                             "getQueueItem",
                             "createPipeline",
                             "getSystemLog",
-                            "getLogRecorders");
+                            "getLogRecorders",
+                            "getAgent",
+                            "takeAgentOffline",
+                            "takeAgentOnline",
+                            "listAgentNames");
         }
     }
 
