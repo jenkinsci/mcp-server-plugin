@@ -65,6 +65,8 @@ public class EndPointTest {
                             "getJobs",
                             "getBuild",
                             "getJob",
+                            // Exposes Declarative Pipeline Jenkinsfile validation through MCP.
+                            "validateJenkinsfile",
                             "getJobScm",
                             "getBuildScm",
                             "findJobsWithScmUrl",

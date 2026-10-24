@@ -95,6 +95,59 @@ class DefaultMcpServerTest {
         }
     }
 
+    // Verifies valid, invalid, and empty Jenkinsfile input through MCP.
+    @McpClientTest
+    void testMcpToolCallValidateJenkinsfile(
+            JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder) throws Exception {
+
+        // A minimal Declarative Pipeline that should parse successfully.
+        String validJenkinsfile = """
+                pipeline {
+                    agent any
+                    stages {
+                        stage('Build') {
+                            steps {
+                                echo 'hello'
+                            }
+                        }
+                    }
+                }
+                """;
+
+        // Incomplete syntax should produce a validation failure.
+        String invalidJenkinsfile = "pipeline { stages {";
+
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+
+            // Check that valid pipeline content succeeds.
+            var validResponse = client.callTool(new McpSchema.CallToolRequest(
+                    "validateJenkinsfile", Map.of("jenkinsfile", validJenkinsfile)));
+
+            assertThat(validResponse.isError()).isFalse();
+            assertThat(validResponse.content()).first().isInstanceOfSatisfying(
+                    McpSchema.TextContent.class,
+                    textContent -> assertThat(textContent.text()).contains("Validation succeeded"));
+
+            // Check that malformed pipeline content fails validation.
+            var invalidResponse = client.callTool(new McpSchema.CallToolRequest(
+                    "validateJenkinsfile", Map.of("jenkinsfile", invalidJenkinsfile)));
+
+            assertThat(invalidResponse.isError()).isFalse();
+            assertThat(invalidResponse.content()).first().isInstanceOfSatisfying(
+                    McpSchema.TextContent.class,
+                    textContent -> assertThat(textContent.text()).contains("Validation failed"));
+
+            // Check that empty content is rejected.
+            var emptyResponse = client.callTool(new McpSchema.CallToolRequest(
+                    "validateJenkinsfile", Map.of("jenkinsfile", "")));
+
+            assertThat(emptyResponse.isError()).isFalse();
+            assertThat(emptyResponse.content()).first().isInstanceOfSatisfying(
+                    McpSchema.TextContent.class,
+                    textContent -> assertThat(textContent.text()).contains("content is empty"));
+        }
+    }
+
     static Stream<Arguments> triggerSecurityTestParameters() {
         Stream<Arguments> baseArgs = Stream.of(
                 // security enable, no auth -> no, AccessDenied
