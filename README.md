@@ -33,6 +33,7 @@ The following system properties can be used to configure the MCP Server plugin:
 - disable SSE endpoint with `io.jenkins.plugins.mcp.server.Endpoint.disableMcpSse=true` (default false)
 - disable streamable HTTP endpoint with `io.jenkins.plugins.mcp.server.Endpoint.disableMcpStreamable=true` (default false)
 - allow anonymous MCP clients to skip the CSRF crumb with `io.jenkins.plugins.mcp.server.Endpoint.allowUnauthenticatedMcp=true` (default false)
+- reclaim idle Streamable HTTP sessions with `io.jenkins.plugins.mcp.server.Endpoint.sessionSweepInterval=1800` (seconds, default 1800, 0 disables)
 
 > [!WARNING]
 > `io.jenkins.plugins.mcp.server.Endpoint.allowUnauthenticatedMcp=true` weakens CSRF protection. MCP POSTs that send an `Authorization` header are exempt from the crumb, because a page on another site cannot add that header. Anonymous and session-cookie clients are not exempt unless this property is set. With it on, those POSTs rely on the Origin check, which allows a missing `Origin` and does nothing when the Jenkins root URL is unset. Leave the property `false` on any controller that browsers or anonymous users can reach. `mvn hpi:run` sets it so a local development controller accepts an MCP client without a crumb.
@@ -69,7 +70,22 @@ io.jenkins.plugins.mcp.server.Endpoint.keepAliveInterval=30
 Set to `0` to disable keep-alive messages (not recommended for SSE).
 
 > [!NOTE]
-> A ping is only delivered when there is an open server→client stream. SSE always has one. Streamable HTTP only has one while the client keeps a long-lived GET stream open; for a plain POST request/response client there is no stream to ping, so this setting has no effect.
+> A ping is only delivered when there is an open server→client stream. SSE always has one. Streamable HTTP only has one while the client keeps a long-lived GET stream open; for a plain POST request/response client there is no stream to ping, so this setting has no effect. Those clients are covered by [Idle Session Cleanup](#idle-session-cleanup) instead.
+
+#### Idle Session Cleanup
+
+A **Streamable HTTP** session outlives the connection it was created on, because the protocol lets a client reconnect to a session it was disconnected from. A client that disappears without sending `DELETE /mcp-server/mcp` therefore leaves its session behind, along with the socket and servlet async context behind it. Left alone, those pile up until the controller runs out of file descriptors.
+
+The server reclaims them: a session with no open stream that has gone a full interval without a request is closed and dropped. The interval defaults to 30 minutes, so a stranded session lives for 30 to 60 minutes.
+
+You can configure it with the system property:
+```
+io.jenkins.plugins.mcp.server.Endpoint.sessionSweepInterval=1800
+```
+
+Set to `0` to keep sessions until the client deletes them or Jenkins restarts. That is the old behaviour, and it leaks.
+
+A client whose session was reclaimed gets `404` on its next request and should start a new one with `initialize`, which is what the protocol asks of it. To watch the cleanup, add a Jenkins log recorder at `DEBUG` on `io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider` and look for `Evicting idle session`, or read `streamableSessionsActive` from the [metrics endpoint](#metrics-endpoint).
 
 #### Health Endpoint
 
@@ -113,11 +129,14 @@ This endpoint requires authentication (standard Jenkins permissions) and provide
   "sseConnectionsTotal": 42,
   "sseConnectionsActive": 3,
   "streamableRequestsTotal": 150,
+  "streamableSessionsActive": 4,
   "connectionErrorsTotal": 2,
   "uptimeSeconds": 3600,
   "startTime": "2025-01-28T10:00:00Z"
 }
 ```
+
+`streamableSessionsActive` is the number of Streamable HTTP sessions the server is currently holding. It is left out when the streamable endpoint is disabled or has not served a request yet.
 
 #### Graceful Shutdown
 

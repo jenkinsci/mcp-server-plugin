@@ -153,6 +153,17 @@ public class Endpoint extends CrumbExclusion implements UnprotectedRootAction {
             SystemProperties.getInteger(Endpoint.class.getName() + ".keepAliveInterval", 30);
 
     /**
+     * How often, in seconds, idle streamable HTTP sessions are dropped. A session with no open stream that
+     * has gone this long without a request is closed: that is a client that went away without sending
+     * DELETE. Default is 1800 (30 minutes), same as the SDK. Set to 0 to keep sessions forever, which
+     * is how the plugin used to run out of file descriptors.
+     * It's not static final on purpose to allow dynamic configuration via script console.
+     */
+    @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "Accessible via System Groovy Scripts")
+    public static int SESSION_SWEEP_INTERVAL =
+            SystemProperties.getInteger(Endpoint.class.getName() + ".sessionSweepInterval", 1800);
+
+    /**
      * Whether to require the Origin header in requests. Default is false, can be overridden by setting the system
      * property {@code io.jenkins.plugins.mcp.server.Endpoint.requireOriginHeader=true}.
      */
@@ -583,6 +594,7 @@ public class Endpoint extends CrumbExclusion implements UnprotectedRootAction {
                 .mcpEndpoint(STREAMABLE_ENDPOINT)
                 .contextExtractor(createExtractor())
                 .keepAliveInterval(keepAliveInterval > 0 ? Duration.ofSeconds(keepAliveInterval) : null)
+                .sessionSweepInterval(SESSION_SWEEP_INTERVAL > 0 ? Duration.ofSeconds(SESSION_SWEEP_INTERVAL) : null)
                 .build();
 
         io.modelcontextprotocol.server.McpServer.sync(httpServletStreamableServerTransportProvider)
@@ -596,9 +608,10 @@ public class Endpoint extends CrumbExclusion implements UnprotectedRootAction {
                 .build();
 
         log.info(
-                "MCP Server initialized with {} tools, keep-alive interval: {} seconds",
+                "MCP Server initialized with {} tools, keep-alive interval: {} seconds, idle session sweep: {} seconds",
                 allTools.size(),
-                keepAliveInterval);
+                keepAliveInterval,
+                SESSION_SWEEP_INTERVAL);
     }
 
     private void initStateless(

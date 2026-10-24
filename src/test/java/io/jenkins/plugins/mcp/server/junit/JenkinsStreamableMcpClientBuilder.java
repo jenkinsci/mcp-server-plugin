@@ -45,7 +45,7 @@ public class JenkinsStreamableMcpClientBuilder extends JenkinsMcpClientBuilder.A
         HttpClientStreamableHttpTransport.Builder builder =
                 HttpClientStreamableHttpTransport.builder(baseUrl).endpoint(MCP_SERVER_STREAMABLE);
         if (requestCustomizer != null) {
-            builder.httpRequestCustomizer(requestCustomizer);
+            builder.addHttpRequestCustomizer(requestCustomizer);
         }
         var transport = builder.build();
 
