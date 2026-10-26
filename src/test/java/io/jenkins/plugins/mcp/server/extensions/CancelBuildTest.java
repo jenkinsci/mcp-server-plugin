@@ -34,6 +34,7 @@ import hudson.model.Item;
 import hudson.model.Queue;
 import hudson.model.Result;
 import hudson.model.labels.LabelAtom;
+import io.jenkins.plugins.mcp.server.extensions.DefaultMcpServer.CancelStatus;
 import io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder;
 import io.jenkins.plugins.mcp.server.junit.McpClientTest;
 import io.jenkins.plugins.mcp.server.junit.TestUtils;
@@ -60,17 +61,17 @@ class CancelBuildTest {
     static Stream<Arguments> cancelBuildTestParameters() {
         Stream<Arguments> baseArgs = Stream.of(
                 // run already finished
-                Arguments.of("canceller", 1, "pipeline", false),
+                Arguments.of("canceller", 1, "pipeline", CancelStatus.NOT_RUNNING),
                 // run successfully cancelled
-                Arguments.of("canceller", 2, "pipeline", true),
+                Arguments.of("canceller", 2, "pipeline", CancelStatus.STOP_REQUESTED),
                 // run not existing
-                Arguments.of("canceller", 3, "pipeline", false),
+                Arguments.of("canceller", 3, "pipeline", CancelStatus.NOT_FOUND),
                 // job not existing
-                Arguments.of("canceller", 1, "missing", false),
+                Arguments.of("canceller", 1, "missing", CancelStatus.NOT_FOUND),
                 // missing permission to cancel
-                Arguments.of("reader", 2, "pipeline", false),
+                Arguments.of("reader", 2, "pipeline", CancelStatus.NO_PERMISSION),
                 // missing permission to see job
-                Arguments.of("unknown", 2, "pipeline", false));
+                Arguments.of("unknown", 2, "pipeline", CancelStatus.NOT_FOUND));
         return TestUtils.appendMcpClientArgs(baseArgs);
     }
 
@@ -80,7 +81,7 @@ class CancelBuildTest {
             String user,
             int buildNumber,
             String jobNameToCancel,
-            boolean expectedResults,
+            CancelStatus expectedStatus,
             JenkinsMcpClientBuilder jenkinsMcpClientBuilder,
             JenkinsRule jenkins)
             throws Exception {
@@ -110,10 +111,10 @@ class CancelBuildTest {
                         .first()
                         .isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
                             assertThat(textContent.type()).isEqualTo("text");
-                            assertThat(textContent.text()).contains(String.valueOf(expectedResults));
+                            assertThat(textContent.text()).contains(expectedStatus.name());
                         });
                 TimeUnit.SECONDS.sleep(2);
-                assertThat(runningBuild.isBuilding()).isEqualTo(!expectedResults);
+                assertThat(runningBuild.isBuilding()).isEqualTo(expectedStatus != CancelStatus.STOP_REQUESTED);
                 runningBuild.doStop();
             }
         }
@@ -148,7 +149,7 @@ class CancelBuildTest {
                         .first()
                         .isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
                             assertThat(textContent.type()).isEqualTo("text");
-                            assertThat(textContent.text()).contains("true");
+                            assertThat(textContent.text()).contains(CancelStatus.STOP_REQUESTED.name());
                         });
 
                 jenkins.waitUntilNoActivityUpTo(MIN_1);
@@ -161,13 +162,13 @@ class CancelBuildTest {
     static Stream<Arguments> cancelQueueTestParameters() {
         Stream<Arguments> baseArgs = Stream.of(
                 // queue item successfully cancelled
-                Arguments.of("canceller", true, 0),
+                Arguments.of("canceller", CancelStatus.CANCELLED, 0),
                 // queue item not existing
-                Arguments.of("canceller", false, 42),
+                Arguments.of("canceller", CancelStatus.NOT_FOUND, 42),
                 // missing permission to cancel
-                Arguments.of("reader", false, 0),
+                Arguments.of("reader", CancelStatus.NO_PERMISSION, 0),
                 // missing permission to see job
-                Arguments.of("unknown", false, 0));
+                Arguments.of("unknown", CancelStatus.NOT_FOUND, 0));
         return TestUtils.appendMcpClientArgs(baseArgs);
     }
 
@@ -175,7 +176,7 @@ class CancelBuildTest {
     @MethodSource("cancelQueueTestParameters")
     void testMcpToolCallCancelQueueItemAsUser(
             String user,
-            boolean expectedResults,
+            CancelStatus expectedStatus,
             int queueId,
             JenkinsMcpClientBuilder jenkinsMcpClientBuilder,
             JenkinsRule jenkins)
@@ -204,11 +205,11 @@ class CancelBuildTest {
                         .first()
                         .isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
                             assertThat(textContent.type()).isEqualTo("text");
-                            assertThat(textContent.text()).contains(String.valueOf(expectedResults));
+                            assertThat(textContent.text()).contains(expectedStatus.name());
                         });
 
                 queueItem = jenkins.jenkins.getQueue().getItem(queueItem.getId());
-                if (expectedResults) {
+                if (expectedStatus == CancelStatus.CANCELLED) {
                     assertThat(queueItem).isInstanceOf(Queue.LeftItem.class);
                     assertThat(((Queue.LeftItem) queueItem).isCancelled()).isTrue();
                     assertThat(project.getLastBuild()).isNull();
