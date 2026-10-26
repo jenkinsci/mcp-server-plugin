@@ -75,7 +75,8 @@ public class EndPointTest {
                             "getQueueItem",
                             "createPipeline",
                             "getSystemLog",
-                            "getLogRecorders");
+                            "getLogRecorders",
+                            "cancelBuild");
         }
     }
 
