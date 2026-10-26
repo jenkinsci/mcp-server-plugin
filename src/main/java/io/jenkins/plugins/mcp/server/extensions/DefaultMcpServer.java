@@ -83,41 +83,81 @@ public class DefaultMcpServer implements McpServerExtension {
         return plugin != null && plugin.isActive();
     }
 
-    @Tool(description = "Cancel specific build of a job or an entry in the Jenkins queue")
-    public boolean cancelBuild(
-            @ToolParam(description = "Build number or queue id") Integer buildNumber,
+    /** What happened when cancelBuild was called. */
+    public enum CancelStatus {
+        STOP_REQUESTED,
+        CANCELLED,
+        NOT_RUNNING,
+        NOT_FOUND,
+        NO_PERMISSION,
+        NOT_SUPPORTED
+    }
+
+    @Tool(
+            description =
+                    "Cancel a running build (give jobFullName and buildNumber) or an entry in the Jenkins queue "
+                            + "(give queueId only). Returns one of: "
+                            + "STOP_REQUESTED (the build was asked to stop, Jenkins may take some time to actually stop it, "
+                            + "e.g. while a Pipeline runs its cleanup, so use getBuild to check whether it is still building "
+                            + "and call this tool again if needed), CANCELLED (the queue item was removed), "
+                            + "NOT_RUNNING (the build has already finished), NOT_FOUND (no such job, build or queue item), "
+                            + "NO_PERMISSION (you are not allowed to cancel it), NOT_SUPPORTED (this kind of build cannot be stopped).")
+    public CancelStatus cancelBuild(
             @Nullable
                     @ToolParam(
-                            description =
-                                    "Job full name of the Jenkins job (e.g., 'folder/job-name'). If not specified the buildNumber is treated as queue id",
+                            description = "Job full name of the Jenkins job (e.g., 'folder/job-name')",
                             required = false)
-                    String jobFullName)
+                    String jobFullName,
+            @Nullable @ToolParam(description = "Build number of the build to stop", required = false)
+                    Integer buildNumber,
+            @Nullable @ToolParam(description = "Id of the queue item to cancel", required = false) Long queueId)
             throws ServletException, IOException {
-        if (jobFullName == null || jobFullName.isEmpty()) {
-            Queue queue = Jenkins.get().getQueue();
-            var queueItem = queue.getItem(buildNumber);
-            if (queueItem == null || !queueItem.getTask().hasReadPermission() || !queueItem.hasCancelPermission()) {
-                return false;
+        boolean hasJob = jobFullName != null && !jobFullName.isEmpty();
+        if (queueId != null) {
+            if (hasJob || buildNumber != null) {
+                throw new IllegalArgumentException("Give either queueId, or jobFullName and buildNumber, not both");
             }
-            return Jenkins.get().getQueue().cancel(queueItem);
+            Queue queue = Jenkins.get().getQueue();
+            var queueItem = queue.getItem(queueId);
+            if (queueItem == null || !queueItem.getTask().hasReadPermission()) {
+                return CancelStatus.NOT_FOUND;
+            }
+            if (!queueItem.hasCancelPermission()) {
+                return CancelStatus.NO_PERMISSION;
+            }
+            // false means the item left the queue in the meantime
+            return queue.cancel(queueItem) ? CancelStatus.CANCELLED : CancelStatus.NOT_FOUND;
+        }
+        if (!hasJob || buildNumber == null) {
+            throw new IllegalArgumentException("Give either queueId, or jobFullName and buildNumber");
         }
         var job = Jenkins.get().getItemByFullName(jobFullName, Job.class);
-        if (job == null || !job.hasPermission(Item.CANCEL)) {
-            return false;
+        if (job == null) {
+            return CancelStatus.NOT_FOUND;
+        }
+        if (!job.hasPermission(Item.CANCEL)) {
+            return CancelStatus.NO_PERMISSION;
         }
 
         var build = job.getBuildByNumber(buildNumber);
-        if (build == null || !build.isBuilding()) {
-            return false;
+        if (build == null) {
+            return CancelStatus.NOT_FOUND;
+        }
+        if (!build.isBuilding()) {
+            return CancelStatus.NOT_RUNNING;
         }
         if (build instanceof AbstractBuild<?, ?> ab) {
+            if (ab.getExecutor() == null && ab.getOneOffExecutor() == null) {
+                // still marked as building, but there is nothing left to stop
+                return CancelStatus.NOT_RUNNING;
+            }
             ab.doStop();
         } else if (isWorkflowJobPluginInstalled() && build instanceof WorkflowRun wr) {
             wr.doStop();
         } else {
-            return false;
+            return CancelStatus.NOT_SUPPORTED;
         }
-        return true;
+        return CancelStatus.STOP_REQUESTED;
     }
 
     @Tool(

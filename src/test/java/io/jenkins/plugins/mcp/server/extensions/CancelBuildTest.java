@@ -34,13 +34,13 @@ import hudson.model.Item;
 import hudson.model.Queue;
 import hudson.model.Result;
 import hudson.model.labels.LabelAtom;
+import io.jenkins.plugins.mcp.server.extensions.DefaultMcpServer.CancelStatus;
 import io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder;
 import io.jenkins.plugins.mcp.server.junit.McpClientTest;
 import io.jenkins.plugins.mcp.server.junit.TestUtils;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.Base64;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 import jenkins.model.Jenkins;
 import jenkins.model.ParameterizedJobMixIn;
@@ -60,17 +60,17 @@ class CancelBuildTest {
     static Stream<Arguments> cancelBuildTestParameters() {
         Stream<Arguments> baseArgs = Stream.of(
                 // run already finished
-                Arguments.of("canceller", 1, "pipeline", false),
+                Arguments.of("canceller", 1, "pipeline", CancelStatus.NOT_RUNNING),
                 // run successfully cancelled
-                Arguments.of("canceller", 2, "pipeline", true),
+                Arguments.of("canceller", 2, "pipeline", CancelStatus.STOP_REQUESTED),
                 // run not existing
-                Arguments.of("canceller", 3, "pipeline", false),
+                Arguments.of("canceller", 3, "pipeline", CancelStatus.NOT_FOUND),
                 // job not existing
-                Arguments.of("canceller", 1, "missing", false),
+                Arguments.of("canceller", 1, "missing", CancelStatus.NOT_FOUND),
                 // missing permission to cancel
-                Arguments.of("reader", 2, "pipeline", false),
+                Arguments.of("reader", 2, "pipeline", CancelStatus.NO_PERMISSION),
                 // missing permission to see job
-                Arguments.of("unknown", 2, "pipeline", false));
+                Arguments.of("unknown", 2, "pipeline", CancelStatus.NOT_FOUND));
         return TestUtils.appendMcpClientArgs(baseArgs);
     }
 
@@ -80,7 +80,7 @@ class CancelBuildTest {
             String user,
             int buildNumber,
             String jobNameToCancel,
-            boolean expectedResults,
+            CancelStatus expectedStatus,
             JenkinsMcpClientBuilder jenkinsMcpClientBuilder,
             JenkinsRule jenkins)
             throws Exception {
@@ -110,11 +110,15 @@ class CancelBuildTest {
                         .first()
                         .isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
                             assertThat(textContent.type()).isEqualTo("text");
-                            assertThat(textContent.text()).contains(String.valueOf(expectedResults));
+                            assertThat(textContent.text()).contains(expectedStatus.name());
                         });
-                TimeUnit.SECONDS.sleep(2);
-                assertThat(runningBuild.isBuilding()).isEqualTo(!expectedResults);
-                runningBuild.doStop();
+                if (expectedStatus == CancelStatus.STOP_REQUESTED) {
+                    jenkins.waitForCompletion(runningBuild);
+                    assertThat(runningBuild.getResult()).isEqualTo(Result.ABORTED);
+                } else {
+                    assertThat(runningBuild.isBuilding()).isTrue();
+                    runningBuild.doStop();
+                }
             }
         }
         jenkins.waitUntilNoActivityUpTo(MIN_1);
@@ -148,7 +152,7 @@ class CancelBuildTest {
                         .first()
                         .isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
                             assertThat(textContent.type()).isEqualTo("text");
-                            assertThat(textContent.text()).contains("true");
+                            assertThat(textContent.text()).contains(CancelStatus.STOP_REQUESTED.name());
                         });
 
                 jenkins.waitUntilNoActivityUpTo(MIN_1);
@@ -161,13 +165,13 @@ class CancelBuildTest {
     static Stream<Arguments> cancelQueueTestParameters() {
         Stream<Arguments> baseArgs = Stream.of(
                 // queue item successfully cancelled
-                Arguments.of("canceller", true, 0),
+                Arguments.of("canceller", CancelStatus.CANCELLED, 0),
                 // queue item not existing
-                Arguments.of("canceller", false, 42),
+                Arguments.of("canceller", CancelStatus.NOT_FOUND, 42),
                 // missing permission to cancel
-                Arguments.of("reader", false, 0),
+                Arguments.of("reader", CancelStatus.NO_PERMISSION, 0),
                 // missing permission to see job
-                Arguments.of("unknown", false, 0));
+                Arguments.of("unknown", CancelStatus.NOT_FOUND, 0));
         return TestUtils.appendMcpClientArgs(baseArgs);
     }
 
@@ -175,7 +179,7 @@ class CancelBuildTest {
     @MethodSource("cancelQueueTestParameters")
     void testMcpToolCallCancelQueueItemAsUser(
             String user,
-            boolean expectedResults,
+            CancelStatus expectedStatus,
             int queueId,
             JenkinsMcpClientBuilder jenkinsMcpClientBuilder,
             JenkinsRule jenkins)
@@ -195,7 +199,7 @@ class CancelBuildTest {
                 .build()) {
             {
                 McpSchema.CallToolRequest request =
-                        new McpSchema.CallToolRequest("cancelBuild", Map.of("buildNumber", queueItemId), null);
+                        new McpSchema.CallToolRequest("cancelBuild", Map.of("queueId", queueItemId), null);
 
                 var response = client.callTool(request);
                 assertThat(response.isError()).isFalse();
@@ -204,11 +208,11 @@ class CancelBuildTest {
                         .first()
                         .isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
                             assertThat(textContent.type()).isEqualTo("text");
-                            assertThat(textContent.text()).contains(String.valueOf(expectedResults));
+                            assertThat(textContent.text()).contains(expectedStatus.name());
                         });
 
                 queueItem = jenkins.jenkins.getQueue().getItem(queueItem.getId());
-                if (expectedResults) {
+                if (expectedStatus == CancelStatus.CANCELLED) {
                     assertThat(queueItem).isInstanceOf(Queue.LeftItem.class);
                     assertThat(((Queue.LeftItem) queueItem).isCancelled()).isTrue();
                     assertThat(project.getLastBuild()).isNull();
@@ -217,6 +221,42 @@ class CancelBuildTest {
                     Jenkins.get().getQueue().cancel(queueItem);
                 }
             }
+        }
+    }
+
+    static Stream<Arguments> invalidArgumentsTestParameters() {
+        Stream<Arguments> baseArgs = Stream.of(
+                // nothing given
+                Arguments.of(Map.of()),
+                // job without build number
+                Arguments.of(Map.of("jobFullName", "freestyle")),
+                // build number without job
+                Arguments.of(Map.of("buildNumber", 1)),
+                // queue id mixed with a build
+                Arguments.of(Map.of("queueId", 1, "jobFullName", "freestyle", "buildNumber", 1)));
+        return TestUtils.appendMcpClientArgs(baseArgs);
+    }
+
+    @ParameterizedTest
+    @MethodSource("invalidArgumentsTestParameters")
+    void testMcpToolCallCancelBuildInvalidArguments(
+            Map<String, Object> arguments, JenkinsMcpClientBuilder jenkinsMcpClientBuilder, JenkinsRule jenkins)
+            throws Exception {
+        enableSecurity(jenkins);
+        String encodedAuth = Base64.getEncoder().encodeToString("admin:admin".getBytes());
+        try (var client = jenkinsMcpClientBuilder
+                .jenkins(jenkins)
+                .requestCustomizer((builder, method, endpoint, body, context) ->
+                        builder.setHeader("Authorization", "Basic " + encodedAuth))
+                .build()) {
+            var response = client.callTool(new McpSchema.CallToolRequest("cancelBuild", arguments, null));
+            assertThat(response.isError()).isTrue();
+            assertThat(response.content())
+                    .first()
+                    .isInstanceOfSatisfying(
+                            McpSchema.TextContent.class,
+                            textContent -> assertThat(textContent.text())
+                                    .contains("Give either queueId, or jobFullName and buildNumber"));
         }
     }
 
