@@ -182,12 +182,6 @@
       <optional>true</optional>
     </dependency>
 
-    <dependency>
-      <groupId>org.jenkins-ci.plugins.workflow</groupId>
-      <artifactId>workflow-job</artifactId>
-      <optional>true</optional>
-    </dependency>
-
     <!-- compile time only dependencies -->
     <dependency>
       <groupId>org.projectlombok</groupId>
