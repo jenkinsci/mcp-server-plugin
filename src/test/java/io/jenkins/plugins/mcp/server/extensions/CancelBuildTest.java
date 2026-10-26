@@ -41,7 +41,6 @@ import io.jenkins.plugins.mcp.server.junit.TestUtils;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.Base64;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 import jenkins.model.Jenkins;
 import jenkins.model.ParameterizedJobMixIn;
@@ -113,9 +112,13 @@ class CancelBuildTest {
                             assertThat(textContent.type()).isEqualTo("text");
                             assertThat(textContent.text()).contains(expectedStatus.name());
                         });
-                TimeUnit.SECONDS.sleep(2);
-                assertThat(runningBuild.isBuilding()).isEqualTo(expectedStatus != CancelStatus.STOP_REQUESTED);
-                runningBuild.doStop();
+                if (expectedStatus == CancelStatus.STOP_REQUESTED) {
+                    jenkins.waitForCompletion(runningBuild);
+                    assertThat(runningBuild.getResult()).isEqualTo(Result.ABORTED);
+                } else {
+                    assertThat(runningBuild.isBuilding()).isTrue();
+                    runningBuild.doStop();
+                }
             }
         }
         jenkins.waitUntilNoActivityUpTo(MIN_1);
@@ -196,7 +199,7 @@ class CancelBuildTest {
                 .build()) {
             {
                 McpSchema.CallToolRequest request =
-                        new McpSchema.CallToolRequest("cancelBuild", Map.of("buildNumber", queueItemId), null);
+                        new McpSchema.CallToolRequest("cancelBuild", Map.of("queueId", queueItemId), null);
 
                 var response = client.callTool(request);
                 assertThat(response.isError()).isFalse();
@@ -218,6 +221,42 @@ class CancelBuildTest {
                     Jenkins.get().getQueue().cancel(queueItem);
                 }
             }
+        }
+    }
+
+    static Stream<Arguments> invalidArgumentsTestParameters() {
+        Stream<Arguments> baseArgs = Stream.of(
+                // nothing given
+                Arguments.of(Map.of()),
+                // job without build number
+                Arguments.of(Map.of("jobFullName", "freestyle")),
+                // build number without job
+                Arguments.of(Map.of("buildNumber", 1)),
+                // queue id mixed with a build
+                Arguments.of(Map.of("queueId", 1, "jobFullName", "freestyle", "buildNumber", 1)));
+        return TestUtils.appendMcpClientArgs(baseArgs);
+    }
+
+    @ParameterizedTest
+    @MethodSource("invalidArgumentsTestParameters")
+    void testMcpToolCallCancelBuildInvalidArguments(
+            Map<String, Object> arguments, JenkinsMcpClientBuilder jenkinsMcpClientBuilder, JenkinsRule jenkins)
+            throws Exception {
+        enableSecurity(jenkins);
+        String encodedAuth = Base64.getEncoder().encodeToString("admin:admin".getBytes());
+        try (var client = jenkinsMcpClientBuilder
+                .jenkins(jenkins)
+                .requestCustomizer((builder, method, endpoint, body, context) ->
+                        builder.setHeader("Authorization", "Basic " + encodedAuth))
+                .build()) {
+            var response = client.callTool(new McpSchema.CallToolRequest("cancelBuild", arguments, null));
+            assertThat(response.isError()).isTrue();
+            assertThat(response.content())
+                    .first()
+                    .isInstanceOfSatisfying(
+                            McpSchema.TextContent.class,
+                            textContent -> assertThat(textContent.text())
+                                    .contains("Give either queueId, or jobFullName and buildNumber"));
         }
     }
 
