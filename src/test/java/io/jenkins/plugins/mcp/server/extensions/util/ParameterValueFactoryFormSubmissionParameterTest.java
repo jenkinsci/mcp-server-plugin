@@ -44,6 +44,30 @@ class ParameterValueFactoryFormSubmissionParameterTest {
         assertThat(ParameterValueFactory.createParameterValue(param, "1.2.3")).isNull();
     }
 
+    @Test
+    void usesTheSubmittedValueInsteadOfTheDefaultWhenTheStringArrayOverloadIsNotPublic() {
+        var param = new NonPublicOverloadParameterDefinition("test_coverage", "default");
+
+        ParameterValue value = ParameterValueFactory.createParameterValue(param, "sanity");
+
+        assertThat(value).isInstanceOfSatisfying(StringParameterValue.class, v -> {
+            assertThat(v.getName()).isEqualTo("test_coverage");
+            assertThat(v.getValue()).isEqualTo("sanity");
+        });
+    }
+
+    @Test
+    void joinsListValuesForDefinitionWithNonPublicStringArrayOverload() {
+        var param = new NonPublicOverloadParameterDefinition("test_coverage", "default");
+
+        ParameterValue value = ParameterValueFactory.createParameterValue(param, List.of("sanity", "smoke"));
+
+        assertThat(value)
+                .isInstanceOfSatisfying(
+                        StringParameterValue.class,
+                        v -> assertThat(v.getValue()).isEqualTo("sanity,smoke"));
+    }
+
     /** A definition that only supports form submission: no createValue(String), and the request is ignored. */
     static class FormOnlyParameterDefinition extends ParameterDefinition {
         FormOnlyParameterDefinition(String name) {
@@ -57,6 +81,37 @@ class ParameterValueFactoryFormSubmissionParameterTest {
                     ? String.join("\n", array.stream().map(Object::toString).toList())
                     : String.valueOf(value);
             return new StringParameterValue(json.getString("name"), text);
+        }
+    }
+
+    /**
+     * A definition shaped like the Extended Choice parameter: createValue(String[]) is not public, so it cannot be
+     * found by reflection, and createValue(StaplerRequest2, JSONObject) reads only the submitted value.
+     */
+    static class NonPublicOverloadParameterDefinition extends ParameterDefinition {
+        private final String defaultValue;
+
+        NonPublicOverloadParameterDefinition(String name, String defaultValue) {
+            super(name);
+            this.defaultValue = defaultValue;
+        }
+
+        ParameterValue createValue(String[] values) {
+            return new StringParameterValue(getName(), String.join(",", values));
+        }
+
+        @Override
+        public ParameterValue createValue(StaplerRequest2 request, JSONObject json) {
+            Object value = json.get("value");
+            String text = value instanceof JSONArray array
+                    ? String.join(",", array.stream().map(Object::toString).toList())
+                    : String.valueOf(value);
+            return new StringParameterValue(json.getString("name"), text);
+        }
+
+        @Override
+        public ParameterValue getDefaultParameterValue() {
+            return new StringParameterValue(getName(), defaultValue);
         }
     }
 
