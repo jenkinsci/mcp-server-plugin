@@ -36,10 +36,12 @@ import hudson.model.Run;
 import io.jenkins.plugins.mcp.server.McpServerExtension;
 import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
+import io.jenkins.plugins.mcp.server.extensions.util.BoundedCharSequence;
 import io.jenkins.plugins.mcp.server.extensions.util.SlidingWindow;
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.io.OutputStream;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -58,6 +60,22 @@ import lombok.extern.slf4j.Slf4j;
 @Extension
 @Slf4j
 public class BuildLogsExtension implements McpServerExtension {
+
+    /** Longest regex we will try to compile. Real patterns are short; long ones are slow to compile. */
+    static final int MAX_PATTERN_LENGTH =
+            SystemProperties.getInteger(BuildLogsExtension.class.getName() + ".pattern.maxLength", 1000);
+
+    /**
+     * How many characters one regex match may read from a log line before we give up on it.
+     *
+     * <p>Some patterns cost far more than their length suggests, because Java's regex engine
+     * backtracks. Running out fails the whole search, so one call costs at most one budget.
+     *
+     * <p>Ten million is generous on purpose: an everyday pattern uses about three reads per
+     * character, so this only bites well past any log line you are likely to see.
+     */
+    static final long MAX_MATCH_READS_PER_LINE =
+            SystemProperties.getLong(BuildLogsExtension.class.getName() + ".pattern.maxReadsPerLine", 10_000_000L);
 
     @Tool(
             description =
@@ -154,6 +172,11 @@ public class BuildLogsExtension implements McpServerExtension {
         if (useRegex == null) {
             useRegex = false;
         }
+        // Regex only: the cap is about Pattern.compile. Plain text goes to String.contains, so it is fine.
+        if (useRegex && pattern.length() > MAX_PATTERN_LENGTH) {
+            throw new IllegalArgumentException("Search pattern is too long: " + pattern.length()
+                    + " characters, the maximum is " + MAX_PATTERN_LENGTH);
+        }
         if (ignoreCase == null) {
             ignoreCase = false;
         }
@@ -177,6 +200,9 @@ public class BuildLogsExtension implements McpServerExtension {
                 .map(build -> {
                     try {
                         return searchLogLines(build, pattern, useRegexF, ignoreCaseF, maxMatchesF, contextLinesF);
+                    } catch (IllegalArgumentException e) {
+                        // Something the caller can fix. Let it through so they see why.
+                        throw e;
                     } catch (Exception e) {
                         log.error("Error searching log for job {} build {}", jobFullName, buildNumber, e);
                         return null;
@@ -437,6 +463,10 @@ public class BuildLogsExtension implements McpServerExtension {
         long pos = startByte;
         BufferedOutputStream buffered = new BufferedOutputStream(out, 8192);
         while (pos < end) {
+            // Stop reading if the call was cancelled.
+            if (Thread.currentThread().isInterrupted()) {
+                throw new InterruptedIOException("Log read cancelled at byte " + pos);
+            }
             long newPos = logText.writeRawLogTo(pos, buffered);
             if (newPos <= pos) {
                 break;
@@ -454,6 +484,7 @@ public class BuildLogsExtension implements McpServerExtension {
         private final long contextLines;
         private final boolean earlyTerminate;
         private final Charset charset;
+        private final long maxReadsPerLine;
         private final SlidingWindow<String> slidingWindow;
         private final List<SearchMatch> openMatches = new ArrayList<>();
         private final List<SearchMatch> closedMatches = new ArrayList<>();
@@ -477,6 +508,27 @@ public class BuildLogsExtension implements McpServerExtension {
                 boolean earlyTerminate,
                 Charset charset)
                 throws IOException {
+            this(
+                    pattern,
+                    useRegex,
+                    ignoreCase,
+                    maxMatches,
+                    contextLines,
+                    earlyTerminate,
+                    charset,
+                    MAX_MATCH_READS_PER_LINE);
+        }
+
+        SearchingOutputStream(
+                String pattern,
+                boolean useRegex,
+                boolean ignoreCase,
+                int maxMatches,
+                int contextLines,
+                boolean earlyTerminate,
+                Charset charset,
+                long maxReadsPerLine)
+                throws IOException {
             this.pattern = pattern;
             this.useRegex = useRegex;
             this.ignoreCase = ignoreCase;
@@ -484,6 +536,7 @@ public class BuildLogsExtension implements McpServerExtension {
             this.contextLines = contextLines;
             this.earlyTerminate = earlyTerminate;
             this.charset = charset;
+            this.maxReadsPerLine = maxReadsPerLine;
             this.slidingWindow = new SlidingWindow<>(contextLines);
 
             if (useRegex) {
@@ -493,10 +546,15 @@ public class BuildLogsExtension implements McpServerExtension {
         }
 
         @Override
-        protected void eol(byte[] b, int len) {
+        protected void eol(byte[] b, int len) throws IOException {
             // close() flushes a pending partial line through eol(); ignore it once we've already bailed.
             if (terminated) {
                 return;
+            }
+            // Neither the regex nor the log read notices an interrupt on its own, so check here.
+            if (Thread.currentThread().isInterrupted()) {
+                terminated = true;
+                throw new InterruptedIOException("Log search cancelled after " + lineNumber + " lines");
             }
             lineNumber++;
             String line = new String(b, 0, len, charset).trim();
@@ -531,7 +589,25 @@ public class BuildLogsExtension implements McpServerExtension {
 
         private boolean matchLine(String line) {
             if (useRegex) {
-                return compiledPattern.matcher(line).find();
+                // Cap the reads, so a costly pattern stops instead of running on.
+                try {
+                    return compiledPattern
+                            .matcher(new BoundedCharSequence(line, maxReadsPerLine))
+                            .find();
+                } catch (BoundedCharSequence.BudgetExceededException e) {
+                    // Length, not the pattern itself: it is caller input and this goes to the
+                    // shared system log. The caller gets the pattern back in the error anyway.
+                    log.warn(
+                            "Gave up searching the log: a {}-character pattern read more than {} characters of line {}",
+                            pattern.length(),
+                            maxReadsPerLine,
+                            lineNumber);
+                    // No cause on purpose: the caller is shown the root cause message, and chaining
+                    // would replace this text with a vaguer one.
+                    throw new IllegalArgumentException("Search pattern is too expensive: on line " + lineNumber
+                            + " it read more than " + maxReadsPerLine + " characters without finishing."
+                            + " Try a simpler pattern, or search for plain text with useRegex=false.");
+                }
             } else {
                 return ignoreCase ? line.toLowerCase().contains(pattern.toLowerCase()) : line.contains(pattern);
             }

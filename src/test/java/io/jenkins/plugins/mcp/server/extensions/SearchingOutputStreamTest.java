@@ -4,6 +4,7 @@ import static io.jenkins.plugins.mcp.server.extensions.BuildLogsExtension.Search
 import static org.assertj.core.api.Assertions.*;
 
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -206,6 +207,73 @@ class SearchingOutputStreamTest {
 
         assertThat(sos.getMatches()).hasSize(1);
         assertThat(sos.hasMoreMatches()).isTrue();
+    }
+
+    @Test
+    void anExpensivePatternIsAbandonedInsteadOfRunningOn() throws IOException {
+        // A short pattern that never matches, but costs a lot to decide. It should stop and say so.
+        SearchingOutputStream sos =
+                new SearchingOutputStream("(.*,){11}P", true, false, 10, 0, false, StandardCharsets.UTF_8, 500_000L);
+        String hostileLine = "a,".repeat(60) + "X";
+
+        long start = System.nanoTime();
+        assertThatThrownBy(() -> writeLines(sos, hostileLine))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("too expensive")
+                .hasMessageContaining("useRegex=false")
+                // No cause on purpose, or the caller would be shown the vaguer message instead.
+                .hasNoCause();
+        long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+
+        // Generous, since CI is slow; the point is that it finishes at all.
+        assertThat(elapsedMs).isLessThan(10_000L);
+    }
+
+    @Test
+    void anExpensivePatternFailsEvenWhenAnEarlierLineMatched() throws IOException {
+        // A cheap match first must not get the costly line a pass.
+        SearchingOutputStream sos =
+                new SearchingOutputStream("(.*,){11}P", true, false, 10, 0, false, StandardCharsets.UTF_8, 500_000L);
+
+        assertThatThrownBy(() -> writeLines(sos, "a,a,a,a,a,a,a,a,a,a,a,P", "a,".repeat(60) + "X"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("too expensive");
+    }
+
+    @Test
+    void anOrdinaryRegexIsUnaffectedByTheBudget() throws IOException {
+        // An everyday pattern never gets near the budget.
+        SearchingOutputStream sos =
+                new SearchingOutputStream("t.st", true, false, 10, 1, false, StandardCharsets.UTF_8, 500_000L);
+        writeLines(sos, "line 1", "test line", "tast line", "line 4");
+
+        assertThat(sos.getMatches())
+                .extracting(BuildLogsExtension.SearchMatch::getMatchedLine)
+                .containsExactly("test line", "tast line");
+    }
+
+    @Test
+    void aLiteralSearchIsNotSubjectToTheBudget() throws IOException {
+        // Plain text has no budget, and it is what the error suggests, so it must work on a long line.
+        SearchingOutputStream sos =
+                new SearchingOutputStream("needle", false, false, 10, 0, false, StandardCharsets.UTF_8, 10L);
+        writeLines(sos, "x".repeat(5000) + "needle" + "y".repeat(5000));
+
+        assertThat(sos.getMatches()).hasSize(1);
+    }
+
+    @Test
+    void anInterruptedScanStopsReading() throws IOException {
+        SearchingOutputStream sos = new SearchingOutputStream("test", false, false, 10, 0);
+        try {
+            Thread.currentThread().interrupt();
+            assertThatThrownBy(() -> writeLines(sos, "test line"))
+                    .isInstanceOf(InterruptedIOException.class)
+                    .hasMessageContaining("cancelled");
+        } finally {
+            // Clear the flag so it cannot leak into the next test.
+            Thread.interrupted();
+        }
     }
 
     private void writeLines(SearchingOutputStream sos, String... lines) throws IOException {

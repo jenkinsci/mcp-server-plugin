@@ -241,6 +241,74 @@ public class BuildLogExtensionTest {
     }
 
     @McpClientTest
+    void testSearchBuildLogRejectsAnExpensivePattern(
+            JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder) throws Exception {
+        // A short pattern that never matches this line, but costs a lot to decide. The call should
+        // come back as an error rather than keep working.
+        String commaRichLine = "a,".repeat(30) + "X";
+        WorkflowJob project = jenkins.createProject(WorkflowJob.class, "expensive-pattern-job");
+        project.setDefinition(new CpsFlowDefinition("echo '" + commaRichLine + "'", true));
+        project.scheduleBuild2(0).get();
+        await().atMost(10, SECONDS).until(() -> project.getLastBuild() != null);
+
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+            Map<String, Object> params = new HashMap<>();
+            params.put("jobFullName", project.getFullName());
+            params.put("pattern", "(.*,){11}P");
+            params.put("useRegex", true);
+
+            long start = System.nanoTime();
+            var response = client.callTool(new McpSchema.CallToolRequest("searchBuildLog", params));
+            long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+
+            assertThat(response.isError()).isTrue();
+            assertThat(response.content()).hasSize(1);
+            assertThat(response.content().get(0))
+                    .isInstanceOfSatisfying(
+                            McpSchema.TextContent.class,
+                            text -> assertThat(text.text())
+                                    .contains("too expensive")
+                                    .contains("useRegex=false"));
+            // Generous for CI; the point is that it returns at all.
+            assertThat(elapsedMs).isLessThan(30_000L);
+        }
+    }
+
+    @McpClientTest
+    void testSearchBuildLogRejectsAnOverlongPattern(
+            JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder) throws Exception {
+        WorkflowJob project = jenkins.createProject(WorkflowJob.class, "overlong-pattern-job");
+        project.setDefinition(new CpsFlowDefinition("echo 'hello'", true));
+        project.scheduleBuild2(0).get();
+        await().atMost(10, SECONDS).until(() -> project.getLastBuild() != null);
+
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+            Map<String, Object> params = new HashMap<>();
+            params.put("jobFullName", project.getFullName());
+            // Deeply nested patterns are slow to compile, so length is capped first.
+            params.put("pattern", "(".repeat(600) + "a" + ")".repeat(600));
+            params.put("useRegex", true);
+
+            var response = client.callTool(new McpSchema.CallToolRequest("searchBuildLog", params));
+
+            assertThat(response.isError()).isTrue();
+            assertThat(response.content().get(0))
+                    .isInstanceOfSatisfying(
+                            McpSchema.TextContent.class,
+                            text -> assertThat(text.text()).contains("too long"));
+
+            // The cap is only about compiling a regex, so plain text is unaffected.
+            Map<String, Object> literalParams = new HashMap<>();
+            literalParams.put("jobFullName", project.getFullName());
+            literalParams.put("pattern", "z".repeat(1200));
+            literalParams.put("useRegex", false);
+
+            var literalResponse = client.callTool(new McpSchema.CallToolRequest("searchBuildLog", literalParams));
+            assertThat(literalResponse.isError()).isFalse();
+        }
+    }
+
+    @McpClientTest
     void testSearchBuildLogWithRegex(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
             throws Exception {
         WorkflowJob project = jenkins.createProject(WorkflowJob.class, "regex-test-job");

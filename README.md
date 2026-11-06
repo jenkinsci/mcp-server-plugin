@@ -29,6 +29,8 @@ The MCP Server plugin automatically sets up necessary endpoints and tools upon i
 The following system properties can be used to configure the MCP Server plugin:
 
 - hard limit on max number of log lines to return with `io.jenkins.plugins.mcp.server.extensions.BuildLogsExtension.limit.max=10000` (default 10000)
+- longest `searchBuildLog` pattern accepted with `io.jenkins.plugins.mcp.server.extensions.BuildLogsExtension.pattern.maxLength=1000` (default 1000 characters)
+- how many characters one `searchBuildLog` regex may read from a single log line before the search is abandoned, with `io.jenkins.plugins.mcp.server.extensions.BuildLogsExtension.pattern.maxReadsPerLine=10000000` (default 10,000,000)
 - disable stateless endpoint with `io.jenkins.plugins.mcp.server.Endpoint.disableMcpStateless=true` (default false)
 - disable SSE endpoint with `io.jenkins.plugins.mcp.server.Endpoint.disableMcpSse=true` (default false)
 - disable streamable HTTP endpoint with `io.jenkins.plugins.mcp.server.Endpoint.disableMcpStreamable=true` (default false)
@@ -37,6 +39,15 @@ The following system properties can be used to configure the MCP Server plugin:
 
 > [!WARNING]
 > `io.jenkins.plugins.mcp.server.Endpoint.allowUnauthenticatedMcp=true` weakens CSRF protection. MCP POSTs that send an `Authorization` header are exempt from the crumb, because a page on another site cannot add that header. Anonymous and session-cookie clients are not exempt unless this property is set. With it on, those POSTs rely on the Origin check, which allows a missing `Origin` and does nothing when the Jenkins root URL is unset. Leave the property `false` on any controller that browsers or anonymous users can reach. `mvn hpi:run` sets it so a local development controller accepts an MCP client without a crumb.
+
+#### Search pattern cost
+
+`searchBuildLog` runs your regular expression against every line of a build log, and some patterns
+cost far more than their length suggests, because Java's regex engine backtracks.
+
+Each match therefore gets a budget of character reads, and a search that runs past it stops with an
+error instead of carrying on. The budget is generous on purpose, so you are unlikely to meet it. If
+you do, simplify the pattern or search for plain text with `useRegex=false`, which has no budget.
 
 #### Origin header validation
 
