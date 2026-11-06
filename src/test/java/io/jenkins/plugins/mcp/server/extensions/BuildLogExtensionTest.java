@@ -274,6 +274,49 @@ public class BuildLogExtensionTest {
     }
 
     @McpClientTest
+    void testSearchBuildLogMissingRequiredParam(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
+            throws Exception {
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+            Map<String, Object> params = new HashMap<>();
+            params.put("pattern", "ERROR");
+            McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("searchBuildLog", params);
+
+            var response = client.callTool(request);
+            assertThat(response.isError()).isTrue();
+            assertThat(response.content()).hasSize(1);
+            var content = response.content().get(0);
+            assertThat(content.type()).isEqualTo("text");
+            assertThat(content).isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                assertThat(textContent.text()).contains("jobFullName");
+                assertThat(textContent.text()).doesNotContain("fullJobName");
+                assertThat(textContent.text()).doesNotContain("NullPointerException");
+            });
+        }
+    }
+
+    @McpClientTest
+    void testSearchBuildLogWithWrongParamName(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
+            throws Exception {
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+            Map<String, Object> params = new HashMap<>();
+            params.put("fullJobName", "demo-job");
+            params.put("pattern", "ERROR");
+            McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("searchBuildLog", params);
+
+            var response = client.callTool(request);
+            assertThat(response.isError()).isTrue();
+            assertThat(response.content()).hasSize(1);
+            var content = response.content().get(0);
+            assertThat(content.type()).isEqualTo("text");
+            assertThat(content).isInstanceOfSatisfying(McpSchema.TextContent.class, textContent -> {
+                assertThat(textContent.text()).contains("jobFullName");
+                assertThat(textContent.text()).doesNotContain("fullJobName is marked non-null but is null");
+                assertThat(textContent.text()).doesNotContain("NullPointerException");
+            });
+        }
+    }
+
+    @McpClientTest
     void testGetBuildLogCursorPagination(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
             throws Exception {
         WorkflowJob project = jenkins.createProject(WorkflowJob.class, "cursor-job");
