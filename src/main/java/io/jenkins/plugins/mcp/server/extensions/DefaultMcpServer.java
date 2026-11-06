@@ -199,16 +199,48 @@ public class DefaultMcpServer implements McpServerExtension {
     @AllArgsConstructor
     public static class MCPCause extends Cause {
         private String addr;
+        private String userId;
+
+        public MCPCause(String addr) {
+            this(addr, null);
+        }
 
         @Exported(visibility = 3)
         public String getAddr() {
             return this.addr;
         }
 
+        /**
+         * The Jenkins user who initiated the MCP request, when available.
+         *
+         * <p>The MCP cause precedes the standard {@link Cause.UserIdCause} in the build's cause list.
+         * Exporting the same user ID here preserves the identity expected by existing Pipelines that
+         * inspect the first cause, without changing cause ordering or removing the dedicated user cause.
+         */
+        @Exported(visibility = 3)
+        public String getUserId() {
+            return this.userId;
+        }
+
+        /** The initiating user's current Jenkins display name, when available. */
+        @Exported(visibility = 3)
+        public String getUserName() {
+            if (userId == null) {
+                return null;
+            }
+            User user = User.getById(userId, false);
+            return user != null ? user.getDisplayName() : userId;
+        }
+
         @Override
         public String getShortDescription() {
             return "Triggered via MCP Client from " + addr;
         }
+    }
+
+    private static CauseAction createMcpCauseAction(String remoteAddr) {
+        var userCause = new Cause.UserIdCause();
+        return new CauseAction(new MCPCause(remoteAddr, userCause.getUserId()), userCause);
     }
 
     @Tool(description = "Trigger a build for a Jenkins job", treePruneSupported = true)
@@ -225,9 +257,8 @@ public class DefaultMcpServer implements McpServerExtension {
         if (job != null) {
             job.checkPermission(Item.BUILD);
             var remoteAddr = JenkinsMcpContext.get().getHttpServletRequest().getRemoteAddr();
-            CauseAction action = new CauseAction(new MCPCause(remoteAddr), new Cause.UserIdCause());
             List<Action> actions = new ArrayList<>();
-            actions.add(action);
+            actions.add(createMcpCauseAction(remoteAddr));
 
             if (job.isParameterized() && job instanceof Job j) {
                 ParametersDefinitionProperty parametersDefinition =
@@ -448,7 +479,7 @@ public class DefaultMcpServer implements McpServerExtension {
 
         List<Action> actions = new ArrayList<>();
         var remoteAddr = JenkinsMcpContext.get().getHttpServletRequest().getRemoteAddr();
-        actions.add(new CauseAction(new MCPCause(remoteAddr), new Cause.UserIdCause()));
+        actions.add(createMcpCauseAction(remoteAddr));
         ParametersAction paramsAction = run.getAction(ParametersAction.class);
         if (paramsAction != null) {
             actions.add(paramsAction);
