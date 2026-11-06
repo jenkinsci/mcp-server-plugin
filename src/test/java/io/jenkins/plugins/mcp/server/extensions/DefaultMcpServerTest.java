@@ -429,6 +429,8 @@ class DefaultMcpServerTest {
                             // This should not change
                             assertThat(contentMap).containsEntry("Full Queue Size", 0);
                             assertThat(contentMap).containsEntry("Quiet Mode", false);
+                            assertThat(contentMap).containsEntry("Healthy", true);
+                            assertThat(contentMap).containsKey("Health checks");
                         });
             }
         }

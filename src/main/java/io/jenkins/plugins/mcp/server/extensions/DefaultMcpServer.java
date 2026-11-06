@@ -30,6 +30,7 @@ import static io.jenkins.plugins.mcp.server.extensions.util.JenkinsUtil.getBuild
 import static io.jenkins.plugins.mcp.server.extensions.util.ParameterValueFactory.createParameterValue;
 
 import hudson.Extension;
+import hudson.ExtensionList;
 import hudson.model.AbstractBuild;
 import hudson.model.AbstractItem;
 import hudson.model.Action;
@@ -61,6 +62,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import jenkins.health.HealthCheck;
 import jenkins.model.Jenkins;
 import jenkins.model.ParameterizedJobMixIn;
 import jenkins.model.queue.QueueItem;
@@ -396,6 +398,40 @@ public class DefaultMcpServer implements McpServerExtension {
         } else {
             map.put("Root URL Status", "OK");
         }
+
+        // Query HealthCheck extensions
+        var healthChecks = new ArrayList<Map<String, Object>>();
+        var failingHealthChecks = new ArrayList<String>();
+        boolean allHealthChecksPassed = true;
+
+        for (HealthCheck healthCheck : ExtensionList.lookup(HealthCheck.class)) {
+            var checkData = new HashMap<String, Object>();
+            String checkName = healthCheck.getName();
+            checkData.put("name", checkName);
+            try {
+                boolean passed = healthCheck.check();
+                checkData.put("healthy", passed);
+                if (!passed) {
+                    allHealthChecksPassed = false;
+                    failingHealthChecks.add(checkName);
+                }
+            } catch (Exception e) {
+                allHealthChecksPassed = false;
+                checkData.put("healthy", false);
+                checkData.put(
+                        "error",
+                        e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
+                failingHealthChecks.add(checkName);
+            }
+            healthChecks.add(checkData);
+        }
+
+        map.put("Healthy", allHealthChecksPassed);
+        map.put("Health checks", healthChecks);
+        if (!allHealthChecksPassed) {
+            map.put("Failing health checks", failingHealthChecks);
+        }
+
         return map;
     }
 
