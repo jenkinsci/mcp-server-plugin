@@ -35,9 +35,9 @@ import lombok.NonNull;
 
 public class JenkinsUtil {
 
-    public static Optional<Run> getBuildByNumberOrLast(@NonNull String fullJobName, @Nullable Integer buildNumber) {
+    public static Optional<Run> getBuildByNumberOrLast(@NonNull String jobFullName, @Nullable Integer buildNumber) {
         return Optional.of(Jenkins.get())
-                .map(jenkins -> jenkins.getItemByFullName(fullJobName, Job.class))
+                .map(jenkins -> jenkins.getItemByFullName(jobFullName, Job.class))
                 .map(job -> {
                     if (buildNumber == null || buildNumber <= 0) {
                         return job.getLastBuild();
