@@ -490,6 +490,49 @@ public class BuildLogExtensionTest {
         }
     }
 
+    @McpClientTest
+    void testSearchBuildLogMissingRequiredParameter(
+            JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder) throws Exception {
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+            // Missing jobFullName
+            Map<String, Object> params = new HashMap<>();
+            params.put("pattern", "error");
+            var response = client.callTool(new McpSchema.CallToolRequest("searchBuildLog", params));
+
+            assertThat(response.isError()).isTrue();
+            assertThat(response.content().get(0)).isInstanceOfSatisfying(McpSchema.TextContent.class, text -> {
+                assertThat(text.text()).contains("jobFullName");
+                assertThat(text.text()).doesNotContain("NullPointerException");
+                assertThat(text.text()).doesNotContain("fullJobName");
+            });
+
+            // Missing pattern
+            Map<String, Object> paramsMissingPattern = new HashMap<>();
+            paramsMissingPattern.put("jobFullName", "some-job");
+            var responsePattern =
+                    client.callTool(new McpSchema.CallToolRequest("searchBuildLog", paramsMissingPattern));
+
+            assertThat(responsePattern.isError()).isTrue();
+            assertThat(responsePattern.content().get(0)).isInstanceOfSatisfying(McpSchema.TextContent.class, text -> {
+                assertThat(text.text()).contains("pattern");
+                assertThat(text.text()).doesNotContain("NullPointerException");
+            });
+
+            // Passing fullJobName instead of jobFullName (reproducing issue #259)
+            Map<String, Object> paramsWithWrongName = new HashMap<>();
+            paramsWithWrongName.put("fullJobName", "some-job");
+            paramsWithWrongName.put("pattern", "error");
+            var responseWrongName =
+                    client.callTool(new McpSchema.CallToolRequest("searchBuildLog", paramsWithWrongName));
+            assertThat(responseWrongName.isError()).isTrue();
+            assertThat(responseWrongName.content().get(0)).isInstanceOfSatisfying(McpSchema.TextContent.class, text -> {
+                assertThat(text.text()).contains("jobFullName");
+                assertThat(text.text()).doesNotContain("NullPointerException");
+                assertThat(text.text()).doesNotContain("fullJobName is marked non-null");
+            });
+        }
+    }
+
     private Map<String, Object> getBuildLogResult(
             McpSyncClient client, String jobFullName, Long skip, Integer limit, String cursor) {
         Map<String, Object> params = new HashMap<>();

@@ -112,6 +112,7 @@ public class McpToolWrapper {
     private final JsonMapper objectMapper;
 
     private final List<Permission> requiredPermissions;
+    private final List<String> requiredParameters;
 
     /** Passing this as {@code tree} returns the full exported object, bypassing any {@code defaultTree}. */
     public static final String FULL_OBJECT_TREE = "*";
@@ -122,6 +123,13 @@ public class McpToolWrapper {
         this.method = method;
         var tool = method.getAnnotation(Tool.class);
         this.requiredPermissions = ToolPermissions.resolve(tool != null ? tool.permissions() : null);
+        List<String> requiredList = new ArrayList<>();
+        for (int i = 0; i < method.getParameterCount(); i++) {
+            if (isMethodParameterRequired(method, i)) {
+                requiredList.add(method.getParameters()[i].getName());
+            }
+        }
+        this.requiredParameters = List.copyOf(requiredList);
         if (tool != null && StringUtils.hasText(tool.defaultTree())) {
             // Fail fast on a malformed defaultTree: a typo in the annotation should break the
             // build/startup (and thus unit tests), not every request at runtime.
@@ -137,6 +145,11 @@ public class McpToolWrapper {
     /** Permissions the caller needs (at least one) to see and use this tool; empty means everyone can. */
     List<Permission> getRequiredPermissions() {
         return requiredPermissions;
+    }
+
+    /** Names of required parameters in declaration order. */
+    List<String> getRequiredParameters() {
+        return requiredParameters;
     }
 
     private static boolean isMethodParameterRequired(Method method, int index) {
@@ -396,7 +409,28 @@ public class McpToolWrapper {
                         Jenkins.getAuthentication2().getName(),
                         request.arguments());
             }
-            var args = request.arguments();
+            var args = request.arguments() != null ? request.arguments() : Map.<String, Object>of();
+            List<String> missingRequired = new ArrayList<>();
+            for (String paramName : requiredParameters) {
+                if (!args.containsKey(paramName) || args.get(paramName) == null) {
+                    missingRequired.add(paramName);
+                }
+            }
+            if (!missingRequired.isEmpty()) {
+                String message = missingRequired.size() == 1
+                        ? "Missing required parameter: " + missingRequired.get(0)
+                        : "Missing required parameters: " + String.join(", ", missingRequired);
+                log.debug("Rejecting tool call '{}': {}", getToolName(), message);
+                ToolResponse missingResponse = new ToolResponse.ToolResponseBuilder()
+                        .message(message)
+                        .status(ToolResponse.Status.FAILED)
+                        .build();
+                return McpSchema.CallToolResult.builder()
+                        .isError(true)
+                        .addTextContent(toJson(missingResponse))
+                        .build();
+            }
+
             var methodArgs = Arrays.stream(method.getParameters())
                     .map(param -> {
                         var arg = args.get(param.getName());
