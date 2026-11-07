@@ -276,4 +276,76 @@ class ReplayRebuildTest {
                         () -> assertThat(project.getLastBuild().getResult()).isEqualTo(Result.SUCCESS));
         assertThat(project.getLastBuild().getLog()).contains("replayed-with-change");
     }
+
+    /**
+     * Replay only needs the script the caller wants to change: leaving {@code mainScript} out has to
+     * mean "run the source build's script again" instead of failing the call, so an agent that only
+     * edits a loaded script does not have to send the whole pipeline back.
+     */
+    @McpClientTest
+    void testReplayBuild_withoutMainScriptUsesSourceScript(
+            JenkinsRule jenkins, io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
+            throws Exception {
+        WorkflowJob project = jenkins.createProject(WorkflowJob.class, "replay-source-script");
+        project.setDefinition(new CpsFlowDefinition("echo 'source-script'", true));
+        int sourceBuildNumber = project.scheduleBuild2(0).get().getNumber();
+
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+            var request = new McpSchema.CallToolRequest("replayBuild", Map.of("jobFullName", project.getFullName()));
+            var response = client.callTool(request);
+            assertThat(response.isError())
+                    .as("Expected successful message. Content: %s", response.content())
+                    .isFalse();
+            assertThat(response.content()).hasSize(1);
+        }
+
+        await().atMost(30, SECONDS)
+                .untilAsserted(
+                        () -> assertThat(project.getLastBuild().getNumber()).isGreaterThan(sourceBuildNumber));
+        await().atMost(30, SECONDS)
+                .untilAsserted(
+                        () -> assertThat(project.getLastBuild().getResult()).isEqualTo(Result.SUCCESS));
+        assertThat(project.getLastBuild().getLog()).contains("source-script");
+    }
+
+    /**
+     * The agent flow the issue describes: fetch the scripts, patch one, replay. Only the patched
+     * loaded script goes back over the wire, and the main script is left out entirely - the build has
+     * to run the source script with the patch applied.
+     */
+    @McpClientTest
+    void testReplayBuild_sendsOnlyTheScriptThatChanged(
+            JenkinsRule jenkins, io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
+            throws Exception {
+        WorkflowJob project = jenkins.createProject(WorkflowJob.class, "replay-partial-scripts");
+        project.setDefinition(new CpsFlowDefinition(
+                "node {\n"
+                        + "  writeFile file: 'lib.groovy', text: 'echo \"LIB-ORIGINAL\"'\n"
+                        + "  load 'lib.groovy'\n"
+                        + "}",
+                true));
+        int sourceBuildNumber = project.scheduleBuild2(0).get().getNumber();
+        assertThat(project.getLastBuild().getResult()).isEqualTo(Result.SUCCESS);
+        assertThat(project.getLastBuild().getLog()).contains("LIB-ORIGINAL");
+
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+            var request = new McpSchema.CallToolRequest(
+                    "replayBuild",
+                    Map.of(
+                            "jobFullName", project.getFullName(),
+                            "loadedScripts", Map.of("Script1", "echo \"LIB-PATCHED\"")));
+            var response = client.callTool(request);
+            assertThat(response.isError())
+                    .as("Expected successful message. Content: %s", response.content())
+                    .isFalse();
+        }
+
+        await().atMost(30, SECONDS)
+                .untilAsserted(
+                        () -> assertThat(project.getLastBuild().getNumber()).isGreaterThan(sourceBuildNumber));
+        await().atMost(30, SECONDS)
+                .untilAsserted(
+                        () -> assertThat(project.getLastBuild().getResult()).isEqualTo(Result.SUCCESS));
+        assertThat(project.getLastBuild().getLog()).contains("LIB-PATCHED");
+    }
 }
