@@ -75,12 +75,7 @@ public class MultibranchExtension implements McpServerExtension {
                     "Project '" + jobFullName + "' is not a Multibranch Pipeline or Organization Folder.");
         }
 
-        String scanUrl;
-        if (folder.getComputation() != null) {
-            scanUrl = jenkins.getRootUrl() + folder.getComputation().getUrl();
-        } else {
-            scanUrl = jenkins.getRootUrl() + folder.getUrl() + "indexing/";
-        }
+        String scanUrl = jenkins.getRootUrl() + folder.getComputation().getUrl();
 
         if (!folder.isBuildable()) {
             return new ScanMultibranchPipelineResult(
