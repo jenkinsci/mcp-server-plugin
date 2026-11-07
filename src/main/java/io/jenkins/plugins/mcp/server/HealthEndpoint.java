@@ -132,12 +132,18 @@ public class HealthEndpoint implements UnprotectedRootAction {
 
         ObjectNode responseJson = objectMapper.createObjectNode();
         responseJson.put("mcpServerStatus", isShuttingDown ? "shutting_down" : "ok");
-        responseJson.put("activeConnections", McpConnectionMetrics.getActiveSseConnections());
+        responseJson.put("activeConnections", activeConnections());
         responseJson.put("shuttingDown", isShuttingDown);
         responseJson.put("timestamp", Instant.now().toString());
 
         response.getWriter().write(objectMapper.writeValueAsString(responseJson));
         response.getWriter().flush();
+    }
+
+    /** Open SSE connections plus live Streamable HTTP sessions, when that count is available. */
+    static long activeConnections() {
+        return McpConnectionMetrics.getActiveSseConnections()
+                + StreamableSessionGauge.activeSessions().orElse(0);
     }
 
     /**
