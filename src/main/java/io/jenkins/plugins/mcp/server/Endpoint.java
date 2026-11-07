@@ -220,7 +220,7 @@ public class Endpoint extends CrumbExclusion implements UnprotectedRootAction {
     /**
      * Maximum number of threads dedicated to processing SSE messages. This bounds the
      * impact of hung {@code Mono.block()} calls to this pool rather than the Jetty
-     * thread pool.
+     * thread pool. Values below 1 are treated as 1, so the pool always has a worker.
      */
     @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "Accessible via System Groovy Scripts")
     public static int SSE_MESSAGE_MAX_THREADS =
@@ -253,15 +253,24 @@ public class Endpoint extends CrumbExclusion implements UnprotectedRootAction {
 
     private final ExecutorService sseMessageExecutor = createSseMessageExecutor();
 
-    private static ExecutorService createSseMessageExecutor() {
+    /**
+     * Creates the pool that runs SSE message handlers. The cap is the pool size in both directions: with
+     * an unbounded queue a smaller core size would hand every extra task to the queue instead of growing,
+     * so the cap would never be reached, and a cap below the core size makes the constructor throw.
+     * Threads still die after 60s idle, so a large cap costs nothing until it is needed.
+     * Package-private for {@code SseMessageExecutorTest}.
+     */
+    static ExecutorService createSseMessageExecutor() {
+        // No worker at all would queue every message forever instead of failing it.
+        int poolSize = Math.max(1, SSE_MESSAGE_MAX_THREADS);
         AtomicInteger threadCount = new AtomicInteger(0);
         ThreadFactory factory = r -> {
             Thread t = new Thread(r, "mcp-sse-handler-" + threadCount.incrementAndGet());
             t.setDaemon(true);
             return t;
         };
-        ThreadPoolExecutor executor = new ThreadPoolExecutor(
-                4, SSE_MESSAGE_MAX_THREADS, 60L, TimeUnit.SECONDS, new LinkedBlockingQueue<>(), factory);
+        ThreadPoolExecutor executor =
+                new ThreadPoolExecutor(poolSize, poolSize, 60L, TimeUnit.SECONDS, new LinkedBlockingQueue<>(), factory);
         executor.allowCoreThreadTimeOut(true);
         return executor;
     }
