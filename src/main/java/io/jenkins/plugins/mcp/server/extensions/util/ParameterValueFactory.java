@@ -51,6 +51,8 @@ public final class ParameterValueFactory {
             "com.syhuang.hudson.plugins.listgitbranchesparameter.ListGitBranchesParameterDefinition";
     public static final String VALIDATING_STRING_PARAMETER_DEFINITION =
             "hudson.plugins.validating_string_parameter.ValidatingStringParameterDefinition";
+    public static final String EXTENDED_CHOICE_PARAMETER_DEFINITION =
+            "com.cwctravel.hudson.plugins.extended_choice_parameter.ExtendedChoiceParameterDefinition";
 
     /**
      * Creates a parameter value from a parameter definition and input value.
@@ -68,6 +70,8 @@ public final class ParameterValueFactory {
                 return createListGitBranchesParameterValue(param, inputValue);
             } else if (isParameterDefinitionOf(param, VALIDATING_STRING_PARAMETER_DEFINITION)) {
                 return createParameterValueViaCli(param, String.valueOf(inputValue));
+            } else if (isParameterDefinitionOf(param, EXTENDED_CHOICE_PARAMETER_DEFINITION)) {
+                return createExtendedChoiceParameterValue(param, inputValue);
             } else if (param instanceof StringParameterDefinition) {
                 return createStringParameterValue((StringParameterDefinition) param, inputValue);
             } else if (param instanceof BooleanParameterDefinition) {
@@ -185,6 +189,24 @@ public final class ParameterValueFactory {
         return createParameterValueViaCli(param, String.valueOf(inputValue));
     }
 
+    private static ParameterValue createExtendedChoiceParameterValue(ParameterDefinition param, Object inputValue) {
+        if (inputValue == null) {
+            return param.getDefaultParameterValue();
+        }
+        String stringValue;
+        if (inputValue instanceof java.util.Collection<?>) {
+            stringValue = ((java.util.Collection<?>) inputValue)
+                    .stream().map(String::valueOf).collect(java.util.stream.Collectors.joining(","));
+        } else if (inputValue instanceof Object[]) {
+            stringValue = java.util.Arrays.stream((Object[]) inputValue)
+                    .map(String::valueOf)
+                    .collect(java.util.stream.Collectors.joining(","));
+        } else {
+            stringValue = String.valueOf(inputValue);
+        }
+        return createParameterValueViaCli(param, stringValue);
+    }
+
     private static ParameterValue createParameterValueViaCli(ParameterDefinition param, String inputValue) {
         String paramTypeName = param.getClass().getSimpleName();
         try {
@@ -281,6 +303,35 @@ public final class ParameterValueFactory {
                         // Method doesn't exist, continue to next approach
                     }
                 }
+
+                // Try CLI createValue(CLICommand, String) method (supported by many Jenkins plugin parameters)
+                try {
+                    var method = param.getClass().getMethod("createValue", hudson.cli.CLICommand.class, String.class);
+                    if (method != null) {
+                        try {
+                            return (ParameterValue) method.invoke(param, null, String.valueOf(inputValue));
+                        } catch (java.lang.reflect.InvocationTargetException e) {
+                            var cause = e.getTargetException();
+                            log.warn(
+                                    "{} parameter '{}' rejected value '{}': {}",
+                                    param.getClass().getSimpleName(),
+                                    param.getName(),
+                                    inputValue,
+                                    cause.getMessage());
+                            return param.getDefaultParameterValue();
+                        }
+                    }
+                } catch (NoSuchMethodException e) {
+                    // Method doesn't exist, continue to next approach
+                }
+            }
+
+            if (inputValue != null) {
+                log.warn(
+                        "Could not convert value '{}' for parameter '{}' ({}); falling back to default parameter value",
+                        inputValue,
+                        param.getName(),
+                        param.getClass().getName());
             }
 
             // If all else fails, try to get the default value
