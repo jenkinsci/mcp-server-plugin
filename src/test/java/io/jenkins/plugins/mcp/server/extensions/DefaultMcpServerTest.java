@@ -36,6 +36,7 @@ import com.jayway.jsonpath.Configuration;
 import com.jayway.jsonpath.DocumentContext;
 import com.jayway.jsonpath.JsonPath;
 import hudson.model.BooleanParameterDefinition;
+import hudson.model.Cause;
 import hudson.model.ChoiceParameterDefinition;
 import hudson.model.ParametersDefinitionProperty;
 import hudson.model.Result;
@@ -163,6 +164,41 @@ class DefaultMcpServerTest {
             }
         }
         jenkins.waitUntilNoActivityUpTo(MIN_1);
+    }
+
+    @McpClientTest
+    void testMcpCauseExportsAuthenticatedUser(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
+            throws Exception {
+        enableSecurity(jenkins);
+        WorkflowJob project = jenkins.createProject(WorkflowJob.class, "mcp-cause-user");
+        project.setDefinition(
+                new CpsFlowDefinition("echo \"mcp-user=${currentBuild.getBuildCauses()[0].userId}\"", true));
+
+        String encodedAuth = Base64.getEncoder().encodeToString("admin:admin".getBytes());
+        try (var client = jenkinsMcpClientBuilder
+                .jenkins(jenkins)
+                .requestCustomizer((builder, method, endpoint, body, context) ->
+                        builder.setHeader("Authorization", "Basic " + encodedAuth))
+                .build()) {
+            var response = client.callTool(
+                    new McpSchema.CallToolRequest("triggerBuild", Map.of("jobFullName", project.getFullName())));
+            assertThat(response.isError()).isFalse();
+        }
+
+        await().atMost(30, SECONDS)
+                .untilAsserted(() -> assertThat(project.getLastBuild()).isNotNull());
+        await().atMost(30, SECONDS)
+                .untilAsserted(
+                        () -> assertThat(project.getLastBuild().getResult()).isEqualTo(Result.SUCCESS));
+
+        assertThat(project.getLastBuild().getCauses())
+                .satisfiesExactly(
+                        cause -> assertThat(cause).isInstanceOfSatisfying(DefaultMcpServer.MCPCause.class, mcpCause -> {
+                            assertThat(mcpCause.getUserId()).isEqualTo("admin");
+                            assertThat(mcpCause.getUserName()).isEqualTo("admin");
+                        }),
+                        cause -> assertThat(cause).isInstanceOf(Cause.UserIdCause.class));
+        assertThat(project.getLastBuild().getLog()).contains("mcp-user=admin");
     }
 
     @McpClientTest
