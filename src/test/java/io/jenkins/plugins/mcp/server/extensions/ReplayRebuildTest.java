@@ -32,6 +32,8 @@ import static org.awaitility.Awaitility.await;
 
 import com.jayway.jsonpath.Configuration;
 import com.jayway.jsonpath.JsonPath;
+import hudson.model.Cause;
+import hudson.model.CauseAction;
 import hudson.model.FreeStyleProject;
 import hudson.model.Item;
 import hudson.model.ParametersAction;
@@ -48,6 +50,7 @@ import io.modelcontextprotocol.spec.McpSchema;
 import java.util.Base64;
 import java.util.Map;
 import jenkins.model.Jenkins;
+import org.jenkinsci.plugins.pipeline.modeldefinition.causes.RestartDeclarativePipelineCause;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -122,6 +125,73 @@ class ReplayRebuildTest {
                         () -> assertThat(project.getLastBuild().getResult()).isEqualTo(Result.SUCCESS));
         assertThat(project.getLastBuild().getNumber()).isEqualTo(nextNumber);
         assertThat(project.getLastBuild().getLog()).contains("first-run");
+    }
+
+    @McpClientTest
+    void testRebuildBuild_keepsTriggerCauses(
+            JenkinsRule jenkins, io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
+            throws Exception {
+        WorkflowJob project = jenkins.createProject(WorkflowJob.class, "rebuild-causes");
+        project.setDefinition(new CpsFlowDefinition("echo 'hi'", true));
+        var firstBuild = project.scheduleBuild2(
+                        0,
+                        new CauseAction(new Cause.RemoteCause("webhook-host", "push"), new Cause.UserIdCause("alice")))
+                .get();
+        assertThat(firstBuild.getResult()).isEqualTo(Result.SUCCESS);
+
+        int nextNumber = project.getNextBuildNumber();
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+            var request = new McpSchema.CallToolRequest(
+                    "rebuildBuild",
+                    Map.of("jobFullName", project.getFullName(), "buildNumber", firstBuild.getNumber()));
+            var response = client.callTool(request);
+            assertThat(response.isError()).isFalse();
+        }
+
+        await().atMost(30, SECONDS)
+                .untilAsserted(
+                        () -> assertThat(project.getBuildByNumber(nextNumber)).isNotNull());
+        var rebuilt = project.getBuildByNumber(nextNumber);
+        jenkins.waitForCompletion(rebuilt);
+        assertThat(rebuilt.getResult()).isEqualTo(Result.SUCCESS);
+        assertThat(rebuilt.getCause(Cause.RemoteCause.class)).isNotNull();
+        assertThat(rebuilt.getCause(DefaultMcpServer.MCPCause.class)).isNotNull();
+        assertThat(rebuilt.getCauses())
+                .noneMatch(c -> c instanceof Cause.UserIdCause u && "alice".equals(u.getUserId()));
+    }
+
+    @McpClientTest
+    void testRebuildBuild_runsAllStagesOfARestartedBuild(
+            JenkinsRule jenkins, io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
+            throws Exception {
+        WorkflowJob project = jenkins.createProject(WorkflowJob.class, "rebuild-restarted");
+        project.setDefinition(new CpsFlowDefinition("""
+                pipeline {
+                    agent none
+                    stages {
+                        stage('one') { steps { echo 'ran one' } }
+                        stage('two') { steps { echo 'ran two' } }
+                    }
+                }
+                """, true));
+        var original = jenkins.buildAndAssertSuccess(project);
+        var restarted = project.scheduleBuild2(0, new CauseAction(new RestartDeclarativePipelineCause(original, "two")))
+                .get();
+        assertThat(restarted.getLog()).doesNotContain("ran one");
+
+        int nextNumber = project.getNextBuildNumber();
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+            var request = new McpSchema.CallToolRequest(
+                    "rebuildBuild", Map.of("jobFullName", project.getFullName(), "buildNumber", restarted.getNumber()));
+            assertThat(client.callTool(request).isError()).isFalse();
+        }
+
+        await().atMost(30, SECONDS)
+                .untilAsserted(
+                        () -> assertThat(project.getBuildByNumber(nextNumber)).isNotNull());
+        var rebuilt = jenkins.waitForCompletion(project.getBuildByNumber(nextNumber));
+        assertThat(rebuilt.getLog()).contains("ran one", "ran two");
+        assertThat(rebuilt.getCause(RestartDeclarativePipelineCause.class)).isNull();
     }
 
     @McpClientTest
