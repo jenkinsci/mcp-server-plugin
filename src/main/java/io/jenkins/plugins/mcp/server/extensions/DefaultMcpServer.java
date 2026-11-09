@@ -534,7 +534,12 @@ public class DefaultMcpServer implements McpServerExtension {
                             description = "Build number (optional, if not provided, uses the last build)",
                             required = false)
                     Integer buildNumber,
-            @ToolParam(description = "Main pipeline script content") String mainScript,
+            @Nullable
+                    @ToolParam(
+                            description =
+                                    "Main pipeline script content (optional). If not provided, the script of the source build is used unchanged.",
+                            required = false)
+                    String mainScript,
             @Nullable
                     @ToolParam(
                             description =
@@ -553,6 +558,9 @@ public class DefaultMcpServer implements McpServerExtension {
         }
         if (!replayAction.isEnabled() || !replayAction.isReplayableSandboxTest()) {
             throw new IllegalStateException("Replay not allowed for this build (permission or script approval).");
+        }
+        if (mainScript == null) {
+            mainScript = replayAction.getOriginalScript();
         }
         Map<String, String> scriptsToUse =
                 loadedScripts != null ? loadedScripts : replayAction.getOriginalLoadedScripts();
