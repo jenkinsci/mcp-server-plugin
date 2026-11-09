@@ -136,6 +136,17 @@ class McpToolWrapperTest {
                 .hasMessageContaining("wrongTypeMapParam");
     }
 
+    @Test
+    void requiredParametersAreCorrectlyExtracted() throws Exception {
+        McpToolWrapper wrapper = new McpToolWrapper(
+                objectMapper,
+                target,
+                MockMethods.class.getDeclaredMethod(
+                        "methodWithMixedParams", String.class, Integer.class, String.class));
+
+        assertThat(wrapper.getRequiredParameters()).containsExactly("requiredParam1", "requiredParam2");
+    }
+
     public static class MockMethods {
         @Tool
         public boolean boolMethod() {
@@ -184,6 +195,14 @@ class McpToolWrapperTest {
 
         @Tool
         public boolean wrongTypeMapParam(@ToolParam(additionalProperties = "42") Map<String, Object> parameters) {
+            return true;
+        }
+
+        @Tool
+        public boolean methodWithMixedParams(
+                @ToolParam String requiredParam1,
+                @ToolParam(required = false) Integer optionalParam,
+                @ToolParam String requiredParam2) {
             return true;
         }
 
