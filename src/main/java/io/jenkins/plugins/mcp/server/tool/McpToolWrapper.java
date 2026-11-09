@@ -113,6 +113,8 @@ public class McpToolWrapper {
 
     private final List<Permission> requiredPermissions;
 
+    private final List<String> requiredParameters;
+
     /** Passing this as {@code tree} returns the full exported object, bypassing any {@code defaultTree}. */
     public static final String FULL_OBJECT_TREE = "*";
 
@@ -122,6 +124,13 @@ public class McpToolWrapper {
         this.method = method;
         var tool = method.getAnnotation(Tool.class);
         this.requiredPermissions = ToolPermissions.resolve(tool != null ? tool.permissions() : null);
+        List<String> required = new ArrayList<>();
+        for (int i = 0; i < method.getParameterCount(); i++) {
+            if (isMethodParameterRequired(method, i)) {
+                required.add(method.getParameters()[i].getName());
+            }
+        }
+        this.requiredParameters = List.copyOf(required);
         if (tool != null && StringUtils.hasText(tool.defaultTree())) {
             // Fail fast on a malformed defaultTree: a typo in the annotation should break the
             // build/startup (and thus unit tests), not every request at runtime.
@@ -137,6 +146,10 @@ public class McpToolWrapper {
     /** Permissions the caller needs (at least one) to see and use this tool; empty means everyone can. */
     List<Permission> getRequiredPermissions() {
         return requiredPermissions;
+    }
+
+    List<String> getRequiredParameters() {
+        return requiredParameters;
     }
 
     private static boolean isMethodParameterRequired(Method method, int index) {
@@ -221,15 +234,11 @@ public class McpToolWrapper {
         schema.put("type", "object");
 
         ObjectNode properties = schema.putObject("properties");
-        List<String> required = new ArrayList<>();
 
         for (int i = 0; i < method.getParameterCount(); i++) {
             String parameterName = method.getParameters()[i].getName();
             Type parameterType = method.getGenericParameterTypes()[i];
 
-            if (isMethodParameterRequired(method, i)) {
-                required.add(parameterName);
-            }
             ObjectNode parameterNode = SUBTYPE_SCHEMA_GENERATOR.generateSchema(parameterType);
             String parameterDescription = getMethodParameterDescription(method, i);
             if (StringUtils.hasText(parameterDescription)) {
@@ -271,7 +280,7 @@ public class McpToolWrapper {
         }
 
         var requiredArray = schema.putArray("required");
-        required.forEach(requiredArray::add);
+        requiredParameters.forEach(requiredArray::add);
 
         return schema.toPrettyString();
     }
@@ -397,6 +406,19 @@ public class McpToolWrapper {
                         request.arguments());
             }
             var args = request.arguments();
+            for (String requiredParam : requiredParameters) {
+                if (args == null || !args.containsKey(requiredParam) || args.get(requiredParam) == null) {
+                    log.debug("Tool call '{}' missing required parameter: {}", getToolName(), requiredParam);
+                    ToolResponse missing = new ToolResponse.ToolResponseBuilder()
+                            .message("Missing required parameter: " + requiredParam)
+                            .status(ToolResponse.Status.FAILED)
+                            .build();
+                    return McpSchema.CallToolResult.builder()
+                            .isError(true)
+                            .addTextContent(toJson(missing))
+                            .build();
+                }
+            }
             var methodArgs = Arrays.stream(method.getParameters())
                     .map(param -> {
                         var arg = args.get(param.getName());
@@ -429,9 +451,7 @@ public class McpToolWrapper {
             if (rootCauseMessage.isEmpty()) {
                 rootCauseMessage = "Error invoking method: " + method.getName();
             }
-            if (log.isDebugEnabled()) {
-                log.atError().setCause(e).log("Error invoking tool method: {}: {}", method.getName(), rootCauseMessage);
-            }
+            log.atError().setCause(e).log("Error invoking tool method: {}: {}", method.getName(), rootCauseMessage);
             ToolResponse toolResponse = new ToolResponse.ToolResponseBuilder()
                     .message(rootCauseMessage)
                     .status(ToolResponse.Status.FAILED)
