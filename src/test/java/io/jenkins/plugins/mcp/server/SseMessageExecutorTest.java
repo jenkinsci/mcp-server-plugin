@@ -36,6 +36,35 @@ class SseMessageExecutorTest {
     }
 
     @Test
+    void zeroCapStillBuildsAWorkingPool() throws Exception {
+        assertCapFallsBackToOneThread(0);
+    }
+
+    @Test
+    void negativeCapStillBuildsAWorkingPool() throws Exception {
+        assertCapFallsBackToOneThread(-3);
+    }
+
+    /**
+     * A cap of zero or less is what an operator gets by mistyping the system property. Without the
+     * minimum the constructor rejects the value, and a pool that did build with no worker would accept
+     * the task and never run it, so the fallback has to be exercised end to end.
+     */
+    private static void assertCapFallsBackToOneThread(int cap) throws Exception {
+        Endpoint.SSE_MESSAGE_MAX_THREADS = cap;
+
+        ExecutorService executor = Endpoint.createSseMessageExecutor();
+        CountDownLatch ran = new CountDownLatch(1);
+        try {
+            assertThat(((ThreadPoolExecutor) executor).getMaximumPoolSize()).isEqualTo(1);
+            executor.execute(ran::countDown);
+            assertThat(ran.await(10, TimeUnit.SECONDS)).isTrue();
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
     void everyConfiguredThreadIsUsedForBlockedMessages() throws Exception {
         Endpoint.SSE_MESSAGE_MAX_THREADS = 6;
 
