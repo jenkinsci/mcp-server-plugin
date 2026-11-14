@@ -76,7 +76,8 @@ public class EndPointTest {
                             "createPipeline",
                             "getSystemLog",
                             "getLogRecorders",
-                            "cancelBuild");
+                            "cancelBuild",
+                            "scanMultibranchPipeline");
         }
     }
 
