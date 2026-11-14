@@ -51,6 +51,8 @@ import io.modelcontextprotocol.server.transport.HttpServletSseServerTransportPro
 import io.modelcontextprotocol.server.transport.HttpServletStatelessServerTransport;
 import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema;
+import jakarta.servlet.AsyncEvent;
+import jakarta.servlet.AsyncListener;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServlet;
@@ -73,6 +75,7 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import jenkins.model.Jenkins;
@@ -995,15 +998,68 @@ public class Endpoint extends CrumbExclusion implements UnprotectedRootAction {
         String clientInfo = getClientInfo(request);
         log.info("SSE connection started from {}", clientInfo);
         McpConnectionMetrics.recordSseConnectionStart();
+        boolean endsLater = false;
         try {
             httpServletSseServerTransportProvider.service(request, response);
+            // The transport keeps the stream open asynchronously and returns at once, so the
+            // connection only ends when the async request does.
+            endsLater = endWhenAsyncRequestEnds(request, clientInfo);
         } catch (IOException e) {
             log.warn("SSE connection error from {}: {}", clientInfo, e.getMessage());
             McpConnectionMetrics.recordConnectionError();
             throw e;
         } finally {
-            McpConnectionMetrics.recordSseConnectionEnd();
-            log.info("SSE connection ended from {}", clientInfo);
+            if (!endsLater) {
+                McpConnectionMetrics.recordSseConnectionEnd();
+                log.info("SSE connection ended from {}", clientInfo);
+            }
+        }
+    }
+
+    /**
+     * Records the end of an SSE connection when its async request completes, times out or fails.
+     *
+     * @return false if the request is not async (any more), so the caller has to record the end itself
+     */
+    private static boolean endWhenAsyncRequestEnds(HttpServletRequest request, String clientInfo) {
+        if (!request.isAsyncStarted()) {
+            return false;
+        }
+        AtomicBoolean ended = new AtomicBoolean();
+        AsyncListener listener = new AsyncListener() {
+            @Override
+            public void onComplete(AsyncEvent event) {
+                end();
+            }
+
+            @Override
+            public void onTimeout(AsyncEvent event) {
+                end();
+            }
+
+            @Override
+            public void onError(AsyncEvent event) {
+                end();
+            }
+
+            @Override
+            public void onStartAsync(AsyncEvent event) {
+                // not restarted by the transport
+            }
+
+            private void end() {
+                if (ended.compareAndSet(false, true)) {
+                    McpConnectionMetrics.recordSseConnectionEnd();
+                    log.info("SSE connection ended from {}", clientInfo);
+                }
+            }
+        };
+        try {
+            request.getAsyncContext().addListener(listener);
+            return true;
+        } catch (IllegalStateException e) {
+            // The async request already ended
+            return false;
         }
     }
 
