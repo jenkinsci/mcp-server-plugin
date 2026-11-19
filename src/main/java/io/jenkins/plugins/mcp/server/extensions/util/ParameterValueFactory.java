@@ -35,8 +35,13 @@ import hudson.model.PasswordParameterDefinition;
 import hudson.model.RunParameterDefinition;
 import hudson.model.StringParameterDefinition;
 import hudson.model.TextParameterDefinition;
+import java.lang.reflect.Proxy;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
+import net.sf.json.JSONArray;
+import net.sf.json.JSONObject;
+import org.kohsuke.stapler.Stapler;
+import org.kohsuke.stapler.StaplerRequest2;
 
 /**
  * Factory class for creating parameter values from different parameter definitions.
@@ -281,6 +286,13 @@ public final class ParameterValueFactory {
                         // Method doesn't exist, continue to next approach
                     }
                 }
+
+                // Definitions that only support the build form, such as the Artifact Repository parameter,
+                // implement createValue(StaplerRequest, JSONObject) and read the value from the submitted JSON.
+                var submitted = createParameterValueViaFormSubmission(param, inputValue);
+                if (submitted != null) {
+                    return submitted;
+                }
             }
 
             // If all else fails, try to get the default value
@@ -305,5 +317,41 @@ public final class ParameterValueFactory {
                     e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * Binds the value the way the build form does, for definitions that only implement
+     * {@code createValue(StaplerRequest2, JSONObject)} or its deprecated javax variant.
+     *
+     * @return the created value, or null if the definition cannot bind a value this way
+     */
+    private static ParameterValue createParameterValueViaFormSubmission(ParameterDefinition param, Object inputValue) {
+        var json = new JSONObject();
+        json.put("name", param.getName());
+        json.put("value", inputValue instanceof List<?> list ? JSONArray.fromObject(list) : inputValue);
+        StaplerRequest2 request = Stapler.getCurrentRequest2();
+        if (request == null) {
+            request = noRequest();
+        }
+        try {
+            return param.createValue(request, json);
+        } catch (RuntimeException | AbstractMethodError e) {
+            log.debug(
+                    "{} parameter '{}' cannot be bound from a form submission: {}",
+                    param.getClass().getSimpleName(),
+                    param.getName(),
+                    e.getMessage());
+            return null;
+        }
+    }
+
+    /** Stand-in for tool calls that run outside a web request; definitions that read the request fail and are skipped. */
+    private static StaplerRequest2 noRequest() {
+        return (StaplerRequest2) Proxy.newProxyInstance(
+                ParameterValueFactory.class.getClassLoader(),
+                new Class<?>[] {StaplerRequest2.class},
+                (proxy, method, args) -> {
+                    throw new UnsupportedOperationException("No HTTP request is available to bind the parameter");
+                });
     }
 }
