@@ -35,7 +35,12 @@ import hudson.model.PasswordParameterDefinition;
 import hudson.model.RunParameterDefinition;
 import hudson.model.StringParameterDefinition;
 import hudson.model.TextParameterDefinition;
+import io.jenkins.plugins.mcp.server.McpParameterValueProvider;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
+import java.util.stream.Collectors;
+import jenkins.model.Jenkins;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -62,6 +67,15 @@ public final class ParameterValueFactory {
      */
     public static ParameterValue createParameterValue(ParameterDefinition param, Object inputValue) {
         try {
+            Jenkins jenkins = Jenkins.getInstanceOrNull();
+            if (jenkins != null) {
+                for (McpParameterValueProvider provider : McpParameterValueProvider.all()) {
+                    if (provider.isApplicable(param)) {
+                        return provider.createValue(param, inputValue);
+                    }
+                }
+            }
+
             if (isParameterDefinitionOf(param, GIT_PARAMETER_DEFINITION)) {
                 return createGitParameterValue(param, inputValue);
             } else if (isParameterDefinitionOf(param, LIST_GIT_BRANCHES_PARAMETER_DEFINITION)) {
@@ -281,6 +295,46 @@ public final class ParameterValueFactory {
                         // Method doesn't exist, continue to next approach
                     }
                 }
+
+                // Try CLI createValue(CLICommand, String) method (supported by many Jenkins plugin parameters)
+                try {
+                    var method = param.getClass().getMethod("createValue", hudson.cli.CLICommand.class, String.class);
+                    if (method != null) {
+                        String cliStringValue;
+                        if (inputValue instanceof Collection<?>) {
+                            cliStringValue = ((Collection<?>) inputValue)
+                                    .stream().map(String::valueOf).collect(Collectors.joining(","));
+                        } else if (inputValue instanceof Object[]) {
+                            cliStringValue = Arrays.stream((Object[]) inputValue)
+                                    .map(String::valueOf)
+                                    .collect(Collectors.joining(","));
+                        } else {
+                            cliStringValue = String.valueOf(inputValue);
+                        }
+                        try {
+                            return (ParameterValue) method.invoke(param, null, cliStringValue);
+                        } catch (java.lang.reflect.InvocationTargetException e) {
+                            var cause = e.getTargetException();
+                            log.warn(
+                                    "{} parameter '{}' rejected value '{}': {}",
+                                    param.getClass().getSimpleName(),
+                                    param.getName(),
+                                    cliStringValue,
+                                    cause.getMessage());
+                            return param.getDefaultParameterValue();
+                        }
+                    }
+                } catch (NoSuchMethodException e) {
+                    // Method doesn't exist, continue to next approach
+                }
+            }
+
+            if (inputValue != null) {
+                log.warn(
+                        "Could not convert value '{}' for parameter '{}' ({}); falling back to default parameter value",
+                        inputValue,
+                        param.getName(),
+                        param.getClass().getName());
             }
 
             // If all else fails, try to get the default value
