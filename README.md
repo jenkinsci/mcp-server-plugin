@@ -153,6 +153,8 @@ This endpoint requires authentication (standard Jenkins permissions) and provide
 
 When Jenkins shuts down, the health endpoint will return `503 Service Unavailable` with a brief grace period before full termination. This allows clients to detect the shutdown and prepare for reconnection.
 
+The wait is 5 seconds by default. Change it with `-Dio.jenkins.plugins.mcp.server.HealthEndpoint.shutdownGracePeriodSeconds=<seconds>`, or set it to `0` to skip it.
+
 #### Transport Recommendation
 
 For better connection reliability, we recommend using **Streamable HTTP** (`/mcp-server/mcp`) instead of **SSE** (`/mcp-server/sse`). Streamable HTTP handles connection issues more gracefully and is the preferred transport for most MCP clients.

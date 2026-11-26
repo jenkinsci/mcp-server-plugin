@@ -26,12 +26,14 @@
 
 package io.jenkins.plugins.mcp.server;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.Extension;
 import hudson.model.UnprotectedRootAction;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.concurrent.atomic.AtomicBoolean;
+import jenkins.util.SystemProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
@@ -80,9 +82,13 @@ public class HealthEndpoint implements UnprotectedRootAction {
     private static final AtomicBoolean shuttingDown = new AtomicBoolean(false);
 
     /**
-     * Grace period in seconds for clients to detect shutdown before full termination.
+     * Seconds to wait on shutdown so clients see the health endpoint return 503. Defaults to 5,
+     * set with {@code io.jenkins.plugins.mcp.server.HealthEndpoint.shutdownGracePeriodSeconds}.
+     * 0 or less means no wait.
      */
-    public static final int SHUTDOWN_GRACE_PERIOD_SECONDS = 5;
+    @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "Accessible via System Groovy Scripts")
+    public static int SHUTDOWN_GRACE_PERIOD_SECONDS =
+            SystemProperties.getInteger(HealthEndpoint.class.getName() + ".shutdownGracePeriodSeconds", 5);
 
     @Override
     public String getIconFileName() {
@@ -125,7 +131,7 @@ public class HealthEndpoint implements UnprotectedRootAction {
 
         if (isShuttingDown) {
             response.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-            response.setHeader("Retry-After", String.valueOf(SHUTDOWN_GRACE_PERIOD_SECONDS));
+            response.setHeader("Retry-After", String.valueOf(Math.max(0, SHUTDOWN_GRACE_PERIOD_SECONDS)));
         } else {
             response.setStatus(HttpServletResponse.SC_OK);
         }

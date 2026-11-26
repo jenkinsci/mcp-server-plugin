@@ -55,8 +55,8 @@ public class McpServerShutdownListener {
     /**
      * Called when Jenkins is shutting down.
      *
-     * <p>Sets the MCP server health endpoint to shutdown state and waits for a brief
-     * grace period to allow clients to detect the shutdown.</p>
+     * <p>Marks the health endpoint as shutting down, then waits a short grace period so
+     * clients notice. Skips the wait if the grace period is 0 or less.</p>
      *
      * @throws InterruptedException if the grace period sleep is interrupted
      */
@@ -70,6 +70,10 @@ public class McpServerShutdownListener {
         // Brief grace period to allow clients to detect shutdown via health endpoint
         // This gives active clients a chance to see the shutdown state before connections are closed
         int gracePeriodSeconds = HealthEndpoint.SHUTDOWN_GRACE_PERIOD_SECONDS;
+        if (gracePeriodSeconds <= 0) {
+            log.info("MCP shutdown grace period disabled, not waiting");
+            return;
+        }
         log.info("Waiting {} seconds for MCP clients to detect shutdown", gracePeriodSeconds);
 
         try {
