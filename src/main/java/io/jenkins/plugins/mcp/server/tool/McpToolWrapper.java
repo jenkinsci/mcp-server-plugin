@@ -53,6 +53,7 @@ import io.modelcontextprotocol.server.McpSyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.servlet.http.HttpServletRequest;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.lang.reflect.ParameterizedType;
@@ -396,7 +397,7 @@ public class McpToolWrapper {
                         Jenkins.getAuthentication2().getName(),
                         request.arguments());
             }
-            var args = request.arguments();
+            var args = request.arguments() != null ? request.arguments() : Map.<String, Object>of();
             var methodArgs = Arrays.stream(method.getParameters())
                     .map(param -> {
                         var arg = args.get(param.getName());
@@ -425,15 +426,23 @@ public class McpToolWrapper {
             return toMcpResult(result, pruneTreeExpress);
 
         } catch (Exception e) {
-            var rootCauseMessage = ExceptionUtils.getRootCauseMessage(e);
-            if (rootCauseMessage.isEmpty()) {
-                rootCauseMessage = "Error invoking method: " + method.getName();
-            }
-            if (log.isDebugEnabled()) {
-                log.atError().setCause(e).log("Error invoking tool method: {}: {}", method.getName(), rootCauseMessage);
+            // method.invoke() wraps whatever the tool threw
+            Throwable cause = e instanceof InvocationTargetException ite && ite.getCause() != null ? ite.getCause() : e;
+            String message;
+            if (isCallerFacing(cause) && StringUtils.hasText(cause.getMessage())) {
+                message = cause instanceof AccessDeniedException
+                        ? "AccessDeniedException: " + cause.getMessage()
+                        : cause.getMessage();
+                log.debug("Tool '{}' failed: {}", getToolName(), message, e);
+            } else {
+                // probably a bug: log the details, don't send them to the client
+                log.warn("Tool '{}' failed unexpectedly", getToolName(), e);
+                message = "Tool '" + getToolName() + "' failed because of an internal error."
+                        + " Check that the arguments match the tool's input schema."
+                        + " More details are in the Jenkins log.";
             }
             ToolResponse toolResponse = new ToolResponse.ToolResponseBuilder()
-                    .message(rootCauseMessage)
+                    .message(message)
                     .status(ToolResponse.Status.FAILED)
                     .build();
 
@@ -442,6 +451,13 @@ public class McpToolWrapper {
                     .addTextContent(toJson(toolResponse))
                     .build();
         }
+    }
+
+    /** Exceptions that tools throw on purpose, with a message for the caller. */
+    private static boolean isCallerFacing(Throwable t) {
+        return t instanceof IllegalArgumentException
+                || t instanceof IllegalStateException
+                || t instanceof AccessDeniedException;
     }
 
     /**

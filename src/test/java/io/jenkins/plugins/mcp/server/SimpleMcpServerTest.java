@@ -35,9 +35,11 @@ import io.jenkins.plugins.mcp.server.annotation.Tool;
 import io.jenkins.plugins.mcp.server.annotation.ToolParam;
 import io.jenkins.plugins.mcp.server.junit.JenkinsMcpClientBuilder;
 import io.jenkins.plugins.mcp.server.junit.McpClientTest;
+import io.jenkins.plugins.mcp.server.junit.StatelessMcpTestClient;
 import io.jenkins.plugins.mcp.server.junit.TestCrumbIssuerMcpExtension;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.Map;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.TestExtension;
@@ -125,6 +127,31 @@ public class SimpleMcpServerTest {
         }
     }
 
+    @McpClientTest
+    void testUnexpectedErrorDoesNotLeakDetails(JenkinsRule jenkins, JenkinsMcpClientBuilder jenkinsMcpClientBuilder)
+            throws Exception {
+        try (var client = jenkinsMcpClientBuilder.jenkins(jenkins).build()) {
+            var response = client.callTool(new McpSchema.CallToolRequest("testWithNpe", Map.of()));
+            assertThat(response.isError()).isTrue();
+            assertThat(response.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, text -> {
+                assertThat(text.text()).contains("internal error");
+                assertThat(text.text()).doesNotContain("NullPointerException").doesNotContain("internalName");
+            });
+        }
+    }
+
+    @Test
+    void testUnexpectedErrorDoesNotLeakDetailsStateless(JenkinsRule jenkins) throws Exception {
+        try (var client = new StatelessMcpTestClient(jenkins)) {
+            var response = client.callTool("testWithNpe", Map.of());
+            assertThat(response.isError()).isTrue();
+            assertThat(response.content()).first().isInstanceOfSatisfying(McpSchema.TextContent.class, text -> {
+                assertThat(text.text()).contains("internal error");
+                assertThat(text.text()).doesNotContain("NullPointerException").doesNotContain("internalName");
+            });
+        }
+    }
+
     @TestExtension
     public static class SampleMcpServer implements McpServerExtension {
         @Tool(
@@ -152,6 +179,11 @@ public class SimpleMcpServerTest {
         @Tool
         public int testWithError() {
             throw new IllegalArgumentException("Error occurred during execution");
+        }
+
+        @Tool
+        public int testWithNpe() {
+            throw new NullPointerException("internalName is marked non-null but is null");
         }
     }
 }
