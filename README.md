@@ -122,6 +122,8 @@ Response format:
 }
 ```
 
+`activeConnections` counts the open SSE connections plus the Streamable HTTP sessions the server is holding.
+
 **Recommended client usage:**
 - Poll the health endpoint periodically (e.g., every 10-30 seconds)
 - When the endpoint returns 503 or becomes unreachable, prepare for reconnection
